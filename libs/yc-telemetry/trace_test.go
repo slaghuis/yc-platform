@@ -12,7 +12,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // For span-attribute assertions we install an in-memory span recorder

@@ -1,3 +1,6 @@
+# Daily Workflow
+
+```bash
 # Start the dev stack if not already running
 task devstack:up
 
@@ -11,5 +14,6 @@ task test:integration
 # Format and lint before committing
 task fmt
 task lint
+```
 
-# Pre-commit hooks run automatically on git commit
+Pre-commit hooks run automatically on `git commit`.

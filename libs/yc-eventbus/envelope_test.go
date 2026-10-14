@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/<org>/yc-platform/libs/yc-eventbus"
+	"github.com/slaghuis/yc-platform/libs/yc-eventbus"
 )
 
 func TestEnvelope_RoundTrip(t *testing.T) {
@@ -38,7 +38,7 @@ func TestEnvelope_RoundTrip(t *testing.T) {
 func TestDLQEnvelope_Marshal(t *testing.T) {
 	t.Parallel()
 	dlq := eventbus.DLQEnvelope{
-		OriginalEvent: eventbus.Envelope{EventID: "e-1", EventType: "order.order.placed.v1"},
+		OriginalEvent: eventbus.Envelope{EventID: "e-1", EventType: "order.placed.v1"},
 		DLQMetadata: eventbus.DLQMetadata{
 			Consumer:      "yc-message-order-placed",
 			Attempts:      5,

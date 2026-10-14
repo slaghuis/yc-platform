@@ -2,7 +2,7 @@
 # Validate every JSON Schema file is syntactically correct.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SCHEMAS="$ROOT/schemas/yc-event-schemas"
 
 errors=0

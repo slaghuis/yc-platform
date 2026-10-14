@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/libs/yc-events
+module github.com/slaghuis/yc-platform/libs/yc-events
 
-go 1.22
+go 1.26

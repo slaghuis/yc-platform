@@ -1,5 +1,5 @@
-# <name>
+# yc-identity
 
-See `docs/services/<name>.md` for the full requirement spec.
+See `docs/services/yc-identity.md` for the full requirement spec.
 
 Status: scaffold only.

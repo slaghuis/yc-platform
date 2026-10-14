@@ -185,6 +185,7 @@ CREATE POLICY tenant_isolation ON reviews
 | `review.like.added.v1` | Product liked |
 | `review.like.removed.v1` | Product unliked |
 | `review.google_reviews.refreshed.v1` | Google reviews cache updated |
+| `review.prompt_requested.v1` | Review prompt due for a delivered order (after the configured delay; consumed by yc-message) |
 
 ## Subscribed Events
 
@@ -192,7 +193,7 @@ CREATE POLICY tenant_isolation ON reviews
 |---|---|
 | `order.delivered.v1` | Optional: prompt customer via yc-message to review (via a separate `review.prompt_requested.v1` emitted by yc-review after delay) |
 | `identity.user.deleted.v1` | Anonymize reviews (set user_id to pseudonym, strip author display name); delete likes; publish `platform.gdpr.cascade_completed.v1` |
-| `product.product.deleted.v1` | Delete reviews and likes for the product |
+| `product.deleted.v1` | Delete reviews and likes for the product |
 | `platform.tenant.provisioned.v1` | Create `tenant_review_config` with defaults |
 | `platform.tenant.deleted.v1` | Delete all tenant reviews |
 

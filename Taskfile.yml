@@ -1,8 +1,8 @@
 version: '3'
 
 vars:
-  GO_VERSION: '1.22'
-  LOCAL_PREFIX: 'github.com/<org>/yc-platform'
+  GO_VERSION: '1.26'
+  LOCAL_PREFIX: 'github.com/slaghuis/yc-platform'
   SERVICES: >-
     yc-identity yc-gateway yc-image yc-preference yc-product
     yc-pricing yc-inventory yc-cart yc-review yc-checkout
@@ -188,7 +188,7 @@ tasks:
       - ./scripts/gen-service.sh {{.NAME}}
 
   scaffold:event:
-    desc: Create a new event schema (DOMAIN=order ENTITY=order ACTION=placed VERSION=1)
+    desc: Create a new event schema (DOMAIN=order ACTION=placed VERSION=1; add ENTITY=stock for non-root entities)
     cmds:
       - ./scripts/gen-event.sh {{.DOMAIN}} {{.ENTITY}} {{.ACTION}} {{.VERSION}}
 

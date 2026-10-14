@@ -1,6 +1,6 @@
 # Event Conventions
 
-How events are named, structured, published, consumed, and evolved across yc-platform. Supplements ADR-001 (tenant isolation), ADR-003 (DLQ), ADR-006 (outbox), ADR-007 (schemas), and ADR-008 (platform tenant).
+How events are named, structured, published, consumed, and evolved across yc-platform. Supplements ADR-001 (tenant isolation and event type shape), ADR-003 (DLQ), ADR-006 (outbox), ADR-007 (schemas), ADR-008 (platform tenant), and ADR-019 (synchronous checkout saga).
 
 ## 1. Principles
 
@@ -12,57 +12,52 @@ How events are named, structured, published, consumed, and evolved across yc-pla
 6. **Events are not RPCs.** Don't model request/response as event pairs when a sync call is clearer.
 7. **Every event is tenant-scoped** (or `_platform`).
 
-## 2. Event vs Command
+## 2. Events, Not Commands
 
-Two taxonomies on the bus:
-
-### Events — facts
+The bus carries **facts**:
 
 - Past tense: `order.placed.v1`, `payment.captured.v1`, `inventory.stock.reserved.v1`.
 - Published after a state change has occurred.
 - Potentially many consumers; publisher doesn't know or care who.
 
-### Commands — requests
+When one service needs another to **do** something and cares about the outcome, it makes a synchronous call to the target's `/internal/` endpoint with an `Idempotency-Key` (`api-conventions.md` §10). The checkout saga works this way (ADR-019). Do not model request/response as a pair of events.
 
-- Imperative or request form: `inventory.reservation_requested.v1`, `payment.capture_requested.v1`, `orders.order_creation_requested.v1`.
-- Have a specific intended recipient service.
-- Carry an idempotency key.
-- Elicit a response event (success or failure form).
+**Guideline**: if you'd expect the publisher to care about who received it, or to wait for an answer, it's a call, not an event. If the publisher is announcing an outcome, it's an event.
 
-Both use the same envelope and the same bus. The distinction is semantic. Commands are used in sagas (yc-checkout coordinates via commands). Events are used for notification and projection updates.
-
-**Guideline**: if you'd expect the publisher to care about who received it, it's a command. If the publisher is announcing an outcome, it's an event.
+Some facts record that a person asked for something, for example `identity.user.password_reset_requested.v1` or `order.return_requested.v1`. These are events: the request has happened, and any service may react to it.
 
 ## 3. Naming
 
 ### Subject structure
 
 ```
-yc.<tenant_id>.<domain>.<entity>.<action>.v<version>
+yc.<tenant_id>.<event_type>
+
+event_type = <domain>[.<entity>].<action>.v<version>
 ```
 
 - `yc.` — platform prefix, fixed.
-- `<tenant_id>` — tenant ID or `_platform`.
-- `<domain>` — bounded context (identity, order, payment, pricing, …). Matches the owning service's suffix (yc-order → `order`).
-- `<entity>` — the thing acted upon (user, product, sku, reservation, charge).
-- `<action>` — what happened (placed, cancelled, received, requested).
+- `<tenant_id>` — tenant ID or `_platform`. Always the second segment. A tenant ID is a lowercase slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, at most 63 characters), so it can never span segments or contain a wildcard; `yc-eventbus` rejects anything else.
+- `<domain>` — bounded context (identity, order, payment, pricing, …). Usually the owning service's name without `yc-` and in the singular (yc-orders → `order`, yc-product → `product`).
+- `<entity>` — the thing acted upon, **only when it is not the domain's own aggregate** (user, sku, stock, reservation). Omit it for the aggregate itself: `order.placed.v1`, `checkout.completed.v1`, `product.updated.v1`.
+- `<action>` — what happened (placed, cancelled, received, password_reset_requested).
 - `v<version>` — schema version.
 
 ### Rules
 
-- All lowercase, snake_case for multi-word fields.
+- An event type has **three or four** dot-separated segments. The entity never repeats the domain: `order.order.placed.v1` is invalid, and `yc-eventbus` rejects it (ADR-001).
+- All lowercase, snake_case for multi-word segments and fields.
 - Hyphens never used; underscores for word separation.
-- Past tense for events (`placed`, `received`, `shipped`).
-- `_requested` suffix for commands (`capture_requested`, `reservation_requested`).
-- Domains, entities, and actions appear in the taxonomy registry (`docs/event-taxonomy.md`); new ones require a PR.
+- Past tense for actions (`placed`, `received`, `shipped`).
+- Domains, entities, and actions appear in the taxonomy registry (`docs/diagrams/event-taxonomy.md`); new ones require a PR.
 
 ### Examples
 
 ```
-yc.shop-abc.order.order.placed.v1
-yc.shop-abc.inventory.reservation.requested.v1   ← command
-yc.shop-abc.inventory.stock.reserved.v1          ← resulting event
-yc._platform.tenant.tenant.provisioned.v1
+yc.shop-abc.order.placed.v1                       ← order aggregate, no entity
+yc.shop-abc.inventory.stock.reserved.v1           ← entity "stock" in the inventory domain
+yc.shop-abc.identity.user.registered.v1
+yc._platform.platform.tenant.provisioned.v1       ← tenant "_platform", domain "platform", entity "tenant"
 ```
 
 ## 4. Envelope
@@ -91,7 +86,7 @@ Every event wraps its payload in the envelope (schema at `envelope/v1.json`):
 - `event_id`: UUID, unique per event. Used for consumer-side idempotency.
 - `event_type`: matches the schema's identifier.
 - `event_time`: UTC, millisecond precision.
-- `tenant_id`: always present; `_platform` for platform events.
+- `tenant_id`: always present; `_platform` for platform events. Must equal the subject's tenant segment: consumers send a mismatch to the `_platform` DLQ as poison before the handler runs (ADR-001, "Tenant routing guarantees").
 - `actor`: who caused this event (user or service).
 - `correlation_id`: shared across all events in one logical operation.
 - `causation_id`: event_id of the direct parent event, if any; null for user-triggered events.
@@ -112,7 +107,7 @@ Services never construct envelopes manually. `yc-eventbus.Publish` builds the en
 ### Snapshots vs references
 
 - **Snapshot** when the value at the time of the event matters (e.g., `order.placed.v1` snapshots `line_items` with prices at that moment — those prices are historical facts).
-- **Reference** when consumers want current state (e.g., `product.product.updated.v1` carries product ID; consumers fetch the current product if they need details).
+- **Reference** when consumers want current state (e.g., `product.updated.v1` carries product ID; consumers fetch the current product if they need details).
 
 ### Required vs optional fields
 
@@ -186,7 +181,7 @@ Always through `yc-eventbus.Subscribe`:
 
 ```go
 err := bus.Subscribe(ctx, eventbus.SubscribeOpts{
-    Subject:     "yc.*.order.order.placed.v1",   // all tenants
+    Subject:     "yc.*.order.placed.v1",   // all tenants
     DurableName: "yc-message-order-placed",
     MaxRetries:  5,
     Concurrency: 4,
@@ -212,8 +207,8 @@ Rules:
 
 Subscribers can filter at the subject level:
 
-- `yc.*.order.order.placed.v1` — all tenants
-- `yc.shop-abc.order.order.placed.v1` — one tenant
+- `yc.*.order.placed.v1` — all tenants
+- `yc.shop-abc.order.placed.v1` — one tenant
 - `yc._platform.>` — all platform events
 
 For most services, consume `yc.*.<domain>...` and let subject hierarchy do the work. Within a handler, the `envelope.TenantID` is available for business logic.
@@ -224,23 +219,9 @@ For most services, consume `yc.*.<domain>...` and let subject hierarchy do the w
 
 `yc-eventbus` dedupes by `event_id` using the `processed_events` table. Handlers can assume a given `event_id` is processed at most once per consumer group.
 
-### Command idempotency keys
+### Idempotency of synchronous calls
 
-Commands (which cause state changes in a target service) carry an **idempotency key** in the payload:
-
-```json
-{
-  "idempotency_key": "{session_id}:reserve",
-  "items": [...]
-}
-```
-
-The receiving service stores processed idempotency keys and returns the previous result on duplicate. This protects against:
-- Outbox publishing twice.
-- Service crash between publish and state update.
-- Manual DLQ replay.
-
-Keys are deterministic strings based on the saga and step. Not UUIDs. Not opaque. The receiving service must be able to detect "I've already done this specific thing."
+Requests that change state in another service are synchronous calls, not events (§2). They carry an `Idempotency-Key` header, and the receiving service stores the key with its response and returns that response on a repeat (`api-conventions.md` §10). In the checkout saga the keys are deterministic, `{session_id}:{step}` and `{session_id}:{step}:undo`, so a retry or a resumed saga always repeats the same request (ADR-019).
 
 ## 11. Ordering
 
@@ -250,7 +231,7 @@ Keys are deterministic strings based on the saga and step. Not UUIDs. Not opaque
 
 ## 12. Fan-Out
 
-Many events have multiple consumers. Example: `order.placed.v1` is consumed by yc-message, yc-shipping, yc-inventory, yc-analytics, yc-audit, yc-product.
+Many events have multiple consumers. Example: `order.placed.v1` is consumed by yc-message, yc-shipping, yc-analytics, yc-product and yc-monitor (see `docs/diagrams/event-taxonomy.md`).
 
 - **Each consumer has its own durable name** → each gets its own copy.
 - **Slow consumers do not block others** — NATS JetStream handles per-consumer offsets.
@@ -299,16 +280,14 @@ The `actor` field identifies who caused the event. Four actor types:
 
 ## 16. Event Catalog
 
-Every event used in the platform is listed in `docs/event-taxonomy.md`:
+Every event used in the platform is listed in `docs/diagrams/event-taxonomy.md`:
 
 - Event type (e.g., `order.placed.v1`)
 - Producer service
 - Consumer services
-- Short description
 - Trigger (what causes it)
-- Compensation (if any — for commands)
 
-**Adding a new event requires updating the catalog.** CI validates that every schema file has a catalog entry.
+**Adding a new event requires updating the catalog.** No CI check enforces this yet: `schema-check.yml` validates schema files and backward compatibility, not catalog coverage.
 
 ## 17. Common Field Conventions
 

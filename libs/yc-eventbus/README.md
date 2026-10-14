@@ -8,7 +8,7 @@ consumer-side idempotency, DLQ handling, and schema validation hook.
 - **Transactional outbox**. `Publish(ctx, tx, event)` inserts into your
   service's outbox within your transaction. A relay goroutine publishes to
   NATS; a failed publish retries with backoff and ends in DLQ.
-- **Tenant-scoped subjects**. `yc.<tenant>.<domain>.<entity>.<action>.v<N>`
+- **Tenant-scoped subjects**. `yc.<tenant>.<domain>[.<entity>].<action>.v<N>` (entity omitted for the domain's own aggregate, per ADR-001)
   constructed from envelope fields; services never build subjects by hand.
 - **Durable consumers**. `Subscribe(ctx, opts, handler)` creates a
   JetStream durable consumer per `(subject, DurableName)`.
@@ -55,8 +55,11 @@ err = client.Subscribe(ctx, eventbus.SubscribeOpts{
     DurableName: "yc-message-welcome",
     MaxRetries:  5,
 }, handleUserRegistered)
+```
 
 ## Error contract for handlers
+
+
 | Handler return | Outcome |
 | -------------- | ------- |
 | nil | Ack. Message marked in processed_events. |
@@ -79,7 +82,8 @@ See `config.go`. Noteworthy defaults:
 
 ## Testing
 For unit tests of code that uses the client, inject a Client or wrap it in your own interface. For integration tests, use `NewTestClient` from `testing.go`:
-```
+
+```go
 func TestWithEventBus(t *testing.T) {
     ctx := context.Background()
     db := testkit.StartPostgres(t)
@@ -96,16 +100,15 @@ The `yc-testkit` library (not yet implemented) will provide `StartPostgres` and 
 - **Streams are created at startup**. If a service declares a stream in Config.Streams, NewClient calls CreateOrUpdateStream. For production, stream creation and lifecycle management should be owned by ops tooling, with Config.Streams empty in services.
 - **DLQ monitoring**. yc-monitor subscribes to yc.*.*.dlq.v1 across all tenants. Replay via yc-dlq-cli replay.
 - **Metrics emitted**: event.publish.total, event.consume.total, event.publish_duration_seconds, event.processing_duration_seconds. See metrics.go.
-##See also
- - docs/standards/event-conventions.md — naming and payload rules
- - docs/adr/001-topic-based-tenant-isolation.md
- - docs/adr/003-dead-letter-topics.md
- - docs/adr/006-outbox-pattern.md
- - docs/adr/007-schema-registry.md
+## See also
 
----
+- `docs/standards/event-conventions.md` — naming and payload rules
+- `docs/adr/ADR-001 Topic-Based Tenant Isolation.md`
+- `docs/adr/ADR-003 Dead Letter Topics.md`
+- `docs/adr/ADR-006 Outbox Pattern.md`
+- `docs/adr/ADR-007 Schema Registry.md`
 
-## What this delivers against the specification
+## Coverage of the Phase 1 requirements
 
 Checking against the `yc-eventbus` requirements in Phase 1 of the implementation plan:
 
@@ -143,15 +146,13 @@ Checking against the `yc-eventbus` requirements in Phase 1 of the implementation
 
 ## Known rough edges to clean up
 
-Being honest about what I'd fix in a second pass:
-
-1. **`metricAttr` stub in `publish.go`** is dead code. The attribute construction uses `metric.WithAttributes` inline in each call site. The stub was a dropped intent; delete in next revision.
-
-2. **`versionFromEventType` reinvents parsing** instead of using `strconv.Atoi` on a cleanly split segment. The hand-rolled parsing was premature optimization. Should be:
+1. **`versionFromEventType` reinvents parsing** instead of using `strconv.Atoi` on a cleanly split segment. The hand-rolled parsing was premature optimization. Should be:
    ```go
    segments := strings.Split(eventType, ".")
    return strconv.Atoi(strings.TrimPrefix(segments[len(segments)-1], "v"))
-3. `metrics.go` uses `any` **for the stored instruments** and type-asserts in accessors. This is forced by the circular initialization problem — we can't type the fields with `metric.Int64Counter` because the init happens inside the client constructor. A cleaner alternative is a dedicated `instruments` struct built in initMetrics with properly typed fields. Minor refactor.
-4. **The subscription goroutine** uses `c.bgCtx` as the parent context for every handler invocation. This means per-message cancellation can only come from client shutdown. For long-running handlers with per-message timeouts, we'd need to derive a child context with a deadline. Not needed for v1 but worth noting.
-5. **No circuit breaker** around NATS publish failures. If NATS is down, the relay will keep hammering it at the configured interval. The retries-with-backoff on individual rows limit the blast radius, but a connection-level breaker would be a kinder operational posture. Postponed to Phase 9 hardening.
+   ```
+2. `metrics.go` uses `any` **for the stored instruments** and type-asserts in accessors. This is forced by the circular initialization problem — we can't type the fields with `metric.Int64Counter` because the init happens inside the client constructor. A cleaner alternative is a dedicated `instruments` struct built in initMetrics with properly typed fields. Minor refactor.
+3. **The subscription goroutine** uses `c.bgCtx` as the parent context for every handler invocation. This means per-message cancellation can only come from client shutdown. For long-running handlers with per-message timeouts, we'd need to derive a child context with a deadline. Not needed for v1 but worth noting.
+4. **No circuit breaker** around NATS publish failures. If NATS is down, the relay will keep hammering it at the configured interval. The retries-with-backoff on individual rows limit the blast radius, but a connection-level breaker would be a kinder operational posture. Postponed to Phase 9 hardening.
+5. **`outbox.pending` is registered but never recorded.** It is meant to be the current count of unpublished outbox rows, which an up/down counter cannot track reliably (a rolled-back `Publish` transaction would leave it high). It should become an observable gauge whose callback counts unpublished rows.
 6. **Integration tests are only sketched**. The full integration test file is deliberately empty pending `yc-testkit`. Builds and unit tests pass; publish/consume behavior under real conditions is unverified at this moment.

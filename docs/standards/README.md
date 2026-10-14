@@ -11,6 +11,3 @@ loads the relevant standards as context for every generation task.
 | `logging-tracing.md`  | Observability (logs, traces, metrics) |
 | `testing.md`          | Unit, integration, E2E conventions |
 | `event-conventions.md`| Event naming, structure, versioning |
-
-These documents were produced in an earlier design session; populate each
-file from that session.

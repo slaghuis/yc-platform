@@ -65,7 +65,7 @@ type ConsumedEvent struct {
 }
 
 type SubscribeOpts struct {
-    Subject       string         // e.g., "yc.*.order.order.placed.v1"
+    Subject       string         // e.g., "yc.*.order.placed.v1"
     DurableName   string         // consumer group name
     MaxRetries    int            // default 5
     BackoffPolicy BackoffPolicy  // exponential by default
@@ -160,7 +160,8 @@ CREATE INDEX idx_processed_events_time ON processed_events (processed_at);
 - On `Publish`: library loads the JSON Schema from `yc-event-schemas` matching the `event_type` and validates the payload
   - **Dev mode**: validation failure returns an error (fatal)
   - **Prod mode**: validation failure logs + emits metric + still publishes (configurable; default to fatal)
-- On `Subscribe`: library validates the envelope structure, then the payload against the schema
+- On `Subscribe`: library checks that the envelope `tenant_id` equals the subject's tenant segment, then validates the envelope structure, then the payload against the schema
+  - Tenant mismatch → `ErrPoison` → `_platform` DLQ (ADR-001)
   - Validation failure → `ErrPoison` → DLQ
 
 ## Observability

@@ -1,5 +1,5 @@
-# <name>
+# yc-cart
 
-See `docs/services/<name>.md` for the full requirement spec.
+See `docs/services/yc-cart.md` for the full requirement spec.
 
 Status: scaffold only.

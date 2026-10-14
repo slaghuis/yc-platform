@@ -264,7 +264,7 @@ CREATE POLICY tenant_isolation ON shipments
 | Event | Action |
 |---|---|
 | `order.placed.v1` | If `requires_shipping`: create shipment, call carrier driver |
-| `order.cancellation_requested.v1` | Cancel shipment if not yet dispatched |
+| `order.cancelled.v1` | Cancel shipment if not yet dispatched |
 | `platform.tenant.provisioned.v1` | Create empty tenant structures |
 | `platform.tenant.deleted.v1` | Delete tenant zones, rates; retain shipments for retention window |
 | `identity.user.deleted.v1` | Pseudonymize `delivery_address` on completed shipments beyond retention; else retain for operational integrity |

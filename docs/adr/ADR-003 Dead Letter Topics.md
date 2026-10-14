@@ -15,6 +15,9 @@ A message is considered poison when:
 - It fails schema validation
 - It fails processing after N retries (default: 5, with exponential backoff: 1s, 5s, 30s, 2m, 10m)
 - It throws a non-retriable error (explicit `ErrPoison` from the handler)
+- Its envelope `tenant_id` differs from the subject's tenant segment (ADR-001). These, and envelopes that cannot be parsed, go to the `_platform` DLQ rather than a tenant's, so a replay can never deliver them to the wrong shop.
+
+*Amended 2026-10-14: tenant-mismatch criterion and `_platform` DLQ routing added.*
 
 ## Rules
 

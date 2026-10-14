@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // runRelay is the outbox-to-NATS relay goroutine. It polls for

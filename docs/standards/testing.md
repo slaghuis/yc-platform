@@ -199,7 +199,7 @@ package integration
 import (
     "testing"
 
-    "github.com/<org>/yc-platform/libs/yc-testkit"
+    "github.com/slaghuis/yc-platform/libs/yc-testkit"
 )
 
 func TestRegistration(t *testing.T) {

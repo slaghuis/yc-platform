@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2025-01-15
+**Context:** Personal data about a user is spread across many services, each with its own database (ADR-017). A deletion request must reach all of them, be provably completed, and still respect legal retention of financial records.
 
 ## Decision
 
@@ -14,14 +15,24 @@ Deletion of personal data is **event-driven** and **anonymizing**, not destructi
 ## Cascade Protocol
 
 1. **Every PII-holding service MUST subscribe** to `identity.user.deleted.v1`
-2. Current PII-holding services:
-   - YC-Identity (owns the trigger)
-   - YC-Preference
-   - YC-Cart
-   - YC-Orders
-   - YC-Review
-   - YC-Message
-   - YC-Audit (special — see below)
+2. Current PII-holding services, each of which must report completion. This list is the `expected_services` configuration of the yc-audit cascade register; a service that starts holding user data is added to both.
+
+   | Service | Action |
+   |---|---|
+   | yc-identity | Owns the trigger; pseudonym mapping kept under legal hold |
+   | yc-preference | Delete preferences |
+   | yc-cart | Delete carts |
+   | yc-checkout | Pseudonymize sessions; purge guest contact after the operational window |
+   | yc-orders | Pseudonymize (financial record — see Exceptions) |
+   | yc-payment | Pseudonymize actor references (financial record — see Exceptions) |
+   | yc-shipping | Pseudonymize delivery addresses after the operational window |
+   | yc-review | Anonymize reviews, delete likes |
+   | yc-message | Anonymize recipient addresses after the operational window |
+   | yc-inventory | Delete back-in-stock subscriptions |
+   | yc-product | Delete the favourites projection |
+   | yc-analytics | Pseudonymize facts |
+
+   yc-audit runs the register and is special (see below). yc-image, yc-monitor, yc-gateway and yc-pricing hold no per-user data and do not take part.
 3. Within **24 hours** of receiving the event, each service must:
    - **Anonymize** the user's PII (replace with `anon-<hash>`), OR
    - **Delete** the row entirely if business rules allow

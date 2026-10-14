@@ -1,5 +1,5 @@
-# <name>
+# yc-payment
 
-See `docs/services/<name>.md` for the full requirement spec.
+See `docs/services/yc-payment.md` for the full requirement spec.
 
 Status: scaffold only.

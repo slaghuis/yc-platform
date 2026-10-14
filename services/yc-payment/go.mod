@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/services/<name>
+module github.com/slaghuis/yc-platform/services/yc-payment
 
-go 1.22
+go 1.26

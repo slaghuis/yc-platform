@@ -3,7 +3,7 @@ package eventbus
 import (
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Named for consistency with docs/standards/logging-tracing.md §12.
@@ -46,9 +46,6 @@ func (c *Client) publishCounter() metric.Int64Counter {
 }
 func (c *Client) consumeCounter() metric.Int64Counter {
 	return c.metricConsumeTotal.(metric.Int64Counter)
-}
-func (c *Client) outboxPending() metric.Int64UpDownCounter {
-	return c.metricOutboxPending.(metric.Int64UpDownCounter)
 }
 func (c *Client) publishDuration() metric.Float64Histogram {
 	return c.metricPublishDurationSec.(metric.Float64Histogram)

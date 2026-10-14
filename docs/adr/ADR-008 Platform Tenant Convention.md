@@ -10,14 +10,14 @@ Introduce a reserved pseudo-tenant: **`_platform`**.
 
 Subject pattern remains uniform:
 ```
-yc._platform.<domain>.<entity>.<action>.v<version>
+yc._platform.<event_type>
 ```
 
-Examples:
-- `yc._platform.tenant.provisioned.v1`
-- `yc._platform.tenant.suspended.v1`
-- `yc._platform.service.registered.v1`
-- `yc._platform.gdpr.cascade_completed.v1`
+Platform events use the `platform` domain, so the tenant segment (`_platform`) and the domain segment (`platform`) both appear. Examples:
+- `yc._platform.platform.tenant.provisioned.v1`
+- `yc._platform.platform.tenant.suspended.v1`
+- `yc._platform.platform.service.registered.v1`
+- `yc._platform.platform.gdpr.cascade_completed.v1`
 
 ## Rules
 

@@ -1,10 +1,7 @@
-### `docs/diagrams/README.md`
-
-```markdown
 # Diagrams
 
-Architecture diagrams in Mermaid or drawio format.
+Architecture diagrams and registries, in Markdown with Mermaid where useful.
 
-- `checkout-saga.md` — State machine and event flow
-- `gdpr-cascade.md`  — Deletion propagation across services
-- `event-taxonomy.md` — Visual map of event flows
+- [`checkout-saga.md`](checkout-saga.md) — Checkout state machine, synchronous calls and compensation (ADR-019)
+- [`gdpr-cascade.md`](gdpr-cascade.md) — Deletion propagation across services (ADR-005)
+- [`event-taxonomy.md`](event-taxonomy.md) — Registry of every event: producer, consumers, trigger

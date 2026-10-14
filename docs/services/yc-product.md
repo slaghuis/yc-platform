@@ -272,9 +272,9 @@ CREATE POLICY tenant_isolation ON products
 | `product.supplier.created.v1` | Supplier created |
 | `product.supplier.updated.v1` | Supplier updated |
 | `product.supplier.deleted.v1` | Supplier deleted |
-| `product.product.created.v1` | Product created |
-| `product.product.updated.v1` | Product updated |
-| `product.product.deleted.v1` | Product soft-deleted |
+| `product.created.v1` | Product created |
+| `product.updated.v1` | Product updated |
+| `product.deleted.v1` | Product soft-deleted |
 | `product.sku.created.v1` | SKU created (carries `inventory.tracked`, `tax_class`) |
 | `product.sku.updated.v1` | SKU updated |
 | `product.sku.deleted.v1` | SKU soft-deleted |

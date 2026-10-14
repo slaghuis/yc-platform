@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/envelope/v1.json",
+  "title": "Event Envelope v1",
+  "description": "Standard envelope wrapping every event on the yc-platform bus.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_time",
+    "tenant_id",
+    "actor",
+    "correlation_id",
+    "source_service",
+    "schema_version",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event; used for consumer-side idempotency."
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*(\\.[a-z][a-z_]*){1,2}\\.v[0-9]+$",
+      "description": "Event type <domain>[.<entity>].<action>.v<N> (ADR-001); matches the schema file name without .json."
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp of event emission."
+    },
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^(_platform|[a-z0-9]+(-[a-z0-9]+)*)$",
+      "description": "Tenant identifier: a lowercase slug, or '_platform' for platform-level events. Must equal the tenant segment of the subject (ADR-001)."
+    },
+    "actor": {
+      "$ref": "../common/actor.v1.json"
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Shared across all events in a logical operation."
+    },
+    "causation_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "event_id of the direct parent event, if any."
+    },
+    "source_service": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$",
+      "description": "Service or tool that emitted this event (e.g. yc-orders, yc-tenant-cli)."
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema version matching the version in event_type."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific data. Validated against the event's own schema."
+    }
+  }
+}

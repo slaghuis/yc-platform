@@ -384,7 +384,7 @@ Broad fan-in. Each event maps to one or more fact table inserts.
 |---|---|
 | `platform.tenant.provisioned.v1` | `dim_tenant` |
 | `platform.tenant.configuration_changed.v1` | `dim_tenant` |
-| `product.product.created.v1` / `.updated.v1` | `dim_product` |
+| `product.created.v1` / `.updated.v1` | `dim_product` |
 | `product.sku.created.v1` / `.updated.v1` | `dim_sku` |
 | `identity.visitor.created.v1` | `fact_visitor_session` |
 | `cart.created.v1`, `cart.item.added.v1`, `cart.abandoned.v1`, `cart.converted.v1`, `cart.cleared.v1` | `fact_cart_event` |
@@ -393,7 +393,7 @@ Broad fan-in. Each event maps to one or more fact table inserts.
 | `order.cancelled.v1` | Update `fact_order.status` |
 | `order.delivered.v1` | Update `fact_order.delivered_at` |
 | `order.refunded.v1` | Update `fact_order.refunded_amount_minor` |
-| `payment.authorized.v1`, `payment.captured.v1`, `payment.charged.v1`, `*_failed.v1` | `fact_payment` |
+| `payment.authorized.v1`, `payment.captured.v1`, `payment.charged.v1`, `payment.authorization_failed.v1`, `payment.capture_failed.v1`, `payment.charge_failed.v1` | `fact_payment` |
 | `review.submitted.v1`, `review.approved.v1`, `review.rejected.v1` | `fact_review` |
 | `identity.user.deleted.v1` | Pseudonymize `user_id` in facts; publish `platform.gdpr.cascade_completed.v1` |
 | `platform.tenant.deleted.v1` | Mark tenant inactive in `dim_tenant`; retain facts for reporting history or delete per policy |

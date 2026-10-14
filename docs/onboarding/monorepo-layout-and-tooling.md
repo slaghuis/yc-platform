@@ -325,7 +325,7 @@ Test helpers used by every service:
 `go.work` at the repo root ties all modules together:
 
 ```go
-go 1.22
+go 1.26
 
 use (
     ./libs/yc-eventbus
@@ -374,10 +374,10 @@ use (
 
 ### Module naming
 
-- Repo: `github.com/<org>/yc-platform`
-- Each module: `github.com/<org>/yc-platform/<path>`
-  - e.g., `github.com/<org>/yc-platform/libs/yc-eventbus`
-  - e.g., `github.com/<org>/yc-platform/services/yc-identity`
+- Repo: `github.com/slaghuis/yc-platform`
+- Each module: `github.com/slaghuis/yc-platform/<path>`
+  - e.g., `github.com/slaghuis/yc-platform/libs/yc-eventbus`
+  - e.g., `github.com/slaghuis/yc-platform/services/yc-identity`
 
 ---
 
@@ -391,7 +391,7 @@ We use **[Task](https://taskfile.dev/)** as the primary task runner. It is cross
 version: '3'
 
 vars:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.26'
   SERVICES: >-
     yc-identity yc-gateway yc-image yc-preference yc-product
     yc-pricing yc-inventory yc-cart yc-review yc-checkout
@@ -514,8 +514,8 @@ tasks:
     cmd: ./scripts/gen-service.sh {{.NAME}}
 
   scaffold:event:
-    desc: Create a new event schema (DOMAIN=... NAME=...)
-    cmd: ./scripts/gen-event.sh {{.DOMAIN}} {{.NAME}}
+    desc: Create a new event schema (DOMAIN=order ACTION=placed VERSION=1; add ENTITY=stock for non-root entities)
+    cmd: ./scripts/gen-event.sh {{.DOMAIN}} {{.ENTITY}} {{.ACTION}} {{.VERSION}}
 
   # ─── Convenience ──────────────────────────────────────────
   run:
@@ -703,7 +703,7 @@ services:
 
 ```dockerfile
 # syntax=docker/dockerfile:1.6
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.26
 
 FROM golang:${GO_VERSION}-alpine AS builder
 ARG SERVICE
@@ -727,7 +727,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 ARG SERVICE
 LABEL org.opencontainers.image.title="${SERVICE}"
-LABEL org.opencontainers.image.source="https://github.com/<org>/yc-platform"
+LABEL org.opencontainers.image.source="https://github.com/slaghuis/yc-platform"
 
 COPY --from=builder /out/service /app/service
 USER nonroot:nonroot
@@ -784,7 +784,7 @@ Trigger: `task gen:openapi` (in service dir) or `task gen` (root).
 run:
   timeout: 5m
   tests: true
-  go: '1.22'
+  go: '1.26'
 
 linters:
   enable:
@@ -893,7 +893,7 @@ repos:
       - id: goimports
         name: goimports
         language: system
-        entry: goimports -w -local github.com/<org>/yc-platform
+        entry: goimports -w -local github.com/slaghuis/yc-platform
         files: \.go$
 
       - id: golangci-lint
@@ -929,7 +929,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.26'
 
 jobs:
   changes:
@@ -1054,8 +1054,8 @@ jobs:
           build-args: SERVICE=${{ matrix.service }}
           push: true
           tags: |
-            ghcr.io/<org>/yc-platform/${{ matrix.service }}:${{ github.sha }}
-            ghcr.io/<org>/yc-platform/${{ matrix.service }}:latest
+            ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:latest
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
 ```
@@ -1087,7 +1087,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: '1.22' }
+        with: { go-version: '1.26' }
       - name: Start full stack
         run: docker compose -f docker-compose.yml -f deploy/compose/e2e.yml up -d
       - name: Wait for services
@@ -1140,13 +1140,13 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/<org>/yc-platform/libs/yc-config"
-    "github.com/<org>/yc-platform/libs/yc-dbkit"
-    "github.com/<org>/yc-platform/libs/yc-eventbus"
-    "github.com/<org>/yc-platform/libs/yc-httpkit"
-    "github.com/<org>/yc-platform/libs/yc-telemetry"
+    "github.com/slaghuis/yc-platform/libs/yc-config"
+    "github.com/slaghuis/yc-platform/libs/yc-dbkit"
+    "github.com/slaghuis/yc-platform/libs/yc-eventbus"
+    "github.com/slaghuis/yc-platform/libs/yc-httpkit"
+    "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 
-    "github.com/<org>/yc-platform/services/yc-identity/internal/app"
+    "github.com/slaghuis/yc-platform/services/yc-identity/internal/app"
 )
 
 var version = "dev"
@@ -1197,9 +1197,9 @@ func must(err error) {
 
 ## 12. Scaffolding — Adding a New Event
 
-`scripts/gen-event.sh <domain> <entity>.<action>` does:
+`scripts/gen-event.sh <domain> [<entity>] <action> <version>` does:
 
-1. Create `schemas/yc-event-schemas/<domain>/<entity>.<action>.v1.json` from a template
+1. Create `schemas/yc-event-schemas/<domain>/<event_type>.json` from a template (e.g. `order/order.placed.v1.json`, `inventory/inventory.stock.reserved.v1.json`; ADR-007)
 2. Run `task gen:events` to regenerate Go types
 3. Add the event type constant to the appropriate domain package
 4. Print a reminder: "update the taxonomy doc, publisher service, and consumer service(s)"
@@ -1259,7 +1259,7 @@ A new developer joining the project:
 
 ```bash
 # 1. Clone
-git clone https://github.com/<org>/yc-platform.git
+git clone https://github.com/slaghuis/yc-platform.git
 cd yc-platform
 
 # 2. Install tools
@@ -1316,7 +1316,7 @@ Documented in `docs/onboarding/developer-setup.md`. Verified by `task check-deps
 
 | Tool | Minimum Version | Purpose |
 |---|---|---|
-| Go | 1.22 | Language |
+| Go | 1.26 | Language |
 | Docker | 24+ | Dev stack |
 | Docker Compose | V2 | Dev stack |
 | Task | 3.30+ | Task runner |

@@ -3,7 +3,7 @@
 # Shared Dockerfile for all yc-platform services.
 # Build with: docker build --build-arg SERVICE=yc-identity -f deploy/docker/Dockerfile.service .
 
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.26
 
 # ─────────────────────────────────────────────────────────────
 FROM golang:${GO_VERSION}-alpine AS builder
@@ -34,8 +34,8 @@ FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 ARG SERVICE
 
 LABEL org.opencontainers.image.title="${SERVICE}"
-LABEL org.opencontainers.image.source="https://github.com/<org>/yc-platform"
-LABEL org.opencontainers.image.vendor="<org>"
+LABEL org.opencontainers.image.source="https://github.com/slaghuis/yc-platform"
+LABEL org.opencontainers.image.vendor="slaghuis"
 
 COPY --from=builder /out/service /app/service
 

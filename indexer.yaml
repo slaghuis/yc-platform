@@ -1,0 +1,16 @@
+repo: yc-platform
+root: /Users/slaghuis/code/services/yc-platform
+concurrency: 4
+ignore:
+  - generated
+  - mocks
+
+qdrant:
+  host: localhost
+  port: 6334            # gRPC port
+  collection: code_chunks
+  dim: 768              # nomic-embed-text
+
+ollama:
+  base_url: http://localhost:11434
+  model: nomic-embed-text

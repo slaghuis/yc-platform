@@ -6,10 +6,9 @@ package main
 
 import (
     "fmt"
-    "os"
 )
 
 func main() {
-    fmt.Fprintln(os.Stdout, "yc-schema-gen: placeholder (not yet implemented)")
-    fmt.Fprintln(os.Stdout, "  will generate libs/yc-events/generated/*.go from schemas/yc-event-schemas/**/*.json")
+    fmt.Println("yc-schema-gen: placeholder (not yet implemented)")
+    fmt.Println("  will generate libs/yc-events/generated/*.go from schemas/yc-event-schemas/**/*.json")
 }

@@ -2,7 +2,7 @@
 
 ## Overview
 
-`yc-orders` is the authoritative source for orders. An order is created when a checkout session reaches the `ORDER_CREATE` step and completes. Orders have a lifecycle (received → packaged → shipped → delivered) with transitions driven by yc-shipping events and shop admin actions. Refunds, cancellations, and returns are managed here.
+`yc-orders` is the authoritative source for orders. yc-checkout creates an order as `pending_payment` at the `ORDER_CREATE` step and confirms it once payment has succeeded (ADR-019); only then is the order placed. Orders have a lifecycle (received → packaged → shipped → delivered) with transitions driven by yc-shipping events and shop admin actions. Refunds, cancellations, and returns are managed here.
 
 ## Location in Monorepo
 
@@ -12,7 +12,7 @@
 
 ## Responsibilities
 
-1. Create orders in response to checkout commands
+1. Create pending orders for yc-checkout, then confirm or abandon them (synchronous internal calls, ADR-019)
 2. Store the full order snapshot (items, pricing, taxes, addresses, customer references)
 3. Maintain order status through the lifecycle
 4. Allow shop admin status updates (packaged, note additions)
@@ -31,6 +31,9 @@
 ## Order Lifecycle
 
 ```
+pending_payment ─▶ abandoned            (checkout compensation; terminal)
+       │
+       ▼
 received ─▶ packaged ─▶ shipped ─▶ delivered ─▶ (completed)
     │           │           │
     │           │           └─▶ delivery_exception ─▶ (resolution path)
@@ -42,7 +45,9 @@ received ─▶ packaged ─▶ shipped ─▶ delivered ─▶ (completed)
 disputed (triggered by chargeback) ─▶ resolved (won/lost)
 ```
 
-- `received` = order just placed by yc-checkout
+- `pending_payment` = created by yc-checkout, payment not yet captured; no events published, hidden from customer and shop admin listings
+- `abandoned` = checkout compensated before payment succeeded; hidden, no events published
+- `received` = paid and confirmed by yc-checkout; `order.placed.v1` published
 - `packaged` = shop admin marks ready for carrier
 - `shipped` = yc-shipping event received
 - `delivered` = yc-shipping event received
@@ -50,7 +55,7 @@ disputed (triggered by chargeback) ─▶ resolved (won/lost)
 - `returned` = post-delivery return accepted
 - `disputed` = chargeback received
 
-Terminal states: `delivered`, `cancelled`, `refunded`, `returned`.
+Terminal states: `abandoned`, `delivered`, `cancelled`, `refunded`, `returned`.
 
 ## Order Snapshot
 
@@ -144,9 +149,13 @@ When a visitor's order is complete and the visitor later registers with the same
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/orders` | Create order (used by yc-checkout) | service |
+| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE) | service |
+| POST | `/internal/orders/{id}/confirm` | Payment succeeded: → `received`, publish `order.placed.v1` (yc-checkout, CONFIRMING) | service |
+| POST | `/internal/orders/{id}/abandon` | Checkout compensation: `pending_payment` → `abandoned` | service |
 | GET | `/internal/orders/{id}` | Fetch order | service |
 | GET | `/internal/orders/user/{user_id}/has_purchased_product/{product_id}` | Verified purchase | service |
+
+The create, confirm and abandon endpoints require `Idempotency-Key` and return the stored response on a repeated key. Confirm and abandon are idempotent on state: confirming a `received` order or abandoning an `abandoned` (or never-created) order succeeds without side effects.
 
 ## Database Schema
 
@@ -224,8 +233,7 @@ CREATE POLICY tenant_isolation ON orders
 
 | Event | When |
 |---|---|
-| `order.placed.v1` | Order created (triggered by `orders.order_creation_requested.v1`) |
-| `order.creation_failed.v1` | Could not create order |
+| `order.placed.v1` | Order confirmed after payment (`POST /internal/orders/{id}/confirm`) |
 | `order.packaged.v1` | Shop admin marked ready |
 | `order.shipped.v1` | Shipping confirmed |
 | `order.delivered.v1` | Delivery confirmed |
@@ -243,14 +251,10 @@ CREATE POLICY tenant_isolation ON orders
 
 | Event | Action |
 |---|---|
-| `orders.order_creation_requested.v1` | Create order |
-| `order.cancellation_requested.v1` | Cancel if possible |
 | `shipping.label_created.v1` | Update order with tracking info |
 | `shipping.in_transit.v1` | Advance to `shipped` |
 | `shipping.delivered.v1` | Advance to `delivered` |
 | `shipping.delivery_exception.v1` | Flag exception |
-| `payment.captured.v1` | Confirm payment on order |
-| `payment.charged.v1` | Confirm payment on order |
 | `payment.refund_completed.v1` | Mark order (or portion) refunded |
 | `payment.chargeback_received.v1` | Transition to `disputed` |
 | `identity.user.registered.v1` | Check for guest orders by email; expose claim opportunity |
@@ -285,7 +289,7 @@ yc-orders:
 
 - Customers (view/cancel/return)
 - Shop admins (fulfillment)
-- `yc-checkout` (create order)
+- `yc-checkout` (create, confirm, abandon — ADR-019)
 - `yc-review` (verified purchase check)
 
 ## GDPR Behavior

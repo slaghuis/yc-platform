@@ -186,7 +186,7 @@ A visitor can see products with prices. No cart yet; just browse.
 - Categories CRUD (shop_admin)
 - Public browse endpoint (`GET /products` with basic filtering, pagination)
 - Public product detail endpoint
-- Published events: `product.supplier.*`, `product.product.*`, `product.sku.*`, `product.category.*`
+- Published events: `product.supplier.*`, `product.created|updated|deleted.v1`, `product.sku.*`, `product.category.*`
 - `sku_search_projection` table populated on CRUD, no event-driven updates yet (added in Phase 3)
 - Simple name/description full-text search via Postgres FTS
 
@@ -305,7 +305,7 @@ Customers can build carts. Visitor carts merge on login. Preferences work.
 
 ## Phase 4 — Checkout Happy Path (3 weeks)
 
-The hardest phase. Full saga from cart to paid order with Stripe. Inventory reservation, pricing authority at checkout, payment authorization + capture, order creation, cart clear.
+The hardest phase. Full saga from cart to paid order with Stripe. Inventory reservation, pricing authority at checkout, payment authorization + capture, order creation and confirmation, cart clear. The saga calls each participant synchronously (ADR-019).
 
 This phase will stress every piece of infrastructure. Budget for debugging.
 
@@ -316,37 +316,37 @@ This phase will stress every piece of infrastructure. Budget for debugging.
 - Tenant inventory config (enabled/disabled)
 - SKU-level `inventory_tracked` honored
 - Admin APIs: receive, adjust, set threshold
-- Reservation lifecycle (reserve → commit/release/expire)
+- Reservation lifecycle (reserve → commit/release/expire) via idempotent internal endpoints
 - Expiry sweeper (30s interval)
 - Published events: `inventory.*.v1`
 - Subscribes to `product.sku.*.v1`
 
 **yc-payment**
 - Stripe driver (Variant A — separate authorize + capture)
-- Internal endpoints: `/internal/authorize`, `/internal/capture`, `/internal/void`, `/internal/refund`
+- Internal endpoints: `/internal/authorize`, `/internal/capture`, `/internal/void`, `/internal/refund` — idempotent by `Idempotency-Key`; `pending` result for 3-D Secure
 - Webhook endpoint: `/webhooks/stripe` with signature verification
 - Encrypted credential storage per tenant
 - Published events: `payment.*.v1`
 
 **yc-orders**
-- Order creation from checkout
+- Internal create (`pending_payment`), confirm and abandon endpoints for checkout
 - Order snapshot (items, pricing, taxes, addresses — all captured at creation)
-- Order status lifecycle: `received`, `cancelled` (shipping-driven states come in Phase 6)
-- Published events: `order.placed.v1`, `order.cancelled.v1`, `order.creation_failed.v1`
+- Order status lifecycle: `pending_payment`, `abandoned`, `received`, `cancelled` (shipping-driven states come in Phase 6)
+- Published events: `order.placed.v1` (on confirm only), `order.cancelled.v1`
 - Order number generation (per-tenant sequence)
 
 **yc-checkout**
-- Full saga orchestration (Variant A path)
+- Full saga orchestration (Variant A path) with synchronous internal calls (ADR-019)
 - Session management with 30-minute TTL
 - Session resumption on service restart
-- Compensation flows for every failure point
+- Compensation flows for every failure point before capture; forward-only CONFIRMING after it
 - Guest checkout: email + phone + address validation per ADR-010
-- Published events: all `checkout.*.v1` plus command events to inventory, payment, orders
+- Published events: all `checkout.*.v1` (no command events)
 
 ### Scope — Shared library extensions
 
-- `yc-eventbus` — command event helpers with idempotency keys baked in
-- `yc-authctx` — guest contact propagation through saga events
+- `yc-httpkit` — internal-call client (service token, header propagation, timeouts, retries with a fixed `Idempotency-Key`) and server-side `Idempotency-Key` middleware that stores and replays responses
+- `yc-authctx` — guest contact propagation through saga calls
 
 ### Scope — yc-product extensions
 
@@ -370,7 +370,7 @@ Scripted demo:
 1. Customer with cart containing 2 items (1 tracked, 1 untracked digital) initiates `POST /checkout`
 2. Session enters PRICING; snapshot includes current prices, VAT
 3. Customer confirms with Stripe test card token
-4. Session advances RESERVING → AUTHORIZING → ORDER_CREATE → CAPTURING → COMPLETED
+4. Session advances RESERVING → AUTHORIZING → ORDER_CREATE → CAPTURING → CONFIRMING → COMPLETED, and the confirm request returns the order
 5. Order visible in `/orders/mine`
 6. Payment visible in Stripe dashboard
 7. Cart is cleared
@@ -378,7 +378,7 @@ Scripted demo:
 9. Full trace visible in Jaeger across all services
 
 Scripted failure demo:
-10. Repeat but with an invalid payment token; saga enters COMPENSATING, releases reservation, no order created
+10. Repeat but with an invalid payment token; saga enters COMPENSATING, releases reservation, no order placed (the pending order, if created, is abandoned)
 11. Repeat with out-of-stock item; reservation fails fast; no payment attempted
 
 ### Exit criteria

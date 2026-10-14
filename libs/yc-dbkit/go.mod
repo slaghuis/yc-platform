@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/libs/yc-dbkit
+module github.com/slaghuis/yc-platform/libs/yc-dbkit
 
-go 1.22
+go 1.26

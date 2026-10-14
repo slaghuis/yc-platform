@@ -19,10 +19,12 @@
 | 015 | Address Storage as JSON | Accepted |
 | 016 | Tax within Pricing — Multiple Tax Rates per Product | Accepted |
 | 017 | Database Per Service | Accepted |
+| 018 | Workspace-Aware Pipeline | Accepted |
+| 019 | Synchronous Checkout Saga | Accepted |
 
-Each ADR is in its own file: `001-topic-based-tenant-isolation.md`, etc.
-These were produced in earlier design sessions; populate each file from
-those sessions.
+Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
+
+An accepted ADR is not rewritten. A clarification or a narrow change caused by a later ADR is recorded in place with an *Amended YYYY-MM-DD* note; a reversed decision gets a new ADR, and the old one's status becomes "Superseded by ADR-XXX".
 
 ## Template
 
@@ -54,3 +56,4 @@ New ADRs follow this template:
 ## Alternatives Considered
 
 - **<Alternative>**: <Why rejected>
+```

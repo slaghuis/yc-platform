@@ -45,8 +45,8 @@ jobs:
           build-args: SERVICE=${{ matrix.service }}
           push: true
           tags: |
-            ghcr.io/<org>/yc-platform/${{ matrix.service }}:${{ github.sha }}
-            ghcr.io/<org>/yc-platform/${{ matrix.service }}:${{ github.ref_name }}
-            ghcr.io/<org>/yc-platform/${{ matrix.service }}:latest
+            ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:${{ github.ref_name }}
+            ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:latest
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max

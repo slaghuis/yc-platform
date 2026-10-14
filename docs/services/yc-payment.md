@@ -128,6 +128,11 @@ None. Payment capture flows through yc-checkout; the frontend talks directly to 
 | GET | `/internal/transactions/{id}` | Fetch transaction | service |
 | GET | `/internal/gateway-capabilities/{gateway}` | Capability lookup for yc-checkout | service |
 
+yc-checkout calls these synchronously during the saga (ADR-019):
+- Mutating calls require `Idempotency-Key` (`{session_id}:{step}`, compensation `{session_id}:{step}:undo`), stored in `transactions.idempotency_key`. A repeated key returns the transaction's **current** status, so a retry after a timeout or a `pending` result gets the real outcome.
+- When the gateway needs customer action (3-D Secure) or confirms later, the call returns `pending` with the gateway's `next_action`. The final outcome arrives by webhook and is published as `payment.authorized.v1`, `payment.charged.v1`, `payment.captured.v1` or the matching `*_failed.v1`.
+- Void and refund treat "nothing to undo" (no transaction for the key) as success.
+
 ### Webhook Endpoints (Public, Signed)
 
 | Method | Path | Description |
@@ -257,14 +262,9 @@ CREATE POLICY tenant_isolation ON transactions
 
 | Event | Action |
 |---|---|
-| `payment.authorization_requested.v1` | Perform authorization |
-| `payment.capture_requested.v1` | Perform capture |
-| `payment.charge_requested.v1` | Perform combined charge |
-| `payment.void_requested.v1` | Perform void |
-| `payment.refund_requested.v1` | Perform refund |
 | `platform.tenant.provisioned.v1` | Prepare per-tenant structures (no credentials yet) |
 | `platform.tenant.deleted.v1` | Mark tenant as inactive; retain transactions for legal retention |
-| `identity.user.deleted.v1` | No deletion — transactions retained per ADR-005 (financial record); replace associated `actor_id` on manual refund with pseudonym |
+| `identity.user.deleted.v1` | No deletion — transactions retained per ADR-005 (financial record); replace associated `actor_id` on manual refund with pseudonym; publish `platform.gdpr.cascade_completed.v1` |
 
 ## Configuration
 
@@ -298,8 +298,8 @@ yc-payment:
 
 ## Called By
 
-- `yc-checkout` (saga command events)
-- `yc-orders` (refunds initiated post-order)
+- `yc-checkout` (synchronous saga calls, ADR-019)
+- `yc-orders` (refunds initiated post-order, `POST /internal/refund`)
 - Shop admins (manual refunds)
 - Gateways (webhooks)
 
@@ -310,6 +310,7 @@ yc-payment:
 - Linkage to a user is via `order_id` → yc-orders (which handles pseudonymization)
 - On `identity.user.deleted.v1`: no deletion of transactions (financial retention); `actor_id` on admin-initiated refunds pseudonymized
 - Payment gateway tokens never persisted beyond the single API call
+- Publish `platform.gdpr.cascade_completed.v1` so the yc-audit register can close the cascade
 
 ## Security
 

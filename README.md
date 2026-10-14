@@ -17,3 +17,6 @@ task devstack:up
 
 # Run tests
 task test
+```
+
+See `docs/onboarding/` for setup details and `docs/README.md` for the full documentation map.

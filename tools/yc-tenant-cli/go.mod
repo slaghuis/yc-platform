@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/tools/yc-tenant-cli
+module github.com/slaghuis/yc-platform/tools/yc-tenant-cli
 
-go 1.22
+go 1.26

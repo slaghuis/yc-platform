@@ -1,22 +1,22 @@
 # Platform
-*                           @<org>/platform
+*                           @slaghuis
 
 # Shared libraries
-/libs/                      @<org>/platform-core
-/schemas/                   @<org>/platform-core
-/libs/yc-eventbus/          @<org>/platform-core
-/libs/yc-authctx/           @<org>/platform-core
+/libs/                      @slaghuis
+/schemas/                   @slaghuis
+/libs/yc-eventbus/          @slaghuis
+/libs/yc-authctx/           @slaghuis
 
 # Services (future: route per service)
-/services/                  @<org>/platform
-/services/yc-identity/      @<org>/platform
-/services/yc-payment/       @<org>/platform-payments
-/services/yc-orders/        @<org>/platform-orders
+/services/                  @slaghuis
+/services/yc-identity/      @slaghuis
+/services/yc-payment/       @slaghuis
+/services/yc-orders/        @slaghuis
 
 # Standards and ADRs — architect review
-/docs/adr/                  @<org>/architects
-/docs/standards/            @<org>/architects
+/docs/adr/                  @slaghuis
+/docs/standards/            @slaghuis
 
 # CI
-/.github/                   @<org>/platform-ops
-/deploy/                    @<org>/platform-ops
+/.github/                   @slaghuis
+/deploy/                    @slaghuis

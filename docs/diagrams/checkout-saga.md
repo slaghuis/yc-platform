@@ -1,71 +1,51 @@
 # Checkout Saga
 
-The checkout flow is the most complex orchestration in the platform. It involves Cart, Pricing, Inventory, Shipping, Tax, Payment, and Orders — any of which can fail at any step. We implement it as an **orchestrated saga** owned by a new service: **YC-Checkout**.
+The checkout flow is the most complex orchestration in the platform. It involves Cart, Pricing, Shipping, Inventory, Payment and Orders — any of which can fail at any step. It is an **orchestrated saga** owned by **yc-checkout**, which calls each participant **synchronously** (ADR-019). The bus carries only the facts that result.
 
-## Why a Dedicated YC-Checkout Service?
+## Why a Dedicated yc-checkout Service?
 
 - **Orchestration logic doesn't belong in Cart** (Cart's job is cart content, not transaction coordination)
-- **Doesn't belong in Orders either** — an order only exists if checkout succeeds
+- **Doesn't belong in Orders either** — an order only becomes real once it is paid
 - Centralizes compensation logic (undoing on failure)
 - Provides a stable API surface for the frontend during the multi-step checkout UX
 
 ## Saga Participants
 
-| Service | Role | Compensation |
-|---|---|---|
-| YC-Cart | Source of items being checked out | — |
-| YC-Pricing | Compute final line prices & totals | — (snapshot only) |
-| YC-Tax | Compute taxes | — |
-| YC-Shipping | Quote shipping | — |
-| YC-Inventory | Reserve stock | Release reservation |
-| YC-Payment | Authorize & capture payment | Void authorization / refund |
-| YC-Orders | Create the order record | Cancel order |
-| YC-Cart | Clear cart after success | Restore cart |
+| Service | Role | Internal call | Compensation |
+|---|---|---|---|
+| yc-cart | Source of items being checked out | `GET /internal/carts/{user_id}/{type}` | — |
+| yc-pricing | Final line prices, totals and tax (ADR-016) | `POST /internal/evaluate` | — (snapshot only) |
+| yc-shipping | Shipping quotes | `POST /internal/quote` | — |
+| yc-inventory | Reserve stock (tracked SKUs only, ADR-012), commit once paid | `POST /internal/reservations`, `/internal/reservations/{id}/commit` | `POST /internal/reservations/{id}/release` |
+| yc-payment | Authorize & capture (A) or charge (B) | `POST /internal/authorize`, `/capture`, `/charge` | `POST /internal/void` |
+| yc-orders | Create pending order, confirm once paid | `POST /internal/orders`, `/internal/orders/{id}/confirm` | `POST /internal/orders/{id}/abandon` |
+
+The cart is cleared asynchronously when yc-cart receives `checkout.completed.v1`.
 
 ## State Machine
 
+Variant A (gateway supports separate authorize and capture):
+
 ```
-                 ┌─────────────┐
-                 │   STARTED   │
-                 └──────┬──────┘
-                        │
-                        ▼
-                 ┌─────────────┐
-                 │   PRICING   │────fail────┐
-                 └──────┬──────┘            │
-                        │                   │
-                        ▼                   │
-                 ┌─────────────┐            │
-                 │  RESERVING  │────fail────┤
-                 └──────┬──────┘            │
-                        │                   │
-                        ▼                   │
-                 ┌─────────────┐            │
-                 │ AUTHORIZING │────fail────┤
-                 └──────┬──────┘            │
-                        │                   │
-                        ▼                   │
-                 ┌─────────────┐            │
-                 │ ORDER_CREATE│────fail────┤
-                 └──────┬──────┘            │
-                        │                   │
-                        ▼                   │
-                 ┌─────────────┐            │
-                 │  CAPTURING  │────fail────┤
-                 └──────┬──────┘            │
-                        │                   │
-                        ▼                   ▼
-                 ┌─────────────┐     ┌─────────────┐
-                 │  COMPLETED  │     │ COMPENSATING│
-                 └─────────────┘     └──────┬──────┘
-                                            │
-                                            ▼
-                                     ┌─────────────┐
-                                     │   FAILED    │
-                                     └─────────────┘
+STARTED → PRICING → RESERVING → AUTHORIZING → ORDER_CREATE → CAPTURING → CONFIRMING → COMPLETED
 ```
 
-Every state transition is persisted to the YC-Checkout database AND emits an event. The saga is **resumable** — a crash in any state recovers from the persisted state.
+Variant B (combined charge, ADR-013):
+
+```
+STARTED → PRICING → RESERVING → ORDER_CREATE → CHARGING → CONFIRMING → COMPLETED
+```
+
+Any failure **before** capture or charge succeeds:
+
+```
+<failed step> → COMPENSATING → FAILED
+<any pre-payment step> --(session TTL reached)--> COMPENSATING → EXPIRED
+```
+
+RESERVING is skipped when no SKU is tracked. **Capture or charge success is the point of no return**: after it, the saga only moves forward, and CONFIRMING is retried until yc-orders confirms.
+
+Every state transition is persisted to the yc-checkout database before and after each call, and emits a `checkout.*.v1` fact where one is listed below. The saga is **resumable** — a crash in any state recovers from the persisted state by repeating the in-flight call with the same idempotency key.
 
 ## Checkout Session Model
 
@@ -77,242 +57,175 @@ CheckoutSession
 ├── cart_id            UUID
 ├── state              ENUM
 ├── items              []LineItem   (snapshotted from cart at START)
-├── pricing_snapshot   JSONB        (populated at PRICING)
-├── tax_snapshot       JSONB        (populated at PRICING)
+├── pricing_snapshot   JSONB        (populated at PRICING; includes tax)
 ├── shipping_quote     JSONB        (populated at PRICING)
 ├── reservation_id     UUID         (populated at RESERVING)
 ├── reservation_expires TIMESTAMPTZ
-├── payment_intent_id  TEXT         (populated at AUTHORIZING)
+├── payment_intent_id  TEXT         (populated at AUTHORIZING / CHARGING)
 ├── payment_auth_id    TEXT
 ├── order_id           UUID         (populated at ORDER_CREATE)
 ├── compensation_log   JSONB        (what has been undone, for recovery)
 ├── created_at         TIMESTAMPTZ
 ├── updated_at         TIMESTAMPTZ
-└── expires_at         TIMESTAMPTZ  (session lifetime: 30 min)
+└── expires_at         TIMESTAMPTZ  (session lifetime: 30 min, ADR-011)
 ```
 
-## Happy Path — Event Flow
+## Happy Path (Variant A)
 
-Correlation ID (`correlation_id`) ties every event in a single saga together. `causation_id` chains the parent-child relationship.
+`correlation_id` (from `X-YC-Correlation-ID`) ties every call and every event of one checkout together. All calls go through yc-gateway with yc-checkout's service token.
 
-### Step 1: Start Checkout
-Frontend calls `POST /checkout` on YC-Checkout.
+### Step 1: Start checkout
+Frontend calls `POST /checkout`.
 
 ```
-YC-Checkout:
-  1. Fetches cart from YC-Cart (synchronous, needs current state)
-  2. Snapshots cart items into CheckoutSession
+yc-checkout:
+  1. GET yc-cart /internal/carts/{user_id}/{type}
+  2. Snapshots cart items into the session
   3. Transitions STARTED
-  4. Publishes: yc.<tenant>.checkout.checkout.started.v1
+  4. Publishes checkout.started.v1
 ```
 
-### Step 2: Price & Quote
-```
-YC-Checkout → YC-Pricing (sync call via gateway):
-  - Request: items, user_id, currency (from Preference)
-  - Response: priced line items, totals
-YC-Checkout → YC-Tax (sync call):
-  - Response: tax breakdown
-YC-Checkout → YC-Shipping (sync call):
-  - Response: available shipping options + rates
-YC-Checkout:
-  - Persists snapshots
-  - Transitions PRICING
-  - Publishes: yc.<tenant>.checkout.checkout.priced.v1
-```
-
-Frontend presents prices, shipping options, totals to the user. User confirms shipping method and address.
-
-### Step 3: Reserve Inventory
-Frontend calls `POST /checkout/{id}/confirm` with shipping choice and payment method.
+### Step 2: Price and quote
 
 ```
-YC-Checkout:
-  1. Transitions RESERVING
-  2. Publishes command: yc.<tenant>.inventory.reservation_requested.v1
-     (correlation_id = session_id, causation_id = previous event)
-
-YC-Inventory:
-  1. Attempts to reserve all items atomically
-  2. On success:
-     - Creates reservation with TTL (default: 15 min)
-     - Publishes: yc.<tenant>.inventory.stock.reserved.v1
-  3. On failure (out of stock):
-     - Publishes: yc.<tenant>.inventory.reservation_failed.v1
-
-YC-Checkout (subscriber):
-  - On stock.reserved: persist reservation_id, transition AUTHORIZING
-  - On reservation_failed: → compensation flow
+yc-checkout:
+  1. POST yc-pricing /internal/evaluate   → priced lines, totals, tax breakdown
+  2. POST yc-shipping /internal/quote     → shipping options and rates (if requires_shipping)
+  3. Persists snapshots, transitions PRICING
+  4. Publishes checkout.priced.v1
 ```
 
-### Step 4: Authorize Payment
-```
-YC-Checkout:
-  1. Publishes command: yc.<tenant>.payment.authorization_requested.v1
-     Payload: amount, currency, payment_method_token, session_id
+The frontend shows prices, shipping options and totals. The customer picks a shipping option (`POST /checkout/{id}/shipping`).
 
-YC-Payment:
-  1. Calls external gateway (Stripe, PayPal, etc.)
-  2. On success: publishes yc.<tenant>.payment.authorized.v1
-  3. On failure: publishes yc.<tenant>.payment.failed.v1
-
-YC-Checkout:
-  - On authorized: persist auth_id, transition ORDER_CREATE
-  - On failed: → compensation flow
-```
-
-### Step 5: Create Order
-```
-YC-Checkout:
-  1. Publishes command: yc.<tenant>.orders.order_creation_requested.v1
-     Payload: full session snapshot
-
-YC-Orders:
-  1. Creates order record with status PENDING_CAPTURE
-  2. Publishes: yc.<tenant>.order.order.placed.v1
-
-YC-Checkout:
-  - Persists order_id, transitions CAPTURING
-```
-
-### Step 6: Capture Payment
-```
-YC-Checkout:
-  1. Publishes command: yc.<tenant>.payment.capture_requested.v1
-     Payload: auth_id, order_id
-
-YC-Payment:
-  1. Captures the authorization
-  2. On success: publishes yc.<tenant>.payment.captured.v1
-
-YC-Checkout:
-  - On captured: transitions COMPLETED
-  - Publishes: yc.<tenant>.checkout.checkout.completed.v1
-```
-
-### Step 7: Post-Completion (fan-out, async)
-Triggered by `order.placed.v1` and `payment.captured.v1`:
+### Step 3: Confirm
+Frontend calls `POST /checkout/{id}/confirm` with guest contact (visitors), delivery address, shipping choice and the gateway token. yc-checkout validates the guest data first (ADR-010), publishes `checkout.confirmed.v1`, then runs the remaining steps inline:
 
 ```
-YC-Inventory:
-  - On order.placed: commits reservation (decrements stock)
-  - Publishes: yc.<tenant>.inventory.stock.committed.v1
-
-YC-Cart:
-  - On checkout.completed: clears the cart
-  - Publishes: yc.<tenant>.cart.cleared.v1
-
-YC-Message:
-  - On order.placed: sends order confirmation via user's preferred channel
-
-YC-Shipping:
-  - On order.placed: begins fulfillment workflow (label generation, etc.)
-
-YC-Analytics:
-  - On checkout.completed, order.placed: records conversion
+RESERVING     POST yc-inventory /internal/reservations          Idempotency-Key: {session_id}:reserve
+AUTHORIZING   POST yc-payment   /internal/authorize             Idempotency-Key: {session_id}:authorize
+ORDER_CREATE  POST yc-orders    /internal/orders                Idempotency-Key: {session_id}:order_create
+              (order created as pending_payment; no event)
+CAPTURING     POST yc-payment   /internal/capture               Idempotency-Key: {session_id}:capture
+              ── point of no return ──
+CONFIRMING    POST yc-orders    /internal/orders/{id}/confirm   Idempotency-Key: {session_id}:confirm
+              (order → received; yc-orders publishes order.placed.v1)
+              POST yc-inventory /internal/reservations/{id}/commit   Idempotency-Key: {session_id}:commit
+              (yc-inventory publishes inventory.stock.committed.v1)
+COMPLETED     yc-checkout publishes checkout.completed.v1
 ```
+
+The confirm request returns `200` with the `order_id`. Variant B replaces AUTHORIZING and CAPTURING with a single CHARGING call (`POST /internal/charge`) placed after ORDER_CREATE.
+
+### Step 4: Post-completion fan-out (asynchronous)
+
+Triggered by `order.placed.v1` and `checkout.completed.v1`:
+
+```
+yc-cart:       on checkout.completed  → clears the cart, publishes cart.cleared.v1
+yc-message:    on order.placed        → order confirmation via the customer's preferred channel
+yc-shipping:   on order.placed        → starts fulfillment (if requires_shipping)
+yc-analytics:  on checkout.completed, order.placed → records the conversion
+```
+
+## Payment Needing Customer Action
+
+For 3-D Secure or gateways that confirm later, yc-payment returns `pending` with the gateway's `next_action`. yc-checkout keeps the session in AUTHORIZING (or CHARGING) and returns `202` with `next_action`. The saga continues when:
+- the frontend calls `POST /checkout/{id}/confirm` again after the customer completes the action (the same idempotency key now returns the final result), or
+- yc-payment publishes `payment.authorized.v1` / `payment.authorization_failed.v1` (or the charge and capture equivalents) from the gateway webhook.
 
 ## Compensation Flow
 
-When any step fails, YC-Checkout enters **COMPENSATING** state and undoes work in reverse order.
+When a step fails before the point of no return, yc-checkout enters **COMPENSATING** and undoes completed work in reverse order, using synchronous calls.
 
 ### Compensation Matrix
 
-| Failed Step | Must Undo | Compensation Events |
+| Failed Step | Must Undo | Compensation calls |
 |---|---|---|
 | PRICING | Nothing | — |
-| RESERVING | Nothing (nothing yet reserved on failure) | — |
-| AUTHORIZING | Release reservation | `inventory.reservation_release_requested.v1` |
-| ORDER_CREATE | Void auth, release reservation | `payment.void_requested.v1`, `inventory.reservation_release_requested.v1` |
-| CAPTURING | Cancel order, void auth, release reservation | `order.cancellation_requested.v1`, `payment.void_requested.v1`, `inventory.reservation_release_requested.v1` |
+| RESERVING | Nothing (nothing reserved on failure) | — |
+| AUTHORIZING (A) | Release reservation | inventory release |
+| ORDER_CREATE | Void auth (A), release reservation | payment void (A), inventory release |
+| CAPTURING (A) | Abandon order, void auth, release reservation | orders abandon, payment void, inventory release |
+| CHARGING (B) | Abandon order, release reservation | orders abandon, inventory release |
+| CONFIRMING | Never compensated — retried until it succeeds | — |
 
 ### Compensation Rules
 
-1. **Compensation events are commands**, same as forward events
-2. Each compensation handler is **idempotent** — if a reservation was already released, the handler is a no-op
-3. YC-Checkout tracks compensation progress in `compensation_log`
-4. All compensations must complete before transitioning to **FAILED**
-5. A compensation that fails is retried with exponential backoff
-6. A compensation that cannot complete after N retries raises a **critical incident** — human intervention required (data in inconsistent state)
+1. Compensation calls carry `Idempotency-Key: {session_id}:{step}:undo`.
+2. Each compensation endpoint is **idempotent** and treats "nothing to undo" as success (a release of an already-released reservation, a void for a key that never authorized).
+3. yc-checkout records progress in `compensation_log`.
+4. All compensations must complete before the session moves to **FAILED** (or **EXPIRED**).
+5. A compensation that fails is retried with exponential backoff by the background sweeper.
+6. A compensation that cannot complete after N retries raises a **critical incident** — human intervention required.
 
-### Compensation Flow Example (ORDER_CREATE failed)
+### Example: CAPTURING failed (Variant A)
 
 ```
-YC-Checkout state: COMPENSATING
-compensation_log: []
+state: COMPENSATING, compensation_log: []
 
-Step 1: Publish yc.<tenant>.payment.void_requested.v1
-  Wait for yc.<tenant>.payment.voided.v1 (or voided_failed.v1)
-  On success: compensation_log += "payment_voided"
-
-Step 2: Publish yc.<tenant>.inventory.reservation_release_requested.v1
-  Wait for yc.<tenant>.inventory.stock.reservation_released.v1
-  On success: compensation_log += "reservation_released"
-
-Step 3: Publish yc.<tenant>.checkout.checkout.failed.v1
-  Transition to FAILED
+1. POST yc-orders    /internal/orders/{id}/abandon        → compensation_log += "order_abandoned"
+2. POST yc-payment   /internal/void                       → compensation_log += "payment_voided"
+3. POST yc-inventory /internal/reservations/{id}/release  → compensation_log += "reservation_released"
+4. Publish checkout.failed.v1, transition FAILED
 ```
+
+The confirm request returns `422` with the failure reason once compensation has finished, or `202` if compensation is still retrying in the background.
 
 ## Timeouts & Expiry
 
 | Timeout | Duration | Action |
 |---|---|---|
-| Session total | 30 minutes | Auto-compensate from current state |
-| Inventory reservation | 15 minutes | YC-Inventory publishes `reservation_expired.v1`; YC-Checkout compensates |
-| Payment authorization | Gateway-specific (typ. 7 days) | If order creation fails after that, refund instead of void |
-| Step response | 30 seconds | Retry; after 3 retries → compensation |
+| Session total | 30 minutes (ADR-011) | Compensate from the current state (if before the point of no return) |
+| Inventory reservation | 15 minutes | yc-inventory publishes `inventory.stock.reservation_expired.v1`; yc-checkout compensates if the session hasn't passed the point of no return |
+| Payment authorization | Gateway-specific (typ. 7 days) | Not reached in a live session |
+| Internal call | 10 s (payment: 35 s) | Retry with the same key, 3 attempts; then compensate |
+| Confirm request | 60 s | Return `202` with the current state; the saga continues in the background |
+| CONFIRMING | 5 minutes | Keep retrying; raise a critical alert. A reservation that expired meanwhile is still committed (ADR-019 rule 6) |
 
-**Inventory reservation TTL is critical**: if the saga stalls between RESERVING and CAPTURING, the reservation must auto-expire so stock isn't locked forever. YC-Checkout must either complete or compensate before expiry.
+**Inventory reservation TTL is critical**: if the saga stalls between RESERVING and capture, the reservation must auto-expire so stock isn't locked forever.
 
 ## Idempotency
 
-Every command event carries an **idempotency key** (typically `session_id` + step name):
-- `authorization_requested` idempotency key: `{session_id}:authorize`
-- `capture_requested` idempotency key: `{session_id}:capture`
-- `reservation_requested` idempotency key: `{session_id}:reserve`
+Every mutating internal call carries `Idempotency-Key: {session_id}:{step}`:
+- `{session_id}:reserve`, `{session_id}:authorize`, `{session_id}:order_create`, `{session_id}:capture` (or `:charge`), `{session_id}:confirm`, `{session_id}:commit`
+- Compensation: the forward key with `:undo` appended
 
-Consumers (Payment, Inventory, Orders) store processed idempotency keys and return the previous result on duplicate. This protects against:
-- Outbox relay publishing twice
-- Service crash between publish and state update
-- Manual DLQ replay
+Participants (Inventory, Payment, Orders) store processed keys with the response and return the stored response on a repeat. This protects against:
+- Retries after timeouts where the first call actually succeeded
+- yc-checkout crashing between the call and persisting the result
+- The frontend repeating `POST /checkout/{id}/confirm`
 
 ## Visitor Checkout
 
 A visitor can check out without registering:
-1. YC-Identity has already issued a visitor token
+1. yc-identity has already issued a visitor token
 2. Checkout proceeds normally, with `actor.type = "visitor"`
-3. At the ORDER_CREATE step, YC-Orders prompts (via YC-Checkout response to the frontend) for an email address
-4. YC-Identity promotes the visitor to a customer **only if the user opts in**; otherwise the order is stored with just the email
-5. Post-order emails go to that email address via YC-Message
+3. The confirm request carries the guest contact (email, phone) and delivery address; yc-checkout validates them before reserving stock (ADR-010)
+4. yc-identity promotes the visitor to a customer **only if the user opts in**; otherwise the order is stored with just the guest contact
+5. Post-order messages go to that email address via yc-message
 
 ## Resumption After Crash
 
-If YC-Checkout crashes mid-saga:
-1. On restart, it queries all sessions in non-terminal states (STARTED, PRICING, RESERVING, AUTHORIZING, ORDER_CREATE, CAPTURING, COMPENSATING)
-2. For each, it checks the last persisted state and the event history
-3. Resumes forward from the persisted state (commands are idempotent)
-4. Sessions older than their `expires_at` are moved to COMPENSATING
+If yc-checkout crashes mid-saga:
+1. On restart, it queries all sessions in non-terminal states
+2. For each, it repeats the in-flight call from the persisted state with the same idempotency key
+3. Sessions past `expires_at` and before the point of no return move to COMPENSATING
+4. Sessions in CONFIRMING are always driven forward
 
-## Events Added to Taxonomy
+## Events in the Taxonomy
 
-Append to the Checkout/Order Domain:
+Published by yc-checkout:
 
-| Event | Producer | Purpose |
-|---|---|---|
-| `checkout.started.v1` | YC-Checkout | Saga begins |
-| `checkout.priced.v1` | YC-Checkout | Prices/quotes computed |
-| `checkout.confirmed.v1` | YC-Checkout | User confirmed; moves to reserving |
-| `checkout.completed.v1` | YC-Checkout | Saga success |
-| `checkout.failed.v1` | YC-Checkout | Saga ended in compensation |
-| `checkout.compensating.v1` | YC-Checkout | Entering compensation |
-| `checkout.expired.v1` | YC-Checkout | Session timed out |
-| `inventory.reservation_requested.v1` | YC-Checkout | Command → Inventory |
-| `inventory.reservation_failed.v1` | YC-Inventory | Reservation declined |
-| `inventory.reservation_release_requested.v1` | YC-Checkout | Compensation command |
-| `payment.authorization_requested.v1` | YC-Checkout | Command → Payment |
-| `payment.capture_requested.v1` | YC-Checkout | Command → Payment |
-| `payment.void_requested.v1` | YC-Checkout | Compensation command |
-| `payment.voided.v1` | YC-Payment | Compensation complete |
-| `orders.order_creation_requested.v1` | YC-Checkout | Command → Orders |
-| `order.cancellation_requested.v1` | YC-Checkout | Compensation command |
+| Event | Purpose |
+|---|---|
+| `checkout.started.v1` | Saga begins |
+| `checkout.priced.v1` | Prices/quotes computed |
+| `checkout.shipping_selected.v1` | Shipping option chosen |
+| `checkout.confirmed.v1` | User confirmed; saga runs |
+| `checkout.validation_failed.v1` | Confirm rejected (missing data) |
+| `checkout.compensating.v1` | Entering compensation |
+| `checkout.completed.v1` | Saga success |
+| `checkout.failed.v1` | Saga ended in compensation |
+| `checkout.expired.v1` | Session timed out |
 
+No command events are used (ADR-019). Payment, inventory and order facts are listed under their own domains.

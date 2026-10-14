@@ -2,7 +2,7 @@
 
 ## Overview
 
-`yc-checkout` orchestrates the checkout saga. It takes a cart snapshot, drives it through pricing, inventory reservation, payment authorization, order creation, and payment capture — with compensating transactions on any failure. It is the authoritative owner of the saga state and the entry point for the frontend's checkout UX.
+`yc-checkout` orchestrates the checkout saga. It takes a cart snapshot, drives it through pricing, inventory reservation, payment authorization, order creation, payment capture and order confirmation — with compensating transactions on any failure before payment succeeds. It calls every participant synchronously (ADR-019). It is the authoritative owner of the saga state and the entry point for the frontend's checkout UX.
 
 ## Location in Monorepo
 
@@ -18,31 +18,33 @@
 4. Call yc-shipping for shipping quotes (when `requires_shipping`)
 5. Validate guest contact and delivery address at confirm (ADR-010)
 6. Reserve inventory (only tracked items; ADR-012)
-7. Request payment authorization via yc-payment (variant A or B per ADR-013)
-8. Request order creation via yc-orders
-9. Request payment capture
-10. Honor the quoted price for the session TTL (ADR-011)
-11. Drive compensation on any step failure
-12. Resume from persisted state after a crash
-13. Expire sessions on TTL and compensate
+7. Authorize payment via yc-payment (variant A or B per ADR-013)
+8. Create a `pending_payment` order via yc-orders
+9. Capture payment (variant A) or charge (variant B)
+10. Confirm the order once payment has succeeded
+11. Honor the quoted price for the session TTL (ADR-011)
+12. Drive compensation on any step failure before payment succeeds
+13. Resume from persisted state after a crash
+14. Expire sessions on TTL and compensate
 
 ## Multi-Tenancy
 
 - Sessions are tenant-scoped
-- All sub-service calls carry the tenant via the access token
+- All sub-service calls carry the tenant in `X-YC-Tenant-ID`, propagated through yc-gateway
 
 ## Session Lifecycle
 
-See the Checkout Saga definition in prior responses. States:
+The full flow, calls and compensation are in [`docs/diagrams/checkout-saga.md`](../diagrams/checkout-saga.md); the rules are in ADR-019. States:
 
 ```
-STARTED → PRICING → RESERVING → AUTHORIZING → ORDER_CREATE → CAPTURING → COMPLETED
-                                                                      ↓
-                        (any failure state) → COMPENSATING → FAILED
-                                                           → EXPIRED
+Variant A: STARTED → PRICING → RESERVING → AUTHORIZING → ORDER_CREATE → CAPTURING → CONFIRMING → COMPLETED
+Variant B: STARTED → PRICING → RESERVING → ORDER_CREATE → CHARGING → CONFIRMING → COMPLETED
+
+(failure before capture/charge succeeds) → COMPENSATING → FAILED
+(session TTL reached before capture/charge) → COMPENSATING → EXPIRED
 ```
 
-Variant B (combined auth+capture per ADR-013) replaces AUTHORIZING + CAPTURING with a single CHARGING state.
+Capture or charge success is the point of no return: CONFIRMING is retried until it succeeds and is never compensated.
 
 ## Session TTL (ADR-011)
 
@@ -62,7 +64,7 @@ Variant B (combined auth+capture per ADR-013) replaces AUTHORIZING + CAPTURING w
 | POST | `/checkout` | Start a checkout from a cart | any (customer or visitor) |
 | GET | `/checkout/{session_id}` | Get session state (including current prices, shipping options) | session owner |
 | POST | `/checkout/{session_id}/shipping` | Select a shipping option | session owner |
-| POST | `/checkout/{session_id}/confirm` | Confirm checkout (triggers reserve → authorize → create → capture) | session owner |
+| POST | `/checkout/{session_id}/confirm` | Confirm checkout; runs reserve → authorize → create → capture → confirm inline | session owner |
 | POST | `/checkout/{session_id}/cancel` | Cancel in-progress session | session owner |
 
 ### Internal Endpoints
@@ -94,6 +96,14 @@ POST /checkout/{session_id}/confirm
   "payment_gateway_token": "..."  // token from the gateway SDK (ADR-009)
 }
 ```
+
+Requires `Idempotency-Key` (`api-conventions.md` §10). Responses (ADR-019):
+
+| Status | Session state | Meaning |
+|---|---|---|
+| `200` | `COMPLETED` | Paid; body includes `order_id` |
+| `202` | in progress | Payment needs customer action (body includes `next_action`), compensation is still retrying, or the 60 s request deadline passed. Poll `GET /checkout/{session_id}`; after completing `next_action`, call confirm again with the same `Idempotency-Key` |
+| `422` | `FAILED` | Rejected (out of stock, card declined, …) and compensation finished; body includes the reason |
 
 ## Database Schema
 
@@ -169,7 +179,8 @@ On start, yc-checkout:
 2. For each session:
    - If `expires_at < NOW()`: transition to EXPIRED and run compensation
    - Else: continue the saga from the persisted state
-3. All transitions are idempotent — repeating a step that already succeeded is a no-op (consumer-side idempotency via `idempotency_key`)
+   - Sessions in `CONFIRMING` are always driven forward, whatever their `expires_at`
+3. All transitions are idempotent — the in-flight call is repeated with the same `Idempotency-Key: {session_id}:{step}`, and the participant returns its stored result
 
 ## Published Events
 
@@ -184,35 +195,32 @@ On start, yc-checkout:
 | `checkout.completed.v1` | COMPLETED |
 | `checkout.failed.v1` | Compensation finished, saga failed |
 | `checkout.expired.v1` | Session TTL reached |
-| `inventory.reservation_requested.v1` | Command → yc-inventory |
-| `inventory.reservation_release_requested.v1` | Compensation command |
-| `payment.authorization_requested.v1` | Command → yc-payment (variant A) |
-| `payment.capture_requested.v1` | Command → yc-payment (variant A) |
-| `payment.charge_requested.v1` | Command → yc-payment (variant B) |
-| `payment.void_requested.v1` | Compensation command (variant A) |
-| `payment.refund_requested.v1` | Compensation command (variant B — post-capture) |
-| `orders.order_creation_requested.v1` | Command → yc-orders |
-| `order.cancellation_requested.v1` | Compensation command |
+
+No command events: participants are called synchronously (ADR-019).
+
+## Synchronous Calls
+
+| Step | Call | Compensation |
+|---|---|---|
+| START | yc-cart `GET /internal/carts/{user_id}/{type}` | — |
+| PRICING | yc-pricing `POST /internal/evaluate`, yc-shipping `POST /internal/quote` | — |
+| RESERVING | yc-inventory `POST /internal/reservations` | `POST /internal/reservations/{id}/release` |
+| AUTHORIZING (A) | yc-payment `POST /internal/authorize` | `POST /internal/void` |
+| ORDER_CREATE | yc-orders `POST /internal/orders` | `POST /internal/orders/{id}/abandon` |
+| CAPTURING (A) | yc-payment `POST /internal/capture` | — (point of no return) |
+| CHARGING (B) | yc-payment `POST /internal/charge` | — (point of no return) |
+| CONFIRMING | yc-orders `POST /internal/orders/{id}/confirm`, yc-inventory `POST /internal/reservations/{id}/commit` | — (forward only) |
+
+Mutating calls carry `Idempotency-Key: {session_id}:{step}`; compensation calls append `:undo`.
 
 ## Subscribed Events
 
 | Event | Action |
 |---|---|
-| `inventory.stock.reserved.v1` | Advance from RESERVING |
-| `inventory.stock.reservation_failed.v1` | → COMPENSATING |
-| `inventory.stock.reservation_expired.v1` | If session active and in later state: compensate from current state |
-| `inventory.stock.reservation_released.v1` | Record compensation success |
-| `payment.authorized.v1` | Advance from AUTHORIZING |
-| `payment.authorization_failed.v1` | → COMPENSATING |
-| `payment.captured.v1` | Advance from CAPTURING → COMPLETED |
-| `payment.capture_failed.v1` | → COMPENSATING |
-| `payment.charged.v1` | Variant B — advance to COMPLETED |
-| `payment.charge_failed.v1` | → COMPENSATING |
-| `payment.voided.v1` | Record compensation success |
-| `payment.refund_completed.v1` | Record compensation success |
-| `order.placed.v1` | Advance from ORDER_CREATE → CAPTURING |
-| `order.creation_failed.v1` | → COMPENSATING |
-| `order.cancelled.v1` | Record compensation success |
+| `inventory.stock.reservation_expired.v1` | If the session is active and before the point of no return: compensate from the current state |
+| `payment.authorized.v1` / `payment.authorization_failed.v1` | Resume a session waiting on a `pending` authorization (3-D Secure, delayed confirmation) |
+| `payment.charged.v1` / `payment.charge_failed.v1` | Resume a session waiting on a `pending` charge |
+| `payment.captured.v1` / `payment.capture_failed.v1` | Resume a session waiting on a `pending` capture |
 | `identity.user.deleted.v1` | Pseudonymize `user_id` on non-terminal sessions; delete `guest_contact` on terminal sessions beyond retention window |
 | `platform.tenant.provisioned.v1` | Create `tenant_checkout_config` |
 | `platform.tenant.deleted.v1` | Delete tenant sessions beyond legal retention |
@@ -223,11 +231,13 @@ On start, yc-checkout:
 |---|---|
 | PRICING | Nothing |
 | RESERVING | Nothing |
-| AUTHORIZING | Release reservation (if any) |
-| ORDER_CREATE | Void auth (or refund in Variant B), release reservation (if any) |
-| CAPTURING | Cancel order, void auth (or refund in Variant B), release reservation (if any) |
+| AUTHORIZING (A) | Release reservation (if any) |
+| ORDER_CREATE | Void auth (Variant A), release reservation (if any) |
+| CAPTURING (A) | Abandon order, void auth, release reservation (if any) |
+| CHARGING (B) | Abandon order, release reservation (if any) |
+| CONFIRMING | Never compensated — retried until yc-orders confirms |
 
-Compensation is idempotent and ordered. All compensation events use idempotency keys based on `session_id + action`.
+Compensation is idempotent and ordered. Compensation calls use `Idempotency-Key: {session_id}:{step}:undo` and treat "nothing to undo" as success.
 
 ## Gateway Routing
 
@@ -251,6 +261,12 @@ yc-checkout:
     reservation_ttl_minutes: 15
   resume_on_startup: true
   expiry_sweeper_interval_seconds: 30
+  calls:
+    timeout_seconds: 10
+    payment_timeout_seconds: 35     # above the gateway timeout (30 s)
+    max_attempts: 3
+    confirm_deadline_seconds: 60    # then respond 202 and continue in the background
+    confirming_alert_minutes: 5
   nats:
     url: nats://...
   log_level: info
@@ -263,10 +279,10 @@ yc-checkout:
 - **yc-shipping** (shipping quotes)
 - **yc-inventory** (reservations)
 - **yc-payment** (authorization, capture)
-- **yc-orders** (order creation)
+- **yc-orders** (order creation and confirmation)
 - **yc-preference** (display currency, locale — optional)
 
-All inter-service calls go through yc-gateway with the caller's access token.
+All inter-service calls are synchronous `/internal/` calls through yc-gateway with yc-checkout's service token, propagating the tenant, actor and correlation headers (ADR-019, `api-conventions.md` §9).
 
 ## Called By
 

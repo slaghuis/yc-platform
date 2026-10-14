@@ -1,14 +1,13 @@
-// Placeholder entry point for <name>.
-// See docs/services/<name>.md for the full requirement spec.
+// Placeholder entry point for yc-audit.
+// See docs/services/yc-audit.md for the full requirement spec.
 package main
 
 import (
     "fmt"
-    "os"
 )
 
 var version = "dev"
 
 func main() {
-    fmt.Fprintf(os.Stdout, "{\"msg\":\"<name> placeholder\",\"version\":%q}\n", version)
+    fmt.Printf("{\"msg\":\"yc-audit placeholder\",\"version\":%q}\n", version)
 }

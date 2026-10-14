@@ -9,7 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Client is the eventbus client. Construct one per service via NewClient

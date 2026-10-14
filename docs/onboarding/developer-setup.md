@@ -6,7 +6,7 @@ How to prepare a workstation to work on yc-platform.
 
 | Tool | Minimum | Install |
 |---|---|---|
-| Go | 1.22 | https://go.dev/doc/install |
+| Go | 1.26 | https://go.dev/doc/install |
 | Docker | 24+ | https://docs.docker.com/get-docker/ |
 | Docker Compose | V2 | Included with Docker Desktop |
 | Task | 3.30+ | `brew install go-task` or https://taskfile.dev/installation/ |
@@ -28,3 +28,4 @@ Verify installation:
 
 ```bash
 task check-deps
+```

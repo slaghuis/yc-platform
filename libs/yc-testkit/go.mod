@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/libs/yc-testkit
+module github.com/slaghuis/yc-platform/libs/yc-testkit
 
-go 1.22
+go 1.26

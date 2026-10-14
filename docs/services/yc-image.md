@@ -168,7 +168,7 @@ CREATE POLICY tenant_isolation ON images
 
 | Event | Action |
 |---|---|
-| `product.product.deleted.v1` | Delete images with `owner_ref = "product:<id>"` |
+| `product.deleted.v1` | Delete images with `owner_ref = "product:<id>"` |
 | `product.sku.deleted.v1` | Delete images with `owner_ref = "sku:<id>"` |
 | `review.rejected.v1` | Delete images attached to the review (if any) |
 | `platform.tenant.deleted.v1` | Delete all images for the tenant |

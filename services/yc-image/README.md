@@ -1,5 +1,5 @@
-# <name>
+# yc-image
 
-See `docs/services/<name>.md` for the full requirement spec.
+See `docs/services/yc-image.md` for the full requirement spec.
 
 Status: scaffold only.

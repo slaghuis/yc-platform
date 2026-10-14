@@ -9,8 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Publish writes an event to the outbox within the caller's transaction.
@@ -74,7 +75,11 @@ func (c *Client) PublishDirect(ctx context.Context, evt Event) error {
 		return fmt.Errorf("eventbus: nats publish: %w", err)
 	}
 	c.publishDuration().Record(ctx, time.Since(start).Seconds())
-	c.publishCounter().Add(ctx, 1, metricAttr("subject", subject))
+	c.publishCounter().Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("subject", subject),
+			attribute.String("outcome", "ok"),
+		))
 
 	telemetry.LoggerFromContext(ctx).Debug("event published direct",
 		"event_id", env.EventID,
@@ -169,11 +174,4 @@ func versionFromEventType(eventType string) (int, error) {
 	}
 	_ = last
 	return n, nil
-}
-
-func metricAttr(k, v string) interface{ Add(...any) } {
-	// metric.WithAttributes is used by callers; this helper centralizes
-	// construction. Kept simple on purpose; a dedicated helper type would
-	// be overkill.
-	return nil
 }

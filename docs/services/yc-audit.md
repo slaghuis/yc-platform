@@ -73,6 +73,7 @@ cascade_register
 | GET | `/sysadmin/audit/{id}` | Record detail | system_admin |
 | GET | `/sysadmin/audit/export` | Export records (CSV, JSONL) | system_admin |
 | GET | `/sysadmin/gdpr/register` | List cascade registrations | system_admin |
+| GET | `/sysadmin/gdpr/register/{user_id}` | One user's cascade: status, expected and completed services | system_admin |
 | GET | `/sysadmin/gdpr/incidents` | List incidents | system_admin |
 
 ### Shop Admin Endpoints

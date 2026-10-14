@@ -12,12 +12,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/<org>/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // SubscribeOpts configures a durable JetStream consumer.
 type SubscribeOpts struct {
-	// Subject is the subscription pattern, e.g. "yc.*.order.order.placed.v1".
+	// Subject is the subscription pattern, e.g. "yc.*.order.placed.v1".
 	Subject string
 
 	// DurableName is the JetStream durable consumer name. Must be unique
@@ -177,6 +177,11 @@ func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg)
 		attribute.String("tenant_id", env.TenantID),
 	)
 
+	if err := CheckSubjectTenant(msg.Subject(), env.TenantID); err != nil {
+		c.consumeOutcomeDLQ(ctx, opts, msg, &env, deliveries, err, "poison")
+		return
+	}
+
 	// Dedup check.
 	alreadyProcessed, err := c.isAlreadyProcessed(ctx, env.EventID, opts.DurableName)
 	if err != nil {
@@ -264,23 +269,24 @@ func (c *Client) consumeOutcomeDLQ(
 ) {
 	logger := telemetry.LoggerFromContext(ctx)
 
-	tenantID := ""
+	// A tenant's DLQ only receives events whose envelope tenant is valid and
+	// matches the delivery subject; anything else goes to the platform DLQ
+	// so it is never replayed into the wrong tenant.
+	tenantID := PlatformTenantID
 	eventType := ""
 	if env != nil {
-		tenantID = env.TenantID
+		if CheckSubjectTenant(msg.Subject(), env.TenantID) == nil {
+			tenantID = env.TenantID
+		}
 		eventType = env.EventType
 	}
 
 	// If we couldn't even parse the envelope, we don't know the domain.
-	// Fall back to a conservative platform DLQ to avoid data loss.
 	domain := "unknown"
 	if eventType != "" {
 		if d, err := DomainOfEventType(eventType); err == nil {
 			domain = d
 		}
-	}
-	if tenantID == "" {
-		tenantID = "_platform"
 	}
 
 	dlqSubject, err := SubjectForDLQ(tenantID, domain)
@@ -300,7 +306,7 @@ func (c *Client) consumeOutcomeDLQ(
 			EventID:   "unparsed-" + msg.Subject(),
 			EventType: "unknown.unknown.v0",
 			EventTime: time.Now().UTC(),
-			TenantID:  "_platform",
+			TenantID:  PlatformTenantID,
 			Payload:   msg.Data(),
 		}
 	}

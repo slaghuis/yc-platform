@@ -22,7 +22,7 @@ import (
     "context"
     "os"
 
-    "github.com/<org>/yc-platform/libs/yc-telemetry"
+    "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 func main() {

@@ -7,7 +7,7 @@ When in doubt, prefer the stricter interpretation. Consistency across services m
 ## 1. Formatting and Tooling
 
 - **gofumpt** is mandatory; `gofmt` is insufficient.
-- **goimports** must run with the local prefix: `-local github.com/<org>/yc-platform`.
+- **goimports** must run with the local prefix: `-local github.com/slaghuis/yc-platform`.
 - **golangci-lint** must pass with no warnings on every PR.
 - Pre-commit hooks run these automatically; CI blocks merge if they haven't been run.
 
@@ -75,17 +75,17 @@ import (
     "github.com/go-chi/chi/v5"
     "github.com/jackc/pgx/v5"
 
-    "github.com/<org>/yc-platform/libs/yc-authctx"
-    "github.com/<org>/yc-platform/libs/yc-errors"
-    "github.com/<org>/yc-platform/services/yc-identity/internal/domain"
+    "github.com/slaghuis/yc-platform/libs/yc-authctx"
+    "github.com/slaghuis/yc-platform/libs/yc-errors"
+    "github.com/slaghuis/yc-platform/services/yc-identity/internal/domain"
 )
 ```
 
 1. Standard library
 2. Third-party
-3. Local (anything under `github.com/<org>/yc-platform/`)
+3. Local (anything under `github.com/slaghuis/yc-platform/`)
 
-`goimports -local github.com/<org>/yc-platform` enforces this.
+`goimports -local github.com/slaghuis/yc-platform` enforces this.
 
 ## 5. Contexts
 

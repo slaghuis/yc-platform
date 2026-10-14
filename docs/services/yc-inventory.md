@@ -90,9 +90,9 @@ None directly for customers; stock is exposed indirectly via search (yc-product'
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/reservations` | Reserve stock (used by yc-checkout) | service |
-| POST | `/internal/reservations/{id}/commit` | Commit a reservation | service |
-| POST | `/internal/reservations/{id}/release` | Release a reservation | service |
+| POST | `/internal/reservations` | Reserve stock (yc-checkout, RESERVING) | service |
+| POST | `/internal/reservations/{id}/commit` | Commit a reservation (yc-checkout, CONFIRMING — after payment) | service |
+| POST | `/internal/reservations/{id}/release` | Release a reservation (yc-checkout compensation) | service |
 | GET | `/internal/stock/batch` | Bulk stock lookup (used by yc-product for projection sync) | service |
 | POST | `/internal/back-in-stock/subscribe` | Customer requests notification | service |
 
@@ -100,9 +100,9 @@ None directly for customers; stock is exposed indirectly via search (yc-product'
 
 ```json
 POST /internal/reservations
+Idempotency-Key: {session_id}:reserve
 {
   "session_id": "...",
-  "idempotency_key": "{session_id}:reserve",
   "items": [
     { "sku_id": "...", "quantity": 2 }
   ],
@@ -130,6 +130,8 @@ Response (failure — partial availability):
 ```
 
 Per ADR-012: **any shortage fails the whole reservation**. The response identifies specific SKUs so the frontend can inform the user which items need adjustment.
+
+Reserve, commit and release are synchronous calls from yc-checkout (ADR-019). All three require `Idempotency-Key` and return the stored response on a repeated key. Release of an already-released, expired or unknown reservation succeeds as a no-op. Commit of a reservation that expired meanwhile (payment succeeded close to the TTL) still commits: it decrements `on_hand`, and if that takes available stock below zero it records the oversell for the shop admin instead of failing.
 
 ## Database Schema
 
@@ -276,7 +278,7 @@ yc-inventory:
 
 ## Called By
 
-- `yc-checkout` (reservation lifecycle)
+- `yc-checkout` (reserve, commit, release — synchronous, ADR-019)
 - `yc-product` (projection sync via events)
 - Shop admins (via gateway)
 

@@ -87,7 +87,7 @@
 
 ## Rules
 
-1. **One schema per event version**. Files named `<entity>.<action>.v<N>.json`.
+1. **One schema per event version**. Files named after the full event type, `<domain>/<event_type>.json` (e.g. `order/order.placed.v1.json`).
 2. **Immutable once released**. Any breaking change creates a new `.v2.json`.
 3. **Backward-compatible additions** (new optional fields) do NOT require a new version.
 4. **Common fragments** live under `common/` and are referenced via `$ref`.

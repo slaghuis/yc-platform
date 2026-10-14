@@ -24,7 +24,7 @@ if [ -d "$SERVICE_DIR" ]; then
     exit 1
 fi
 
-MODULE_PATH="github.com/<org>/yc-platform/services/$SERVICE"
+MODULE_PATH="github.com/slaghuis/yc-platform/services/$SERVICE"
 SHORT="${SERVICE#yc-}"
 DB_NAME="yc_$(echo "$SHORT" | tr '-' '_')"
 
@@ -36,7 +36,7 @@ mkdir -p "$SERVICE_DIR"/{api,cmd/"$SERVICE",config,internal/{app,domain,service,
 cat > "$SERVICE_DIR/go.mod" <<EOF
 module $MODULE_PATH
 
-go 1.22
+go 1.26
 EOF
 
 # README

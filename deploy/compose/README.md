@@ -9,9 +9,6 @@ Supporting files for the local Docker Compose dev stack.
 
 ```bash
 task devstack:reset
+```
 
-## Note
 This wipes all Postgres data, NATS streams and MinIO objects.
-`
-### `deploy/compose/dev-keys/.gitkeep`
-`

@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/<org>/yc-platform/libs/yc-eventbus"
+	"github.com/slaghuis/yc-platform/libs/yc-eventbus"
 )
 
 func TestIsPoison(t *testing.T) {

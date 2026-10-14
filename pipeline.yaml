@@ -1,0 +1,39 @@
+service: yc-platform
+
+lint:
+  enabled: true
+
+test:
+  race: true
+  coverage: true
+  coverage_min: 0
+
+scan:
+  govulncheck: true
+  trivy: true
+
+build:
+  image: yc-platform
+  registry: ${REGISTRY}
+
+integration:
+  enabled: false
+
+deploy:
+  manifests: ./deploy/k8s
+  environments:
+    staging:
+      kube_context: k3d-dev
+      namespace: yc-platform-staging
+    production:
+      kube_context: prod
+      namespace: yc-platform
+
+approval:
+  telegram_mcp_url: http://localhost:8765
+  required_for: [staging, production]
+  timeout_seconds: 3600
+
+notify:
+  on_failure: true
+  on_success: true

@@ -10,24 +10,25 @@ Every service that both persists state and publishes events uses the **transacti
 
 ## Mechanism
 
-1. Each service's database has an `outbox` table:
+1. Each service's database has an `outbox` table. The canonical definition is `libs/yc-eventbus/schema.sql`:
    ```sql
    CREATE TABLE outbox (
-     id            UUID PRIMARY KEY,
-     tenant_id     TEXT NOT NULL,
-     subject       TEXT NOT NULL,
-     payload       JSONB NOT NULL,
-     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-     published_at  TIMESTAMPTZ,
-     attempts      INT NOT NULL DEFAULT 0,
-     last_error    TEXT
+     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     tenant_id       TEXT NOT NULL,
+     subject         TEXT NOT NULL,
+     envelope        JSONB NOT NULL,   -- the full event envelope, not just the payload
+     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     published_at    TIMESTAMPTZ,
+     attempts        INT NOT NULL DEFAULT 0,
+     last_error      TEXT,
+     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    );
-   CREATE INDEX idx_outbox_unpublished ON outbox (created_at) WHERE published_at IS NULL;
+   CREATE INDEX idx_outbox_unpublished ON outbox (next_attempt_at) WHERE published_at IS NULL;
    ```
 2. State changes and the corresponding outbox insert happen in the **same database transaction**
-3. A **relay goroutine** inside each service polls the outbox and publishes to NATS JetStream
+3. A **relay goroutine** inside each service polls the outbox for rows whose `next_attempt_at` has passed and publishes them to NATS JetStream
 4. On successful publish, `published_at` is set
-5. On failure, `attempts++` and `last_error` is recorded; exponential backoff applies
+5. On failure, `attempts++`, `last_error` is recorded, and `next_attempt_at` moves forward by an exponential backoff
 6. After N failures, the entry is published to the local DLQ subject with the service's identity
 
 ## Standardization

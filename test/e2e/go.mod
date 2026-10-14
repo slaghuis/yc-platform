@@ -1,3 +1,3 @@
-module github.com/<org>/yc-platform/test/e2e
+module github.com/slaghuis/yc-platform/test/e2e
 
-go 1.22
+go 1.26

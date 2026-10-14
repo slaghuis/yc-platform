@@ -14,8 +14,3 @@ var ErrPoison = errors.New("eventbus: poison message")
 func IsPoison(err error) bool {
 	return errors.Is(err, ErrPoison)
 }
-
-// ErrAlreadyProcessed is returned internally when a consumer skips a
-// duplicate event via the processed_events dedup check. Not exposed to
-// handlers.
-var errAlreadyProcessed = errors.New("eventbus: already processed")
