@@ -90,9 +90,14 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) e
 	if err := opts.validate(); err != nil {
 		return err
 	}
+	//nolint:contextcheck // the subscription outlives ctx and stops with the client's background context
+	return c.startConsumer(ctx, opts, func(msg jetstream.Msg) { c.handleMessage(opts, h, msg) })
+}
 
-	// Find or create a consumer. JetStream requires us to pick a stream;
-	// we discover it by subject.
+// startConsumer creates or updates the durable consumer and dispatches its
+// messages to handle until the client closes.
+func (c *Client) startConsumer(ctx context.Context, opts SubscribeOpts, handle func(jetstream.Msg)) error {
+	// JetStream requires us to pick a stream; we discover it by subject.
 	stream, err := c.streamForSubject(ctx, opts.Subject)
 	if err != nil {
 		return fmt.Errorf("subscribe: find stream for %q: %w", opts.Subject, err)
@@ -116,7 +121,7 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) e
 	}
 
 	c.bgWG.Add(1)
-	go c.runSubscription(opts, iter, h) //nolint:contextcheck // the subscription outlives ctx and stops with the client's background context
+	go c.runSubscription(opts, iter, handle)
 
 	telemetry.LoggerFromContext(ctx).Info("eventbus subscription active",
 		"subject", opts.Subject,
@@ -134,7 +139,7 @@ func (c *Client) streamForSubject(ctx context.Context, subject string) (jetstrea
 	return c.js.Stream(ctx, stream)
 }
 
-func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesContext, h Handler) {
+func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesContext, handle func(jetstream.Msg)) {
 	defer c.bgWG.Done()
 	defer iter.Stop()
 	stop := context.AfterFunc(c.bgCtx, iter.Stop)
@@ -153,7 +158,7 @@ func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesCont
 				"durable", opts.DurableName, "err", err)
 			continue
 		}
-		c.handleMessage(opts, h, msg)
+		handle(msg)
 	}
 }
 
@@ -325,6 +330,7 @@ func (c *Client) consumeOutcomeDLQ(
 	dlqEnv := DLQEnvelope{
 		OriginalEvent: original,
 		DLQMetadata: DLQMetadata{
+			Service:       c.cfg.ServiceName,
 			Consumer:      opts.DurableName,
 			Attempts:      deliveries,
 			FirstFailure:  original.EventTime,
@@ -341,7 +347,7 @@ func (c *Client) consumeOutcomeDLQ(
 		return
 	}
 
-	if _, err := c.js.Publish(ctx, dlqSubject, payload); err != nil {
+	if _, err := c.js.PublishMsg(ctx, newMsg(dlqSubject, payload, traceHeaders(ctx))); err != nil {
 		logger.Error("DLQ publish", "subject", dlqSubject, "err", err)
 		// Can't DLQ. Term the message to avoid infinite redelivery.
 		_ = msg.Term()

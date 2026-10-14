@@ -5,22 +5,36 @@ package main
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
+	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/app"
 )
 
-var version = "dev"
+// Set by the build (-ldflags "-X main.version=… -X main.builtAt=…").
+var (
+	version = "dev"
+	builtAt = ""
+)
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).
-		With("service", "yc-gateway", "version", version)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	logger.Info("hello")
-	<-ctx.Done()
-	logger.Info("shutting down")
+	cfg, err := app.LoadConfig()
+	if err == nil {
+		err = cfg.Validate()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "yc-gateway:", err)
+		os.Exit(1)
+	}
+	build := httpkit.BuildInfo{Service: cfg.Service, Version: version, BuiltAt: builtAt}
+	if err := app.Run(ctx, cfg, build); err != nil {
+		fmt.Fprintln(os.Stderr, "yc-gateway:", err)
+		os.Exit(1)
+	}
 }

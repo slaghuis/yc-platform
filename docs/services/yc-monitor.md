@@ -78,7 +78,8 @@
 |---|---|---|---|
 | GET | `/sysadmin/services` | List services and health | system_admin |
 | GET | `/sysadmin/metrics` | Query metrics | system_admin |
-| GET | `/sysadmin/dlq` | DLQ summary across all tenants | system_admin |
+| GET | `/sysadmin/dlq` | DLQ entries across all tenants (`?tenant_id=`, `?limit=`) | system_admin |
+| GET | `/sysadmin/events` | Phase 1 stub: recently received events (`?tenant_id=`, `?limit=`) | system_admin |
 | GET | `/sysadmin/alerts` | List alerts | system_admin |
 | POST | `/sysadmin/alerts/{id}/ack` | Acknowledge alert | system_admin |
 | PUT | `/sysadmin/thresholds` | Configure thresholds | system_admin |
@@ -125,10 +126,13 @@ CREATE INDEX idx_metric_lookup ON metric_rollups (metric, tenant_id, bucket_star
 
 CREATE TABLE dlq_entries (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id        TEXT NOT NULL,
-    service          TEXT NOT NULL,
+    dlq_sequence     BIGINT NOT NULL UNIQUE,     -- YC_DLQ stream sequence; idempotency key
+    tenant_id        TEXT NOT NULL,              -- from the DLQ subject
+    service          TEXT NOT NULL,              -- dlq_metadata.service
+    consumer         TEXT NOT NULL,              -- dlq_metadata.consumer (durable name)
     event_type       TEXT NOT NULL,
-    event_id         UUID NOT NULL,
+    event_id         UUID NOT NULL,              -- not unique: replays can dead-letter again
+    failure_reason   TEXT NOT NULL,              -- 'poison' | 'exhausted'
     attempts         INT NOT NULL,
     last_error       TEXT,
     first_failure_at TIMESTAMPTZ,
@@ -183,6 +187,10 @@ CREATE POLICY tenant_isolation ON metric_rollups
            OR current_setting('app.tenant_id', true) = '_platform');
 -- similar on dlq_entries, alerts, alert_rules
 ```
+
+Phase 1 also keeps a `received_events` table (one row per consumed event, keyed by `event_id`) behind `/sysadmin/events`; it is replaced by `metric_rollups` when metrics land.
+
+DLQ messages are consumed with `eventbus.SubscribeDLQ` (durable `yc-monitor-dlq`), which never re-dead-letters.
 
 ## Published Events
 

@@ -74,6 +74,22 @@ type SubscribeOpts struct {
 
 func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) error
 
+// Consuming dead letters (yc-monitor). Never re-dead-letters: a dead letter
+// that is malformed or whose handler keeps failing is logged and discarded
+// by this consumer (it stays in YC_DLQ for replay). Key idempotency on
+// DeadLetter.Sequence, not the original event ID. Needs no DB.
+type DeadLetter struct {
+    DLQEnvelope              // original_event + dlq_metadata
+    Subject  string          // yc.<tenant>.<domain>.dlq.v1
+    TenantID string          // from the subject
+    Domain   string
+    Sequence uint64          // YC_DLQ stream sequence
+    Raw      []byte
+}
+type DLQHandler func(ctx context.Context, dl DeadLetter) error
+
+func (c *Client) SubscribeDLQ(ctx context.Context, opts SubscribeOpts, h DLQHandler) error
+
 // Error signalling from handlers
 var ErrPoison = errors.New("eventbus: poison message, send to DLQ")
 var ErrRetriable = errors.New("eventbus: retriable error")

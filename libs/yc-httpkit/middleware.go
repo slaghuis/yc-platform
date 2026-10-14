@@ -56,6 +56,17 @@ func AccessLog(next http.Handler) http.Handler {
 		span := trace.SpanFromContext(r.Context())
 		span.SetName(r.Method + " " + route)
 		span.SetAttributes(attribute.String("http.route", route))
+		// The same keys StartSpan uses, so a correlation ID finds the trace.
+		auth := telemetry.AuthAttrsFromContext(r.Context())
+		for k, v := range map[string]string{
+			"yc.correlation_id": auth.CorrelationID,
+			"yc.tenant_id":      auth.TenantID,
+			"yc.actor_type":     auth.ActorType,
+		} {
+			if v != "" {
+				span.SetAttributes(attribute.String(k, v))
+			}
+		}
 
 		level := slog.LevelInfo
 		switch {

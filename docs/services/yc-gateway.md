@@ -37,27 +37,29 @@
 
 ```
 Client → Gateway: request
-  Gateway: extract bearer token (header or cookie)
-  
-  if no token:
-      Gateway → yc-identity: create visitor token for resolved tenant
-      Gateway → Client: Set-Cookie with visitor token
-      Gateway: proceed with visitor identity
-  
-  if token present:
+  Gateway: strip inbound X-YC-Tenant-ID / X-YC-Actor-* headers
+  Gateway: resolve tenant from Host (unknown host → 404)
+  Gateway: match route (no route, or any /internal/ path → 404)
+
+  if Authorization: Bearer <token>:
       Gateway → yc-identity: /internal/validate-token
-      if invalid or expired:
-          Gateway → Client: 401 (client should refresh or re-login)
-      if valid:
-          Gateway: proceed with authenticated identity
-  
-  Gateway: enforce tenant match (token.tenant_id == resolved tenant_id)
-  Gateway → backend service: forward request with Authorization header
-  backend service → Gateway: response
-  Gateway → Client: response
+      invalid or expired → 401 (client should refresh or re-login)
+      token.tenant_id != resolved tenant → 403
+  else if visitor cookie (yc_visitor) present and valid for this tenant:
+      proceed with that visitor
+  else (no token, or stale / other-tenant cookie):
+      Gateway → yc-identity: POST /visitor for the resolved tenant
+      Gateway → Client: Set-Cookie yc_visitor (HttpOnly, SameSite=Lax, Secure)
+
+  Gateway: enforce route roles (visitor → 401, other actor → 403)
+  Gateway → backend service: forward with Authorization and X-YC-* headers;
+           the visitor cookie is removed from the forwarded Cookie header
+  backend service → Gateway → Client: response
 ```
 
-Token validation results are **cached in memory** (default TTL: 60 seconds) keyed by `jti`. Revocation becomes effective within the cache TTL. Trade-off is acceptable; alternative is a Redis-backed revocation list, deferred to future scope.
+The visitor cookie is the gateway's own state, so a stale one is replaced rather than rejected; an explicit bearer token is never silently replaced.
+
+Token validation results are **cached in memory** (default TTL: 60 seconds, never beyond the token's expiry) keyed by a SHA-256 of the token. Rejections are not cached. Revocation becomes effective within the cache TTL. Trade-off is acceptable; alternative is a Redis-backed revocation list, deferred to future scope.
 
 ## Routing
 
@@ -140,7 +142,8 @@ CREATE TABLE outbox ( ... );
 CREATE TABLE processed_events ( ... );
 ```
 
-- `tenant_hosts` is written by the `platform.tenant.provisioned.v1` handler and loaded into memory at startup, after `tenant_hostname_map` from config. It has no RLS: it is read before a tenant is known.
+- `tenant_hosts` is written by the `platform.tenant.provisioned.v1` handler and loaded into memory at startup, after `tenant_hosts` from config, and reloaded every `tenant_hosts_refresh` so every instance learns new tenants. It has no RLS: it is read before a tenant is known.
+- A provisioning event that claims a hostname owned by another tenant (in config or `tenant_hosts`) is rejected whole and dead-lettered as poison.
 - Service registrations are held in memory. On restart, services re-register (or static config is loaded).
 - Token validation results are cached in memory only.
 
@@ -177,25 +180,36 @@ CREATE TABLE processed_events ( ... );
 
 ## Configuration
 
+Defaults live in `services/yc-gateway/config/config.default.yaml`; override with `YC_GATEWAY__<SECTION>__<KEY>` (for example `YC_GATEWAY__UPSTREAMS__IDENTITY`).
+
 ```yaml
-yc-gateway:
-  listen: :8080
-  identity_url: http://yc-identity:8080
-  tenant_resolution: hostname           # hostname | path | header
-  tenant_hostname_map:
-    - hostname: shop1.example.com
-      tenant_id: shop1
-  static_routes_file: /etc/yc/routes.yaml
-  token_cache_ttl_seconds: 60
-  rate_limits:
-    default:
-      per_tenant_rps: 100
-      per_actor_rpm: 600
-      visitor_rpm: 60
-  nats:
-    url: nats://...
-  log_level: info
+http:
+  listen: ":8080"
+database:
+  url: ${YC_GATEWAY_DB_URL}
+upstreams:                      # backend base URLs by name
+  identity: http://yc-identity:8080
+routes:                         # longest prefix wins; empty roles admit any actor
+  - prefix: /me
+    methods: [GET]
+    upstream: identity
+  # - prefix: /admin/products
+  #   upstream: product
+  #   roles: [shop_admin]
+tenant_hosts:                   # static hostname → tenant, before the tenant_hosts table
+  - hostname: shop1.example.com
+    tenant_id: shop1
+tenant_hosts_refresh: 30s
+token_cache_ttl: 60s
+identity_timeout: 3s
+visitor_cookie:
+  name: yc_visitor
+  secure: ${YC_GATEWAY_COOKIE_SECURE:-true}   # false only for plain-HTTP local dev
+nats:
+  url: ${NATS_URL}
 ```
+
+Tenant resolution is by hostname only. Rate limits are not yet implemented (see Rate Limiting).
 
 ## Dependencies on Other Services
 

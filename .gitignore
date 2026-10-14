@@ -9,6 +9,9 @@ coverage.out
 /tools/*/bin/
 /tools/*/yc-*
 
+# Task's per-machine checksum cache
+.task/
+
 # Local configuration and dev secrets
 .env
 /deploy/compose/dev-keys/

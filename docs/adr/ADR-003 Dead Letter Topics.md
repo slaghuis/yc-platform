@@ -17,7 +17,7 @@ A message is considered poison when:
 - It throws a non-retriable error (explicit `ErrPoison` from the handler)
 - Its envelope `tenant_id` differs from the subject's tenant segment (ADR-001). These, and envelopes that cannot be parsed, go to the `_platform` DLQ rather than a tenant's, so a replay can never deliver them to the wrong shop.
 
-*Amended 2026-10-14: tenant-mismatch criterion and `_platform` DLQ routing added.*
+*Amended 2026-10-14: tenant-mismatch criterion and `_platform` DLQ routing added; `service` added to `dlq_metadata` alongside the durable `consumer` name.*
 
 ## Rules
 
@@ -26,7 +26,8 @@ A message is considered poison when:
    {
      "original_event": { ...full envelope... },
      "dlq_metadata": {
-       "consumer": "yc-orders",
+       "service": "yc-orders",
+       "consumer": "yc-orders-payment-captured",
        "attempts": 5,
        "first_failure": "2025-01-15T10:00:00Z",
        "last_error": "unmarshal: unknown field 'foo'",

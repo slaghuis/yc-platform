@@ -140,7 +140,9 @@ func setupMetrics(ctx context.Context, cfg Config, res *resource.Resource) (*sdk
 		sdkmetric.WithResource(res),
 	}
 
-	if cfg.OTLPEndpoint != "" {
+	// Jaeger, the local collector, accepts traces only; the standard
+	// OTEL_METRICS_EXPORTER=none keeps metrics in-process.
+	if cfg.OTLPEndpoint != "" && os.Getenv("OTEL_METRICS_EXPORTER") != "none" {
 		exp, err := otlpmetrichttp.New(ctx,
 			otlpmetrichttp.WithEndpointURL(cfg.OTLPEndpoint+"/v1/metrics"),
 			otlpmetrichttp.WithInsecure(),

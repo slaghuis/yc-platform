@@ -103,8 +103,9 @@ tasks:
   run:
     desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
     deps: [build]
+    dir: ../..  # paths in .env are relative to the repo root
     cmds:
-      - ./bin/{{.SERVICE}}
+      - services/{{.SERVICE}}/bin/{{.SERVICE}}
 
   test:
     desc: Unit tests

@@ -341,6 +341,54 @@ func TestEventbus(t *testing.T) {
 		assert.Equal(t, "shop-b", d.OriginalEvent.TenantID)
 	})
 
+	t.Run("DLQ subscriber reads dead letters without a database", func(t *testing.T) {
+		const et = "test.deadletter.happened.v1"
+		c := h.client(t)
+		require.NoError(t, c.Subscribe(ctx, eventbus.SubscribeOpts{
+			Subject: "yc.*." + et, DurableName: "deadletter-source",
+		}, func(context.Context, eventbus.ConsumedEvent) error {
+			return errors.Join(eventbus.ErrPoison, errors.New("always bad"))
+		}))
+
+		monitor := h.client(t, func(c *eventbus.Config) { c.DB = nil })
+		require.Error(t, monitor.SubscribeDLQ(ctx, eventbus.SubscribeOpts{Subject: "yc.*." + et, DurableName: "x"},
+			func(context.Context, eventbus.DeadLetter) error { return nil }), "not a DLQ subject")
+
+		var calls atomic.Int32
+		got := make(chan eventbus.DeadLetter, 1)
+		require.NoError(t, monitor.SubscribeDLQ(ctx, eventbus.SubscribeOpts{
+			Subject: "yc.shop-dead.*.dlq.v1", DurableName: "dlq-reader",
+		}, func(ctx context.Context, dl eventbus.DeadLetter) error {
+			if calls.Add(1) == 1 {
+				return errors.New("monitor db down")
+			}
+			a, _ := authctx.FromContext(ctx)
+			assert.Equal(t, "shop-dead", a.TenantID)
+			got <- dl
+			return nil
+		}))
+
+		evt := event(et, map[string]string{})
+		evt.TenantID = "shop-dead"
+		h.publish(t, ctx, c, evt)
+
+		select {
+		case dl := <-got:
+			assert.Equal(t, "yc.shop-dead.test.dlq.v1", dl.Subject)
+			assert.Equal(t, "shop-dead", dl.TenantID)
+			assert.Equal(t, "test", dl.Domain)
+			assert.NotZero(t, dl.Sequence)
+			assert.Equal(t, et, dl.OriginalEvent.EventType)
+			assert.Equal(t, "deadletter-source", dl.DLQMetadata.Consumer)
+			assert.Equal(t, "yc-test", dl.DLQMetadata.Service)
+			assert.Equal(t, "poison", dl.DLQMetadata.FailureReason)
+			assert.NotEmpty(t, dl.Raw)
+		case <-time.After(waitFor):
+			t.Fatal("dead letter not delivered")
+		}
+		assert.EqualValues(t, 2, calls.Load(), "failed once, retried once")
+	})
+
 	t.Run("outbox rows survive a crash and relay on restart", func(t *testing.T) {
 		const et = "test.crash.happened.v1"
 		crashed := h.client(t, func(c *eventbus.Config) { c.DisableRelay = true })
