@@ -1,0 +1,35 @@
+name: Schema Check
+
+on:
+  pull_request:
+    paths:
+      - 'schemas/**'
+      - 'libs/yc-events/**'
+      - 'tools/yc-schema-gen/**'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install jq
+        run: sudo apt-get install -y jq
+      - name: Validate schemas
+        run: ./schemas/yc-event-schemas/scripts/validate_all.sh
+      - name: Backward compatibility
+        run: ./schemas/yc-event-schemas/scripts/check_backward_compat.sh origin/${{ github.base_ref }}
+      - name: Regenerate types
+        run: go run ./tools/yc-schema-gen
+      - name: Check generated types up-to-date
+        run: |
+          if ! git diff --quiet libs/yc-events/generated/; then
+            echo "✗ Generated Go types are out of sync with schemas."
+            echo "  Run: task gen:events"
+            git diff libs/yc-events/generated/
+            exit 1
+          fi
