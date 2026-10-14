@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/money.v1.json",
+  "title": "Money v1",
+  "description": "Monetary amount in minor units with ISO 4217 currency.",
+  "type": "object",
+  "required": ["amount_minor", "currency"],
+  "additionalProperties": false,
+  "properties": {
+    "amount_minor": {
+      "type": "integer",
+      "description": "Amount in minor units (cents, kobo, etc.). May be negative for refunds."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 currency code."
+    }
+  }
+}

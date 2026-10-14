@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/actor.v1.json",
+  "title": "Actor v1",
+  "description": "Identifies who caused an event — human user or internal service.",
+  "type": "object",
+  "required": ["type", "id"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["visitor", "customer", "shop_admin", "system_admin", "service"]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User UUID or service name."
+    },
+    "access_token_jti": {
+      "type": ["string", "null"],
+      "description": "Access token JTI for audit linkage. Null for service actors."
+    }
+  }
+}

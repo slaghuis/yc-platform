@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/address.v1.json",
+  "title": "Address v1",
+  "description": "Free-form address JSON (ADR-015). Backend stores as-is; frontend dictates format.",
+  "type": "object",
+  "minProperties": 1,
+  "properties": {
+    "country_code": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2. Recommended for tax and shipping."
+    },
+    "lines": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Display-ordered address lines."
+    },
+    "fields": {
+      "type": "object",
+      "description": "Tenant-defined structured fields."
+    }
+  }
+}
