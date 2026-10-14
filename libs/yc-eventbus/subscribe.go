@@ -83,6 +83,9 @@ type Handler func(ctx context.Context, evt ConsumedEvent) error
 // to the handler. Subscribe returns once the consumer is created; the
 // client keeps the subscription active until Close.
 func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) error {
+	if c.db == nil {
+		return errNoDB
+	}
 	opts.applyDefaults()
 	if err := opts.validate(); err != nil {
 		return err
@@ -134,6 +137,8 @@ func (c *Client) streamForSubject(ctx context.Context, subject string) (jetstrea
 func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesContext, h Handler) {
 	defer c.bgWG.Done()
 	defer iter.Stop()
+	stop := context.AfterFunc(c.bgCtx, iter.Stop)
+	defer stop()
 
 	for {
 		msg, err := iter.Next()
@@ -158,14 +163,12 @@ func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg)
 		deliveries = int(meta.NumDelivered) //nolint:gosec // bounded by the consumer's MaxDeliver
 	}
 
-	ctx, span := telemetry.StartSpan(c.bgCtx, "eventbus.consume",
+	ctx, span := telemetry.StartSpan(extractTrace(c.bgCtx, msg.Headers()), "event.consume",
 		attribute.String("event.subject", msg.Subject()),
 		attribute.String("durable", opts.DurableName),
 		attribute.Int("delivery_count", deliveries),
 	)
 	defer span.End()
-
-	logger := telemetry.LoggerFromContext(ctx)
 
 	var env Envelope
 	if err := json.Unmarshal(msg.Data(), &env); err != nil {
@@ -173,6 +176,7 @@ func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg)
 		return
 	}
 
+	span.SetName("event.consume " + env.EventType)
 	span.SetAttributes(
 		attribute.String("event.id", env.EventID),
 		attribute.String("event.type", env.EventType),
@@ -183,6 +187,8 @@ func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg)
 		c.consumeOutcomeDLQ(ctx, opts, msg, &env, deliveries, err, "poison")
 		return
 	}
+	ctx = withEnvelope(ctx, &env)
+	logger := telemetry.LoggerFromContext(ctx)
 
 	// Dedup check.
 	alreadyProcessed, err := c.isAlreadyProcessed(ctx, env.EventID, opts.DurableName)
@@ -302,15 +308,18 @@ func (c *Client) consumeOutcomeDLQ(
 	if env != nil {
 		original = *env
 	} else {
-		// Best-effort: wrap raw bytes as an opaque payload so the
-		// envelope schema stays satisfied for forensics.
+		// Best-effort: keep the raw bytes as a JSON string payload, since
+		// they may not be valid JSON, so the dead letter can be inspected.
+		raw, _ := json.Marshal(string(msg.Data()))
 		original = Envelope{
-			EventID:   "unparsed-" + msg.Subject(),
-			EventType: "unknown.unknown.v0",
-			EventTime: time.Now().UTC(),
-			TenantID:  PlatformTenantID,
-			Payload:   msg.Data(),
+			EventID:       newEventID(),
+			EventType:     "unknown.unparsed.v1",
+			EventTime:     time.Now().UTC(),
+			TenantID:      PlatformTenantID,
+			SourceService: "unknown",
+			Payload:       raw,
 		}
+		cause = fmt.Errorf("subject %s: %w", msg.Subject(), cause)
 	}
 
 	dlqEnv := DLQEnvelope{

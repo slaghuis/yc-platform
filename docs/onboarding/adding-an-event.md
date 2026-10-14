@@ -18,7 +18,7 @@ Fill in the schema. Reference `common/` fragments where applicable. See `docs/st
 task gen:events
 ```
 
-Generated types land in `libs/yc-events/generated/`.
+Generated types land in `libs/yc-events/types_gen.go` (package `events`), and the schemas are copied to `libs/yc-events/schemas/` for the runtime validator. Commit both.
 
 ## 3. Register in the Taxonomy
 

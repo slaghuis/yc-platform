@@ -125,9 +125,24 @@ Dynamically defined by registered services. Gateway has no fixed public API beyo
 
 ## Database
 
-**None — yc-gateway is stateless.**
+Database: **`yc_gateway`** (ADR-020). Small and platform-wide; the request path never reads it.
 
-Service registrations are held in memory. On restart, services re-register (or static config is loaded).
+```sql
+CREATE TABLE tenant_hosts (
+    hostname    TEXT PRIMARY KEY,        -- lowercase, no port
+    tenant_id   TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_tenant_hosts_tenant ON tenant_hosts (tenant_id);
+
+-- Standard tables from yc-eventbus
+CREATE TABLE outbox ( ... );
+CREATE TABLE processed_events ( ... );
+```
+
+- `tenant_hosts` is written by the `platform.tenant.provisioned.v1` handler and loaded into memory at startup, after `tenant_hostname_map` from config. It has no RLS: it is read before a tenant is known.
+- Service registrations are held in memory. On restart, services re-register (or static config is loaded).
+- Token validation results are cached in memory only.
 
 ## Published Events
 

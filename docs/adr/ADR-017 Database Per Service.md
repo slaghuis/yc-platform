@@ -49,10 +49,12 @@ This provides **defense in depth**: even an application bug that forgets to filt
 
 ## Service-to-Database Map (v1)
 
+*Amended 2026-10-14: yc-gateway owns `yc_gateway` (ADR-020).*
+
 | Service | Database |
 |---|---|
 | YC-Identity | `yc_identity` |
-| YC-Gateway | — (stateless) |
+| YC-Gateway | `yc_gateway` (tenant hostname map and outbox only; ADR-020) |
 | YC-Image | `yc_image` (metadata only; images in object storage) |
 | YC-Product | `yc_product` |
 | YC-Pricing | `yc_pricing` |

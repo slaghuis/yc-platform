@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.tenant.provisioned.v1.json",
+  "title": "platform.tenant.provisioned.v1",
+  "description": "A new tenant was provisioned by yc-tenant-cli. Published on the _platform tenant; services create their per-tenant defaults and yc-gateway maps the hostnames.",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "name",
+    "hostnames",
+    "store_currency",
+    "default_jurisdiction",
+    "is_tax_inclusive",
+    "provisioned_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The provisioned tenant (ADR-001). Never _platform."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name of the shop."
+    },
+    "hostnames": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+      },
+      "description": "Lowercase hostnames that resolve to this tenant at yc-gateway (ADR-020)."
+    },
+    "store_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 currency the shop prices in."
+    },
+    "default_jurisdiction": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2 country for tax defaults."
+    },
+    "is_tax_inclusive": {
+      "type": "boolean",
+      "description": "Whether shop prices include tax."
+    },
+    "primary_admin_email": {
+      "type": "string",
+      "format": "email",
+      "description": "First shop admin, invited by yc-message. PII (event-conventions §18)."
+    },
+    "provisioned_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/line_item.v1.json",
+  "title": "Line Item v1",
+  "description": "A single line in a cart, checkout session, or order.",
+  "type": "object",
+  "required": ["sku_id", "quantity"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id":   { "type": "string", "format": "uuid" },
+    "sku_code": { "type": "string" },
+    "name_snapshot": { "type": "string" },
+    "variant_values_snapshot": { "type": "object" },
+    "quantity": { "type": "integer", "minimum": 1 },
+    "unit_price": { "$ref": "./money.v1.json" },
+    "line_total": { "$ref": "./money.v1.json" }
+  }
+}

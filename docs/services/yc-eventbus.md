@@ -186,7 +186,7 @@ Driven by the host service's config, passed into `Config` at construction.
 ## Dependencies
 
 - `github.com/nats-io/nats.go` (JetStream client)
-- `github.com/xeipuuv/gojsonschema` or `github.com/santhosh-tekuri/jsonschema/v5`
+- `github.com/santhosh-tekuri/jsonschema/v6` (in yc-events, which implements `Validator`)
 - `go.opentelemetry.io/otel`
 - `github.com/jackc/pgx/v5` (database interactions)
 - `github.com/golang-migrate/migrate/v4` (not directly; migrations are per-service, but the library provides the SQL to include)

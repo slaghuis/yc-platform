@@ -1,0 +1,7 @@
+# Picked up automatically by `trivy fs .` from the repo root (local runs,
+# the pipeline's scan stage, CI).
+scan:
+  skip-files:
+    # Generated per developer by scripts/bootstrap.sh and gitignored; never
+    # committed or shipped.
+    - "deploy/compose/dev-keys/**"

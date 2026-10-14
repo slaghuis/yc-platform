@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/guest_contact.v1.json",
+  "title": "Guest Contact v1",
+  "description": "Contact details for guest checkouts (ADR-010).",
+  "type": "object",
+  "required": ["email", "phone_e164"],
+  "additionalProperties": false,
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone_e164": {
+      "type": "string",
+      "pattern": "^\\+[1-9][0-9]{6,14}$",
+      "description": "E.164 format."
+    }
+  }
+}

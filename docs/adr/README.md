@@ -21,6 +21,7 @@
 | 017 | Database Per Service | Accepted |
 | 018 | Workspace-Aware Pipeline | Accepted |
 | 019 | Synchronous Checkout Saga | Accepted |
+| 020 | Gateway Database | Accepted |
 
 Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
 

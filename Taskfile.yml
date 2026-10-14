@@ -38,7 +38,8 @@ tasks:
     sources:
       - 'schemas/yc-event-schemas/**/*.json'
     generates:
-      - 'libs/yc-events/generated/**/*.go'
+      - 'libs/yc-events/types_gen.go'
+      - 'libs/yc-events/schemas/**/*.json'
     cmds:
       - go run ./tools/yc-schema-gen
 

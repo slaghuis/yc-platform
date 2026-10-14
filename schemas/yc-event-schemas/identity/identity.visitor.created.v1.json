@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.visitor.created.v1.json",
+  "title": "identity.visitor.created.v1",
+  "description": "yc-identity created an anonymous visitor and issued its first visitor token. The envelope actor is the visitor; its access_token_jti is the issued token.",
+  "type": "object",
+  "required": ["user_id", "created_at", "token_expires_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The visitor's users row (role visitor)."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "token_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Expiry of the issued visitor token."
+    }
+  }
+}

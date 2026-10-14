@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -74,17 +75,36 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	c.initMetrics()
 
-	c.bgWG.Add(2)
-	go c.runRelay()
-	go c.runCleanup()
+	if c.db != nil {
+		c.bgWG.Add(1)
+		go c.runCleanup()
+		if !cfg.DisableRelay {
+			c.bgWG.Add(1)
+			go c.runRelay()
+		}
+	}
 
 	telemetry.LoggerFromContext(ctx).Info("eventbus client started",
 		"nats_url", cfg.NATSURL,
 		"service", cfg.ServiceName,
 		"streams", len(cfg.Streams),
+		"relay", c.db != nil && !cfg.DisableRelay,
 	)
 
 	return c, nil
+}
+
+// errNoDB is returned by operations that need the service database on a
+// publish-only client.
+var errNoDB = fmt.Errorf("eventbus: Config.DB is required for this operation")
+
+// Ping reports whether the NATS connection is up; use it as a readiness
+// check.
+func (c *Client) Ping(context.Context) error {
+	if !c.nc.IsConnected() {
+		return fmt.Errorf("eventbus: nats %s", c.nc.Status())
+	}
+	return nil
 }
 
 // Close drains and shuts down background goroutines and the NATS
@@ -104,7 +124,7 @@ func (c *Client) Close(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	if err := c.nc.Drain(); err != nil {
+	if err := c.nc.Drain(); err != nil && !errors.Is(err, nats.ErrConnectionClosed) {
 		return fmt.Errorf("eventbus: nats drain: %w", err)
 	}
 	return nil

@@ -32,6 +32,8 @@ linters:
         - G101 # false positives on config fields
     misspell:
       locale: UK
+      ignore-rules:
+        - unauthorized # HTTP status name and yc-errors code
     revive:
       rules:
         - name: exported
@@ -44,9 +46,11 @@ linters:
         linters:
           - errcheck
           - gosec
+          - noctx # httptest.NewRequest is the idiom in handler tests
+          - contextcheck # test helpers use context.Background deliberately
     paths:
       - api/generated/
-      - libs/yc-events/generated/
+      - libs/yc-events/types_gen.go
 
 formatters:
   enable:
@@ -60,4 +64,4 @@ formatters:
     generated: lax
     paths:
       - api/generated/
-      - libs/yc-events/generated/
+      - libs/yc-events/types_gen.go

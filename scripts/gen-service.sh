@@ -180,6 +180,7 @@ if [ $WITH_DB -eq 1 ]; then
 DROP TABLE IF EXISTS processed_events;
 DROP TABLE IF EXISTS outbox;
 EOF
+    cp "$ROOT/services/yc-orders/migrations/embed.go" "$SERVICE_DIR/migrations/embed.go"
 
     INIT="$ROOT/deploy/compose/postgres-init.sh"
     if ! grep -qx "    $DB_NAME" "$INIT"; then

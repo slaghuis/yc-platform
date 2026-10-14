@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 
+	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
@@ -18,8 +24,13 @@ import (
 // The event is published to NATS by the relay goroutine; this call does
 // not touch NATS.
 //
-// The tx must be live; this method does not commit.
+// The tx must be live; this method does not commit. The current trace
+// context is stored with the row so the relay's publish and the consumer's
+// handling join the caller's trace.
 func (c *Client) Publish(ctx context.Context, tx pgx.Tx, evt Event) error {
+	if c.db == nil {
+		return errNoDB
+	}
 	env, subject, err := c.buildEnvelope(ctx, evt)
 	if err != nil {
 		return err
@@ -29,11 +40,15 @@ func (c *Client) Publish(ctx context.Context, tx pgx.Tx, evt Event) error {
 	if err != nil {
 		return fmt.Errorf("eventbus: marshal envelope: %w", err)
 	}
+	headers, err := json.Marshal(traceHeaders(ctx))
+	if err != nil {
+		return fmt.Errorf("eventbus: marshal headers: %w", err)
+	}
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO outbox (id, tenant_id, subject, envelope, created_at, next_attempt_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
-	`, env.EventID, env.TenantID, subject, envJSON)
+		INSERT INTO outbox (id, tenant_id, subject, envelope, headers, created_at, next_attempt_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+	`, env.EventID, env.TenantID, subject, envJSON, headers)
 	if err != nil {
 		return fmt.Errorf("eventbus: insert outbox: %w", err)
 	}
@@ -49,8 +64,7 @@ func (c *Client) Publish(ctx context.Context, tx pgx.Tx, evt Event) error {
 
 // PublishDirect bypasses the outbox and publishes directly to NATS.
 // Reserved for truly stateless events emitted outside any DB transaction
-// (startup announcements, periodic heartbeats). Prefer Publish for
-// everything else.
+// (CLI tools, startup announcements). Prefer Publish for everything else.
 func (c *Client) PublishDirect(ctx context.Context, evt Event) error {
 	env, subject, err := c.buildEnvelope(ctx, evt)
 	if err != nil {
@@ -70,7 +84,7 @@ func (c *Client) PublishDirect(ctx context.Context, evt Event) error {
 	defer span.End()
 
 	start := time.Now()
-	if _, err := c.js.Publish(ctx, subject, envJSON); err != nil {
+	if _, err := c.js.PublishMsg(ctx, newMsg(subject, envJSON, traceHeaders(ctx))); err != nil {
 		telemetry.RecordSpanError(span, err)
 		return fmt.Errorf("eventbus: nats publish: %w", err)
 	}
@@ -118,22 +132,20 @@ func (c *Client) buildEnvelope(ctx context.Context, evt Event) (*Envelope, strin
 		return nil, "", fmt.Errorf("eventbus: marshal payload: %w", err)
 	}
 
-	correlationID := evt.CorrelationID
-	if correlationID == "" {
-		correlationID = uuid.NewString()
-	}
-
 	env := &Envelope{
-		EventID:       uuid.NewString(),
+		EventID:       newEventID(),
 		EventType:     evt.EventType,
-		EventTime:     time.Now().UTC(),
+		EventTime:     time.Now().UTC().Truncate(time.Millisecond),
 		TenantID:      evt.TenantID,
 		Actor:         evt.Actor,
-		CorrelationID: correlationID,
+		CorrelationID: correlationID(ctx, evt.CorrelationID),
 		CausationID:   evt.CausationID,
 		SourceService: c.cfg.ServiceName,
 		SchemaVersion: version,
 		Payload:       payloadJSON,
+	}
+	if env.CausationID == "" {
+		env.CausationID = consumedEventID(ctx)
 	}
 
 	if err := c.validator.ValidateEnvelope(ctx, env); err != nil {
@@ -146,32 +158,50 @@ func (c *Client) buildEnvelope(ctx context.Context, evt Event) (*Envelope, strin
 	return env, subject, nil
 }
 
+// correlationID prefers the explicit value, then the request or consumed
+// event's correlation ID on ctx, then a new one. The envelope schema
+// requires a UUID.
+func correlationID(ctx context.Context, explicit string) string {
+	for _, id := range []string{explicit, authctx.CorrelationID(ctx)} {
+		if _, err := uuid.Parse(id); err == nil {
+			return id
+		}
+	}
+	return newEventID()
+}
+
+func newEventID() string {
+	if id, err := uuid.NewV7(); err == nil {
+		return id.String()
+	}
+	return uuid.NewString()
+}
+
+// versionFromEventType returns N from an event type ending in ".v<N>".
 func versionFromEventType(eventType string) (int, error) {
-	// eventType validated earlier; last segment is v<N>.
-	// Minimal parse that doesn't pull in strconv for int-only.
-	last := eventType[len(eventType)-1]
-	// Support v1 through v9 cheaply, then fall through to a full parse
-	// for v10+. Guard against invalid input.
-	n := 0
-	for i := len(eventType) - 1; i >= 0 && eventType[i] != 'v'; i-- {
-		if eventType[i] < '0' || eventType[i] > '9' {
-			return 0, fmt.Errorf("eventbus: invalid version suffix in %q", eventType)
-		}
-	}
-	// Find 'v' position.
-	vPos := -1
-	for i := len(eventType) - 1; i >= 0; i-- {
-		if eventType[i] == 'v' {
-			vPos = i
-			break
-		}
-	}
-	if vPos < 0 || vPos == len(eventType)-1 {
+	i := strings.LastIndex(eventType, ".v")
+	if i < 0 {
 		return 0, fmt.Errorf("eventbus: no version in %q", eventType)
 	}
-	for i := vPos + 1; i < len(eventType); i++ {
-		n = n*10 + int(eventType[i]-'0')
+	n, err := strconv.Atoi(eventType[i+2:])
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("eventbus: invalid version suffix in %q", eventType)
 	}
-	_ = last
 	return n, nil
+}
+
+// traceHeaders captures the W3C trace context of ctx.
+func traceHeaders(ctx context.Context) map[string]string {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	return carrier
+}
+
+func newMsg(subject string, data []byte, headers map[string]string) *nats.Msg {
+	msg := nats.NewMsg(subject)
+	msg.Data = data
+	for k, v := range headers {
+		msg.Header.Set(k, v)
+	}
+	return msg
 }
