@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
@@ -40,6 +41,7 @@ type outboxRow struct {
 	TenantID string
 	Subject  string
 	Envelope []byte
+	Headers  map[string]string
 	Attempts int
 }
 
@@ -76,7 +78,7 @@ func (c *Client) claimOutboxBatch(ctx context.Context, limit int) ([]outboxRow, 
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, tenant_id, subject, envelope, attempts
+		RETURNING id, tenant_id, subject, envelope, headers, attempts
 	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim outbox: %w", err)
@@ -86,7 +88,7 @@ func (c *Client) claimOutboxBatch(ctx context.Context, limit int) ([]outboxRow, 
 	var out []outboxRow
 	for rows.Next() {
 		var r outboxRow
-		if err := rows.Scan(&r.ID, &r.TenantID, &r.Subject, &r.Envelope, &r.Attempts); err != nil {
+		if err := rows.Scan(&r.ID, &r.TenantID, &r.Subject, &r.Envelope, &r.Headers, &r.Attempts); err != nil {
 			return nil, fmt.Errorf("scan outbox: %w", err)
 		}
 		out = append(out, r)
@@ -95,6 +97,8 @@ func (c *Client) claimOutboxBatch(ctx context.Context, limit int) ([]outboxRow, 
 }
 
 func (c *Client) processOutboxRow(ctx context.Context, row outboxRow) {
+	// Continue the trace of the request that wrote the row.
+	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(row.Headers))
 	ctx, span := telemetry.StartSpan(ctx, "eventbus.publish.outbox",
 		attribute.String("event.subject", row.Subject),
 		attribute.String("event.id", row.ID),
@@ -103,7 +107,7 @@ func (c *Client) processOutboxRow(ctx context.Context, row outboxRow) {
 	defer span.End()
 
 	start := time.Now()
-	_, err := c.js.Publish(ctx, row.Subject, row.Envelope)
+	_, err := c.js.PublishMsg(ctx, newMsg(row.Subject, row.Envelope, row.Headers))
 	c.publishDuration().Record(ctx, time.Since(start).Seconds(),
 		metric.WithAttributes(attribute.String("subject", row.Subject)))
 
@@ -118,6 +122,18 @@ func (c *Client) processOutboxRow(ctx context.Context, row outboxRow) {
 	}
 
 	telemetry.RecordSpanError(span, err)
+
+	// A NATS outage is not the event's fault: retry without using up
+	// attempts, so a long outage does not dead-letter every pending row.
+	if !c.nc.IsConnected() {
+		c.scheduleRetry(ctx, row.ID, row.Attempts, err.Error(), c.cfg.OutboxBackoff(0))
+		c.publishCounter().Add(ctx, 1,
+			metric.WithAttributes(
+				attribute.String("subject", row.Subject),
+				attribute.String("outcome", "disconnected"),
+			))
+		return
+	}
 
 	nextAttempt := row.Attempts + 1
 	if nextAttempt >= c.cfg.OutboxMaxAttempts {
@@ -230,7 +246,3 @@ func (c *Client) markPublishedWithError(ctx context.Context, id, errMsg string) 
 			"outbox_id", id, "err", err)
 	}
 }
-
-// Compile-time check that outboxRow is unused outside this file in a way
-// that would require making it exported.
-var _ = pgx.ErrNoRows

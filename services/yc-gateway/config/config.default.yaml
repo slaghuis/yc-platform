@@ -1,9 +1,36 @@
 service: yc-gateway
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
+database:
+  url: ${YC_GATEWAY_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+
+# Backend base URLs by name. Override one with YC_GATEWAY__UPSTREAMS__<NAME>.
+upstreams:
+  identity: http://yc-identity:8080
+
+# Static routes (docs/services/yc-gateway.md, Routing). Longest prefix wins;
+# empty roles admit any actor, visitors included. /internal/ is never routed.
+routes:
+  - prefix: /me
+    methods: [GET]
+    upstream: identity
+
+# Static hostname → tenant map, loaded before tenant_hosts (ADR-020). Tenants
+# are normally added by platform.tenant.provisioned.v1.
+tenant_hosts: []
+tenant_hosts_refresh: 30s
+
+token_cache_ttl: 60s
+identity_timeout: 3s
+# Secure needs HTTPS; local development over plain HTTP turns it off.
+visitor_cookie:
+  name: yc_visitor
+  secure: ${YC_GATEWAY_COOKIE_SECURE:-true}

@@ -25,9 +25,23 @@ Once the dev stack is up:
 | Jaeger | http://localhost:16686 |
 | MailHog | http://localhost:8025 |
 
+## Phase 1 Services
+
+`task devstack:app` builds and starts yc-identity, yc-gateway and yc-monitor in Docker (compose profile `app`); `task demo:phase1` then runs the milestone demo and the outbox and DLQ drills against them (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part).
+
+| Service | URL |
+|---|---|
+| yc-gateway | http://localhost:8090 — send `Host: demo-shop.localhost` after the demo provisions `demo-shop` |
+| yc-identity | http://localhost:8081 |
+| yc-monitor | http://localhost:8082 — `/sysadmin/*` needs `X-YC-Tenant-ID: _platform` and `X-YC-Actor-Type: system_admin` headers |
+
+`task run SERVICE=…` uses the same host ports (set in `.env`). Stop the containers first, or they hold the ports.
+
 ## Troubleshooting
 
 **Port conflicts.** If port 5432 (or any other) is in use, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` (gitignored) and remap the port there; the example shows how.
+
+**`database "yc_gateway" does not exist`.** `postgres-init.sh` only runs on an empty volume, so a volume created before a service's database was added lacks it. Run `task devstack:reset`, or create just that database with the statements from `deploy/compose/postgres-init.sh`.
 
 **Dev stack won't start.**
 

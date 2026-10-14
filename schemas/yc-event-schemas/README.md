@@ -24,7 +24,7 @@ task schema:compat
 
 ## Generating Go types
 
-Changes here regenerate types in `libs/yc-events/generated/`:
+Changes here regenerate `libs/yc-events/types_gen.go` and the embedded copy in `libs/yc-events/schemas/`:
 
 ```bash
 task gen:events

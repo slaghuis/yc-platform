@@ -19,7 +19,7 @@ type TestClient struct {
 
 // NewTestClient creates a Client with aggressive poll intervals and a
 // NoopValidator by default. Caller must provide a connected pgxpool and
-// NATS URL (typically from testcontainers).
+// NATS URL (typically from yc-testkit). Call telemetry.InitForTest first.
 func NewTestClient(t testing.TB, ctx context.Context, natsURL string, db *pgxpool.Pool, streams ...StreamConfig) *TestClient {
 	t.Helper()
 	c, err := NewClient(ctx, Config{

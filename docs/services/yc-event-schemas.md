@@ -54,8 +54,7 @@
 │   └── actor.v1.json
 ├── scripts/
 │   ├── validate_all.sh
-│   ├── check_backward_compat.sh
-│   └── generate_go_types.sh
+│   └── check_backward_compat.sh
 └── README.md
 ```
 
@@ -96,7 +95,7 @@
    - No existing versioned schema has had its structure altered in a breaking way
    - All referenced `$ref`s resolve
    - All event types mentioned in the taxonomy have a schema
-6. **Go type generation**: `scripts/generate_go_types.sh` produces Go structs under `/libs/yc-eventbus/generated/` for every schema. Services import these types.
+6. **Go type generation**: `task gen:events` runs `tools/yc-schema-gen`, which writes Go structs for every event and common fragment to `libs/yc-events/types_gen.go` and copies the schemas to `libs/yc-events/schemas/`. Services import these types and pass `events.NewValidator()` to yc-eventbus, which validates every published and consumed event against the schemas.
 
 ## Change Workflow
 

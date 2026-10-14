@@ -1,11 +1,18 @@
 service: yc-identity
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_IDENTITY_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+jwt:
+  issuer: yc-identity
+  private_key_file: ${YC_IDENTITY_JWT_PRIVATE_KEY_FILE}
+  access_token_ttl: 15m
+  visitor_token_ttl: 24h

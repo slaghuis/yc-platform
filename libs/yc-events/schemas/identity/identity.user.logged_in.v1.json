@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.logged_in.v1.json",
+  "title": "identity.user.logged_in.v1",
+  "description": "A registered user logged in. yc-cart merges the previous visitor's cart into the user's.",
+  "type": "object",
+  "required": ["user_id", "role", "method", "logged_in_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["customer", "shop_admin", "system_admin"]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["password", "google", "facebook"]
+    },
+    "previous_visitor_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Visitor user_id from the token presented at login, if any; the cart merge source."
+    },
+    "logged_in_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

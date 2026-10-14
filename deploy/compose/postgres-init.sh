@@ -19,6 +19,7 @@ SERVICES=(
     yc_audit
     yc_monitor
     yc_analytics
+    yc_gateway
 )
 
 for svc in "${SERVICES[@]}"; do

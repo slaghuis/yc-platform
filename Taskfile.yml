@@ -38,7 +38,8 @@ tasks:
     sources:
       - 'schemas/yc-event-schemas/**/*.json'
     generates:
-      - 'libs/yc-events/generated/**/*.go'
+      - 'libs/yc-events/types_gen.go'
+      - 'libs/yc-events/schemas/**/*.json'
     cmds:
       - go run ./tools/yc-schema-gen
 
@@ -80,7 +81,7 @@ tasks:
       - ./scripts/for-each-module.sh go test ./...
 
   test:integration:
-    desc: Run integration tests in every module (requires devstack running)
+    desc: Run integration tests in every module (needs Docker; testcontainers starts Postgres and NATS)
     cmds:
       - ./scripts/for-each-module.sh go test -tags=integration ./...
 
@@ -124,15 +125,27 @@ tasks:
       - docker compose up -d
       - ./scripts/wait-for-stack.sh
 
+  devstack:app:
+    desc: Build and start the Phase 1 services (yc-identity, yc-gateway, yc-monitor) on the dev stack
+    cmds:
+      - ./scripts/gen-dev-jwt-keys.sh
+      - docker compose --profile app up -d --build
+      - ./scripts/wait-for-stack.sh --app
+
+  demo:phase1:
+    desc: Run the Phase 1 milestone demo against the running stack (see scripts/demo-phase1.sh)
+    cmds:
+      - ./scripts/demo-phase1.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:
-      - docker compose down
+      - docker compose --profile app down
 
   devstack:reset:
     desc: Wipe and restart dev stack (destroys all data)
     cmds:
-      - docker compose down -v
+      - docker compose --profile app down -v
       - docker compose up -d
       - ./scripts/wait-for-stack.sh
 

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -70,6 +71,11 @@ func doInit(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		return noopShutdown, fmt.Errorf("telemetry: setup traces: %w", err)
 	}
 	otel.SetTracerProvider(tp)
+	// W3C trace context lets a trace span services: yc-httpkit's client
+	// injects traceparent and its server middleware extracts it.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
 	globalTracer.Store(tp.Tracer(cfg.ServiceName))
 	shutdownFns = append(shutdownFns, traceShutdown)
 
@@ -134,7 +140,9 @@ func setupMetrics(ctx context.Context, cfg Config, res *resource.Resource) (*sdk
 		sdkmetric.WithResource(res),
 	}
 
-	if cfg.OTLPEndpoint != "" {
+	// Jaeger, the local collector, accepts traces only; the standard
+	// OTEL_METRICS_EXPORTER=none keeps metrics in-process.
+	if cfg.OTLPEndpoint != "" && os.Getenv("OTEL_METRICS_EXPORTER") != "none" {
 		exp, err := otlpmetrichttp.New(ctx,
 			otlpmetrichttp.WithEndpointURL(cfg.OTLPEndpoint+"/v1/metrics"),
 			otlpmetrichttp.WithInsecure(),

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.service.registered.v1.json",
+  "title": "platform.service.registered.v1",
+  "description": "A backend service instance registered with yc-gateway. yc-monitor starts health-checking it.",
+  "type": "object",
+  "required": ["service_name", "instance_id", "base_url", "registered_at"],
+  "additionalProperties": false,
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique per running instance, e.g. the hostname or pod name."
+    },
+    "base_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Where yc-gateway forwards requests; /healthz and /readyz are served under it."
+    },
+    "version": {
+      "type": "string",
+      "description": "Build version reported by the service's /version."
+    },
+    "registered_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

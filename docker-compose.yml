@@ -81,6 +81,69 @@ services:
       - "1025:1025"        # SMTP
       - "8025:8025"        # UI
 
+  # ─── Phase 1 application services (profile "app") ─────────
+  # `task devstack:app` builds and starts them; `task devstack:up` does not.
+  # Host ports match the local `task run` ports in .env.example.
+  yc-identity:
+    profiles: [app]
+    build: &service-build
+      context: .
+      dockerfile: deploy/docker/Dockerfile.service
+      args: { SERVICE: yc-identity }
+    image: yc-platform/yc-identity:dev
+    container_name: yc-identity
+    restart: unless-stopped
+    environment:
+      YC_IDENTITY_DB_URL: postgres://yc_identity_app:devpass@postgres:5432/yc_identity?sslmode=disable
+      YC_IDENTITY_JWT_PRIVATE_KEY_FILE: /keys/jwt-private.pem
+      YC_IDENTITY__NATS__DISABLE_RELAY: ${YC_IDENTITY__NATS__DISABLE_RELAY:-false}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    volumes:
+      - ./deploy/compose/dev-keys:/keys:ro
+    ports:
+      - "8081:8080"
+    depends_on: &infra
+      postgres: { condition: service_healthy }
+      nats: { condition: service_healthy }
+
+  yc-gateway:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-gateway }
+    image: yc-platform/yc-gateway:dev
+    container_name: yc-gateway
+    restart: unless-stopped
+    environment:
+      YC_GATEWAY_DB_URL: postgres://yc_gateway_app:devpass@postgres:5432/yc_gateway?sslmode=disable
+      YC_GATEWAY__UPSTREAMS__IDENTITY: http://yc-identity:8080
+      YC_GATEWAY_COOKIE_SECURE: "false"
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8090:8080"
+    depends_on: *infra
+
+  yc-monitor:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-monitor }
+    image: yc-platform/yc-monitor:dev
+    container_name: yc-monitor
+    restart: unless-stopped
+    environment:
+      YC_MONITOR_DB_URL: postgres://yc_monitor_app:devpass@postgres:5432/yc_monitor?sslmode=disable
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8082:8080"
+    depends_on: *infra
+
 volumes:
   pgdata:
   natsdata:

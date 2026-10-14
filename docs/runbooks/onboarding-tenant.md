@@ -1,6 +1,6 @@
 # Onboarding a New Tenant
 
-*Stub. Full implementation lands with yc-tenant-cli in Phase 2.*
+*Partial. `yc-tenant-cli provision` exists (Phase 1) and maps the tenant's hostnames at yc-gateway; the other services' provisioning handlers, the admin invite and `verify` land in Phase 2.*
 
 ## Prerequisites
 
@@ -12,15 +12,17 @@
 
 1. Provision via CLI:
    ```bash
-   yc-tenant-cli provision \
+   NATS_URL=nats://... go run ./tools/yc-tenant-cli provision \
      --tenant-id=shop-abc \
      --name="Shop ABC" \
+     --hostname=shop-abc.com --hostname=www.shop-abc.com \
      --store-currency=ZAR \
      --default-jurisdiction=ZA \
      --tax-inclusive=true \
      --primary-admin-email=admin@shop-abc.com
    ```
-2. The CLI publishes `platform.tenant.provisioned.v1`; every service with a tenant-provisioning handler sets up default records.
+   Currency, jurisdiction and tax-inclusive default to `ZAR`, `ZA` and `true`.
+2. The CLI publishes `platform.tenant.provisioned.v1`; every service with a tenant-provisioning handler sets up default records. yc-gateway records the hostnames in `tenant_hosts` (ADR-020); a hostname already owned by another tenant dead-letters the event (check `/sysadmin/dlq` on yc-monitor).
 3. The initial shop admin receives a password-set link via yc-message.
 4. Configure gateway credentials: the shop admin logs in and sets Yoco (and optionally Stripe) credentials via the yc-payment admin API.
 5. The shop admin configures:

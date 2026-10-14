@@ -24,8 +24,14 @@ type Config struct {
 
 	// DB is the pgx pool for the service's own database. Required for
 	// Publish and Subscribe; the library reads/writes outbox and
-	// processed_events here.
+	// processed_events here. Leave nil only for publish-only tools that
+	// use PublishDirect (yc-tenant-cli); no relay or janitor runs then.
 	DB *pgxpool.Pool
+
+	// DisableRelay stops this client forwarding outbox rows to NATS. Rows
+	// stay pending until a client with the relay enabled starts. For
+	// tests and the outbox crash drill; never set it in production.
+	DisableRelay bool
 
 	// Validator is called before publish and before handler dispatch.
 	// Required; use NoopValidator in tests if genuinely needed.
@@ -134,9 +140,6 @@ func (c *Config) validate() error {
 	}
 	if c.ServiceName == "" {
 		return fmt.Errorf("eventbus: ServiceName required")
-	}
-	if c.DB == nil {
-		return fmt.Errorf("eventbus: DB required")
 	}
 	if c.Validator == nil {
 		return fmt.Errorf("eventbus: Validator required (use NoopValidator{} if needed)")

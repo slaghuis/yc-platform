@@ -1,10 +1,12 @@
 service: yc-monitor
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_MONITOR_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:

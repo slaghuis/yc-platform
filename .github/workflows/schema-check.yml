@@ -27,9 +27,12 @@ jobs:
         run: go run ./tools/yc-schema-gen
       - name: Check generated types up-to-date
         run: |
-          if ! git diff --quiet libs/yc-events/generated/; then
+          if [ -n "$(git status --porcelain libs/yc-events/types_gen.go libs/yc-events/schemas/)" ]; then
             echo "✗ Generated Go types are out of sync with schemas."
             echo "  Run: task gen:events"
-            git diff libs/yc-events/generated/
+            git status --porcelain libs/yc-events/
+            git diff libs/yc-events/
             exit 1
           fi
+      - name: Schemas compile and validate
+        run: go test ./libs/yc-events/... ./tools/yc-schema-gen/...

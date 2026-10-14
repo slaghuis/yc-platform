@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.service.deregistered.v1.json",
+  "title": "platform.service.deregistered.v1",
+  "description": "A backend service instance left yc-gateway's routing table. yc-monitor stops health-checking it.",
+  "type": "object",
+  "required": ["service_name", "instance_id", "reason", "deregistered_at"],
+  "additionalProperties": false,
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["shutdown", "health_check_failed", "manual"]
+    },
+    "deregistered_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

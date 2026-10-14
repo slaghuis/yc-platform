@@ -103,8 +103,9 @@ tasks:
   run:
     desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
     deps: [build]
+    dir: ../..  # paths in .env are relative to the repo root
     cmds:
-      - ./bin/{{.SERVICE}}
+      - services/{{.SERVICE}}/bin/{{.SERVICE}}
 
   test:
     desc: Unit tests
@@ -180,6 +181,7 @@ if [ $WITH_DB -eq 1 ]; then
 DROP TABLE IF EXISTS processed_events;
 DROP TABLE IF EXISTS outbox;
 EOF
+    cp "$ROOT/services/yc-orders/migrations/embed.go" "$SERVICE_DIR/migrations/embed.go"
 
     INIT="$ROOT/deploy/compose/postgres-init.sh"
     if ! grep -qx "    $DB_NAME" "$INIT"; then

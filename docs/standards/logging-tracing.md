@@ -142,8 +142,11 @@ GET /products
   http.status_code=200
   yc.tenant_id=shop-abc
   yc.actor_type=visitor
+  yc.correlation_id=0192f3a4-...
   duration=12ms
 ```
+
+The `yc.*` attributes are set by the access log from the auth context, so requests yc-gateway rejects before routing carry none.
 
 ### HTTP client
 
@@ -267,7 +270,7 @@ yc-monitor polls `/readyz` every 15 seconds.
 
 - **Dev stack includes Jaeger** at http://localhost:16686.
 - **Logs go to stdout**; `docker compose logs -f yc-identity` works out of the box.
-- **Trace a specific request**: pass `X-YC-Correlation-ID: debug-<something>` and grep logs.
+- **Trace a specific request**: pass `X-YC-Correlation-ID: <uuid>` (anything that is not a UUID is replaced), grep logs for it, and search Jaeger by the tag `yc.correlation_id=<uuid>`. `scripts/demo-phase1.sh` does both.
 
 ## 16. Production Readiness Checklist
 

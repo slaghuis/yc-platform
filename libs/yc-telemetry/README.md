@@ -92,7 +92,7 @@ Checking against `docs/standards/logging-tracing.md`:
 | Service, version, env on every line | ✓ (via `contextHandler`) |
 | `correlation_id`, `trace_id`, `span_id` auto-enriched | ✓ |
 | `tenant_id`, `actor_id`, `actor_type` auto-enriched | ✓ |
-| OTLP exporter configurable | ✓ (traces + metrics) |
+| OTLP exporter configurable | ✓ (traces + metrics; `OTEL_METRICS_EXPORTER=none` disables metrics export) |
 | `StartSpan` convenience | ✓ |
 | `RecordError` convenience | ✓ |
 | `/healthz` / `/readyz` endpoints | ✗ (lives in `yc-httpkit`) |

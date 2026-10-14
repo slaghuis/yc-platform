@@ -294,7 +294,7 @@ func Allocate(total Money, ratios []decimal.Decimal) []Money   // sum == total g
 ```
 
 ### `yc-events`
-Generated Go types for every event in `yc-event-schemas`. The schema repo's `generate_go_types.sh` writes here. Services import these types rather than hand-crafting JSON.
+Generated Go types for every event in `yc-event-schemas`, plus the schema `Validator` passed to yc-eventbus. `task gen:events` (`tools/yc-schema-gen`) writes `types_gen.go` and the embedded `schemas/` copy. Services import these types rather than hand-crafting JSON.
 
 ```go
 package events

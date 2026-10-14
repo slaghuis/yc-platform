@@ -64,7 +64,8 @@ type DLQEnvelope struct {
 // DLQMetadata records consumer, attempt count, and failure context for a
 // dead-lettered event.
 type DLQMetadata struct {
-	Consumer      string    `json:"consumer"`
+	Service       string    `json:"service,omitempty"` // the consuming service
+	Consumer      string    `json:"consumer"`          // its durable consumer name
 	Attempts      int       `json:"attempts"`
 	FirstFailure  time.Time `json:"first_failure"`
 	LastFailure   time.Time `json:"last_failure"`

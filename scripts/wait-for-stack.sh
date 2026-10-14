@@ -31,6 +31,11 @@ wait_until "NATS"     curl -fsS http://localhost:8222/healthz
 wait_until "S3"       curl -fsS http://localhost:9000/healthz
 wait_until "Jaeger"   curl -fsS http://localhost:16686/
 wait_until "MailHog"  curl -fsS http://localhost:8025/
+if [ "${1:-}" = "--app" ]; then
+    wait_until "yc-gateway"  curl -fsS http://localhost:8090/readyz
+    wait_until "yc-identity" curl -fsS http://localhost:8081/readyz
+    wait_until "yc-monitor"  curl -fsS http://localhost:8082/readyz
+fi
 
 if [ $failed -gt 0 ]; then
     echo ""

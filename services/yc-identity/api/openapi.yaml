@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: yc-identity
+  version: 0.1.0
+  description: |
+    Authentication and user identity (docs/services/yc-identity.md).
+    Phase 1 subset: visitor tokens, token validation and the caller's own user.
+    Public routes are reached through yc-gateway, which sets the X-YC-* headers;
+    /internal/ routes are reachable only inside the platform network.
+
+paths:
+  /visitor:
+    post:
+      summary: Issue a visitor token for the tenant yc-gateway resolved
+      operationId: createVisitor
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+      responses:
+        '201':
+          description: Visitor created; identity.visitor.created.v1 is published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /me:
+    get:
+      summary: The caller's own user
+      operationId: getMe
+      parameters:
+        - $ref: '#/components/parameters/TenantID'
+        - $ref: '#/components/parameters/ActorID'
+        - $ref: '#/components/parameters/ActorType'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/validate-token:
+    post:
+      summary: Validate an access token (called by yc-gateway)
+      operationId: validateToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              additionalProperties: false
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: The token is valid and its user is active.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenIdentity' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    TenantID:
+      name: X-YC-Tenant-ID
+      in: header
+      required: true
+      description: Set by yc-gateway from the request hostname.
+      schema: { type: string }
+    ActorID:
+      name: X-YC-Actor-ID
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+    ActorType:
+      name: X-YC-Actor-Type
+      in: header
+      required: true
+      schema: { $ref: '#/components/schemas/ActorType' }
+
+  schemas:
+    ActorType:
+      type: string
+      enum: [visitor, customer, shop_admin, system_admin, service]
+    Session:
+      type: object
+      required: [access_token, token_type, expires_at, user_id, tenant_id]
+      properties:
+        access_token: { type: string, description: RS256 JWT }
+        token_type: { type: string, const: Bearer }
+        expires_at: { type: string, format: date-time }
+        user_id: { type: string, format: uuid }
+        tenant_id: { type: string }
+    TokenIdentity:
+      type: object
+      required: [tenant_id, actor_id, actor_type, jti, expires_at]
+      properties:
+        tenant_id: { type: string }
+        actor_id: { type: string, format: uuid }
+        actor_type: { $ref: '#/components/schemas/ActorType' }
+        jti: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+    Me:
+      type: object
+      required: [user_id, tenant_id, role, status, created_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        role: { type: string, enum: [visitor, customer, shop_admin, system_admin] }
+        status: { type: string, enum: [active, suspended, deleted] }
+        created_at: { type: string, format: date-time }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

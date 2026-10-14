@@ -19,8 +19,14 @@ tasks:
   run:
     desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
     deps: [build]
+    dir: ../..  # paths in .env are relative to the repo root
     cmds:
-      - ./bin/{{.SERVICE}}
+      - services/{{.SERVICE}}/bin/{{.SERVICE}}
+
+  gen:openapi:
+    desc: Generate code from api/openapi.yaml
+    cmds:
+      - echo "{{.SERVICE}}{{":"}} handlers are hand-written until oapi-codegen is adopted"
 
   test:
     desc: Unit tests

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     tenant_id       TEXT NOT NULL,
     subject         TEXT NOT NULL,
     envelope        JSONB NOT NULL,
+    headers         JSONB NOT NULL DEFAULT '{}',  -- W3C trace context, sent as NATS headers
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     published_at    TIMESTAMPTZ,
     attempts        INT NOT NULL DEFAULT 0,
