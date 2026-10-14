@@ -1,0 +1,37 @@
+# ADR-003: Dead Letter Topics
+
+**Status:** Accepted
+**Date:** 2025-01-15
+
+## Decision
+
+Every consumer routes unprocessable messages ("poison messages") to a tenant-scoped DLQ subject:
+
+```
+yc.<tenant_id>.<domain>.dlq.v1
+```
+
+A message is considered poison when:
+- It fails schema validation
+- It fails processing after N retries (default: 5, with exponential backoff: 1s, 5s, 30s, 2m, 10m)
+- It throws a non-retriable error (explicit `ErrPoison` from the handler)
+
+## Rules
+
+1. **The envelope is preserved** — the DLQ message is the original event wrapped with `dlq_metadata`:
+   ```json
+   {
+     "original_event": { ...full envelope... },
+     "dlq_metadata": {
+       "consumer": "yc-orders",
+       "attempts": 5,
+       "first_failure": "2025-01-15T10:00:00Z",
+       "last_error": "unmarshal: unknown field 'foo'",
+       "last_failure": "2025-01-15T10:12:00Z"
+     }
+   }
+   ```
+2. **YC-Monitor subscribes** to `yc.*.*.dlq.v1` and raises alerts
+3. **DLQ is per-tenant** — one tenant's bad messages don't pollute another's visibility
+4. **Manual replay tooling** must exist from day one (CLI in `yc-eventbus` library)
+5. **DLQ retention: 90 days** — long enough for human investigation, short enough to bound storage

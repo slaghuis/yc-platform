@@ -1,0 +1,193 @@
+# yc-preference — Service Requirement
+
+## Overview
+
+`yc-preference` maintains per-customer preferences: display currency, preferred messaging channel, preferred search facets, and the last-used facet state. It is a lightweight settings store. All preference data is PII in the sense that it is linked to a user — it participates in the GDPR cascade.
+
+## Location in Monorepo
+
+```
+/services/yc-preference/
+```
+
+## Responsibilities
+
+1. Store and retrieve a customer's display currency preference
+2. Store and retrieve a customer's preferred messaging channel (and address/handle per channel)
+3. Store a customer's preferred faceted search filters
+4. Store a customer's last-used faceted search state (for session continuity)
+5. Seed defaults for new customers from tenant-level defaults
+6. Provide fast reads for yc-product, yc-pricing, yc-cart, yc-message
+7. Participate in the GDPR cascade
+
+## Multi-Tenancy
+
+- Preferences are keyed by `(tenant_id, user_id)`
+- A single email may have different preferences in different tenants
+- Tenant-level default preferences are stored as a separate record with `user_id = NULL`
+
+## Preferences Model
+
+Each preference is a **typed, named key**. New preference types are added by schema evolution, not by code.
+
+```json
+{
+  "tenant_id": "shop-abc",
+  "user_id": "user-uuid",
+  "preferences": {
+    "display_currency": "USD",
+    "messaging": {
+      "primary_channel": "email",
+      "channels": {
+        "email": { "address": "user@example.com", "verified": true },
+        "whatsapp": { "address": "+27831234567", "verified": false },
+        "sms": { "address": "+27831234567", "verified": true }
+      }
+    },
+    "search": {
+      "preferred_facets": { "category": "electronics", "price_max": 5000 },
+      "last_used_facets": { "category": "electronics", "price_max": 5000, "brand": "acme" }
+    },
+    "locale": "en-ZA"
+  }
+}
+```
+
+**v1 explicit preference keys**: `display_currency`, `messaging.primary_channel`, `messaging.channels.*`, `search.preferred_facets`, `search.last_used_facets`, `locale`.
+
+Future keys can be added additively.
+
+## Channel Verification
+
+- When a messaging channel is added or changed, yc-message is responsible for sending a verification message
+- yc-preference stores the `verified` flag per channel but does not perform verification itself
+- yc-message calls back into yc-preference to mark a channel verified
+- The channel is **not used as primary** until verified (fallback to email if primary unverified)
+
+## API
+
+### Public Endpoints
+
+| Method | Path | Description | Auth |
+|---|---|---|---|
+| GET | `/preferences/me` | Get my preferences | customer / shop_admin / system_admin |
+| PATCH | `/preferences/me` | Update my preferences (partial) | customer / shop_admin / system_admin |
+| GET | `/preferences/me/channels` | List messaging channels | customer |
+| POST | `/preferences/me/channels` | Add a channel | customer |
+| DELETE | `/preferences/me/channels/{channel}` | Remove a channel | customer |
+
+### Admin Endpoints
+
+| Method | Path | Description | Auth |
+|---|---|---|---|
+| GET | `/admin/preferences/defaults` | Get tenant default preferences | shop_admin |
+| PUT | `/admin/preferences/defaults` | Set tenant default preferences | shop_admin |
+
+### Internal Endpoints
+
+| Method | Path | Description | Auth |
+|---|---|---|---|
+| GET | `/internal/preferences/{user_id}` | Get preferences for a user (used by yc-pricing, yc-message) | service |
+| GET | `/internal/preferences/{user_id}/channel` | Get resolved messaging channel | service |
+| POST | `/internal/preferences/{user_id}/channels/{channel}/verify` | Mark channel verified (called by yc-message) | service |
+
+## Database Schema
+
+Database: **`yc_preference`**
+
+```sql
+CREATE TABLE preferences (
+    tenant_id       TEXT NOT NULL,
+    user_id         TEXT NOT NULL,          -- 'default' for tenant defaults
+    display_currency TEXT,
+    primary_channel TEXT,
+    locale          TEXT,
+    search_preferred_facets JSONB NOT NULL DEFAULT '{}',
+    search_last_used_facets JSONB NOT NULL DEFAULT '{}',
+    extensions      JSONB NOT NULL DEFAULT '{}',   -- forward compat
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, user_id)
+);
+
+CREATE TABLE messaging_channels (
+    tenant_id       TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    channel         TEXT NOT NULL,          -- 'email','sms','whatsapp','telegram'
+    address         TEXT NOT NULL,
+    verified        BOOLEAN NOT NULL DEFAULT FALSE,
+    verified_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, user_id, channel)
+);
+
+CREATE TABLE outbox ( ... );
+CREATE TABLE processed_events ( ... );
+
+ALTER TABLE preferences ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON preferences
+    USING (tenant_id = current_setting('app.tenant_id', true)
+           OR current_setting('app.tenant_id', true) = '_platform');
+-- similar on messaging_channels
+```
+
+## Published Events
+
+| Event | When |
+|---|---|
+| `preference.currency.changed.v1` | Display currency changed |
+| `preference.channel.added.v1` | New messaging channel added |
+| `preference.channel.changed.v1` | Primary channel changed |
+| `preference.channel.verified.v1` | A channel was verified |
+| `preference.channel.removed.v1` | Channel removed |
+| `preference.facet.updated.v1` | Preferred facets changed |
+| `preference.locale.changed.v1` | Locale changed |
+
+## Subscribed Events
+
+| Event | Action |
+|---|---|
+| `identity.user.registered.v1` | Create preference row seeded with tenant defaults |
+| `identity.user.deleted.v1` | Delete all preferences for the user; publish `platform.gdpr.cascade_completed.v1` |
+| `platform.tenant.provisioned.v1` | Create default preference row for the tenant |
+| `platform.tenant.deleted.v1` | Delete all tenant preferences |
+| `message.bounced.v1` | Mark channel as unverified; demote from primary if applicable |
+
+## Configuration
+
+```yaml
+yc-preference:
+  listen: :8080
+  database:
+    url: postgres://yc_preference:...@...
+  defaults:
+    display_currency: ZAR           # platform-wide default
+    primary_channel: email
+    locale: en-ZA
+  nats:
+    url: nats://...
+  log_level: info
+```
+
+## Dependencies on Other Services
+
+- **None at startup**
+
+## Called By
+
+- `yc-pricing` (for display currency conversion)
+- `yc-product` (for faceted search context)
+- `yc-cart` (for pricing display)
+- `yc-message` (for routing)
+- `yc-checkout` (for messaging channel on confirmations)
+
+## GDPR Behavior
+
+- On `identity.user.deleted.v1`: all rows for `user_id` deleted; publish `platform.gdpr.cascade_completed.v1`
+
+## Open Questions / Future Scope
+
+- Marketing consent flags (per channel, per category)
+- Theme / UI preferences
+- Multi-language catalog preferences
+- Notification scheduling (quiet hours, timezone-aware)
