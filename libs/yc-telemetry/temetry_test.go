@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 func TestInit_RequiresServiceName(t *testing.T) {

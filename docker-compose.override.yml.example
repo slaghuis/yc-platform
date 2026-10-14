@@ -1,0 +1,8 @@
+# Copy to docker-compose.override.yml (gitignored) to apply local overrides.
+# Docker Compose merges it into docker-compose.yml automatically.
+
+services:
+  postgres:
+    # Expose on a different host port if 5432 is in use:
+    # ports: !override
+    #   - "15432:5432"

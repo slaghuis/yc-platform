@@ -1,16 +1,10 @@
 version: '3'
 
 vars:
-  GO_VERSION: '1.26'
   LOCAL_PREFIX: 'github.com/slaghuis/yc-platform'
-  SERVICES: >-
-    yc-identity yc-gateway yc-image yc-preference yc-product
-    yc-pricing yc-inventory yc-cart yc-review yc-checkout
-    yc-payment yc-shipping yc-orders yc-message yc-audit
-    yc-monitor yc-analytics
-  LIBS: >-
-    yc-authctx yc-config yc-dbkit yc-errors yc-eventbus
-    yc-events yc-httpkit yc-money yc-telemetry yc-testkit
+  # Deployable services: every services/<name> with a cmd/<name> package.
+  SERVICES:
+    sh: for d in services/*/cmd/*/; do s="${d#services/}"; echo "${s%%/*}"; done
 
 tasks:
   default:
@@ -30,12 +24,9 @@ tasks:
       - ./scripts/check-deps.sh
 
   tidy:
-    desc: go mod tidy for all modules
+    desc: go mod tidy for every module in go.work
     cmds:
-      - for: { var: LIBS }
-        cmd: (cd libs/{{.ITEM}} && go mod tidy)
-      - for: { var: SERVICES }
-        cmd: (cd services/{{.ITEM}} && go mod tidy)
+      - ./scripts/for-each-module.sh go mod tidy
 
   # ─── Code generation ──────────────────────────────────────
   gen:
@@ -62,9 +53,9 @@ tasks:
 
   # ─── Linting and formatting ───────────────────────────────
   lint:
-    desc: Run golangci-lint across all modules
+    desc: Run golangci-lint in every module in go.work
     cmds:
-      - golangci-lint run ./...
+      - ./scripts/for-each-module.sh golangci-lint run
 
   fmt:
     desc: Format all Go code
@@ -84,33 +75,27 @@ tasks:
 
   # ─── Testing ──────────────────────────────────────────────
   test:
-    desc: Run all unit tests
+    desc: Run unit tests in every module in go.work
     cmds:
-      - for: { var: LIBS }
-        cmd: (cd libs/{{.ITEM}} && go test ./...)
-      - for: { var: SERVICES }
-        cmd: (cd services/{{.ITEM}} && go test ./...)
+      - ./scripts/for-each-module.sh go test ./...
 
   test:integration:
-    desc: Run integration tests (requires devstack running)
+    desc: Run integration tests in every module (requires devstack running)
     cmds:
-      - for: { var: SERVICES }
-        cmd: (cd services/{{.ITEM}} && go test -tags=integration ./...)
+      - ./scripts/for-each-module.sh go test -tags=integration ./...
 
   test:e2e:
     desc: Run end-to-end tests
     cmds:
-      - go test -tags=e2e -v ./test/e2e/...
+      - cd test/e2e && go test -tags=e2e -v ./...
 
   # ─── Build ────────────────────────────────────────────────
   build:
     desc: Build all services
     cmds:
       - for: { var: SERVICES }
-        cmd: |
-          if [ -d services/{{.ITEM}}/cmd/{{.ITEM}} ]; then
-            (cd services/{{.ITEM}} && task build)
-          fi
+        task: build:service
+        vars: { SERVICE: '{{.ITEM}}' }
 
   build:service:
     desc: Build a single service (SERVICE=yc-identity)
@@ -122,12 +107,8 @@ tasks:
     desc: Build Docker images for all services
     cmds:
       - for: { var: SERVICES }
-        cmd: |
-          if [ -d services/{{.ITEM}}/cmd/{{.ITEM}} ]; then
-            docker build -t yc-platform/{{.ITEM}}:dev \
-              -f deploy/docker/Dockerfile.service \
-              --build-arg SERVICE={{.ITEM}} .
-          fi
+        task: docker:build:service
+        vars: { SERVICE: '{{.ITEM}}' }
 
   docker:build:service:
     desc: Build Docker image for one service (SERVICE=yc-identity)
@@ -138,7 +119,7 @@ tasks:
 
   # ─── Dev stack ────────────────────────────────────────────
   devstack:up:
-    desc: Start local Postgres, NATS, MinIO, Jaeger, MailHog
+    desc: Start local Postgres, NATS, S3 (SeaweedFS), Jaeger, MailHog
     cmds:
       - docker compose up -d
       - ./scripts/wait-for-stack.sh
@@ -183,9 +164,11 @@ tasks:
 
   # ─── Scaffolding ──────────────────────────────────────────
   scaffold:service:
-    desc: Create a new service skeleton (NAME=yc-foo)
+    desc: Create a new service and add it to go.work (NAME=yc-foo; NO_DB=1 for a service without a database)
+    requires:
+      vars: [NAME]
     cmds:
-      - ./scripts/gen-service.sh {{.NAME}}
+      - ./scripts/gen-service.sh {{if .NO_DB}}--no-db{{end}} {{.NAME}}
 
   scaffold:event:
     desc: Create a new event schema (DOMAIN=order ACTION=placed VERSION=1; add ENTITY=stock for non-root entities)
@@ -194,7 +177,9 @@ tasks:
 
   # ─── Convenience ──────────────────────────────────────────
   run:
-    desc: Run a service locally (SERVICE=yc-identity)
+    desc: Build and run a service locally (SERVICE=yc-identity)
+    requires:
+      vars: [SERVICE]
     cmds:
       - task -d services/{{.SERVICE}} run
 

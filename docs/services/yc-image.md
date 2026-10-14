@@ -145,7 +145,7 @@ CREATE POLICY tenant_isolation ON images
 
 ## Object Storage
 
-- **v1 target**: S3-compatible storage (AWS S3, MinIO for dev, DigitalOcean Spaces, Backblaze B2)
+- **v1 target**: S3-compatible storage (AWS S3, SeaweedFS for dev, DigitalOcean Spaces, Backblaze B2)
 - **Storage layout**: `/<tenant_id>/<image_id>/<variant>.<ext>`
 - **Access**: public-read for product images via CDN (acceptable since no PII in product images); signed URLs reserved for future private image scenarios
 
@@ -230,4 +230,3 @@ yc-image:
 - Image moderation (NSFW detection)
 - Custom variant sets per tenant
 - Progressive JPEG / blur-up placeholders
-

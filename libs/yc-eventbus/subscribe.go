@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // SubscribeOpts configures a durable JetStream consumer.
@@ -96,12 +96,12 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) e
 	}
 
 	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:        opts.DurableName,
-		FilterSubject:  opts.Subject,
-		AckPolicy:      jetstream.AckExplicitPolicy,
-		AckWait:        opts.AckWait,
-		MaxDeliver:     opts.MaxRetries + 1, // initial + retries
-		DeliverPolicy:  jetstream.DeliverAllPolicy,
+		Durable:       opts.DurableName,
+		FilterSubject: opts.Subject,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       opts.AckWait,
+		MaxDeliver:    opts.MaxRetries + 1, // initial + retries
+		DeliverPolicy: jetstream.DeliverAllPolicy,
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe: create consumer %q: %w", opts.DurableName, err)
@@ -113,7 +113,7 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOpts, h Handler) e
 	}
 
 	c.bgWG.Add(1)
-	go c.runSubscription(opts, iter, h)
+	go c.runSubscription(opts, iter, h) //nolint:contextcheck // the subscription outlives ctx and stops with the client's background context
 
 	telemetry.LoggerFromContext(ctx).Info("eventbus subscription active",
 		"subject", opts.Subject,
@@ -153,8 +153,10 @@ func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesCont
 }
 
 func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg) {
-	meta, _ := msg.Metadata()
-	deliveries := int(meta.NumDelivered)
+	deliveries := 1
+	if meta, err := msg.Metadata(); err == nil {
+		deliveries = int(meta.NumDelivered) //nolint:gosec // bounded by the consumer's MaxDeliver
+	}
 
 	ctx, span := telemetry.StartSpan(c.bgCtx, "eventbus.consume",
 		attribute.String("event.subject", msg.Subject()),
@@ -220,7 +222,7 @@ func (c *Client) handleMessage(opts SubscribeOpts, h Handler, msg jetstream.Msg)
 		if err := c.markProcessed(ctx, env.EventID, opts.DurableName); err != nil {
 			logger.Error("mark processed", "err", err)
 			// Still ack — reprocessing on redelivery is safe because
-			// handler already succeeded. The dedup table is defense
+			// handler already succeeded. The dedup table is defence
 			// in depth.
 		}
 		_ = msg.Ack()

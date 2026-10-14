@@ -11,8 +11,8 @@ use (
 	./libs/yc-money
 	./libs/yc-telemetry
 	./libs/yc-testkit
-	./services/yc-analytics
 
+	./services/yc-analytics
 	./services/yc-audit
 	./services/yc-cart
 	./services/yc-checkout
@@ -29,6 +29,8 @@ use (
 	./services/yc-product
 	./services/yc-review
 	./services/yc-shipping
+
+	./test/e2e
 
 	./tools/yc-dlq-cli
 	./tools/yc-migrate

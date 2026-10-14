@@ -1,25 +1,45 @@
 #!/usr/bin/env bash
-# Scaffold a new service.
+# Scaffold a new service and wire it into the monorepo.
 #
-# Usage: ./scripts/gen-service.sh yc-foo
+# Usage: ./scripts/gen-service.sh [--no-db] [--purpose "<one line>"] yc-foo
+#
+#   --no-db     The service has no database (no migrations, no DB config,
+#               no entry in postgres-init.sh or .env.example).
+#   --purpose   One-line description for the README.
+#
+# Creates services/<name>/ with go.mod, cmd/<name>/main.go, Taskfile.yml,
+# config/config.default.yaml, README.md and (unless --no-db) the eventbus
+# migrations, then adds the module to go.work. Compatible with bash 3.2.
 set -euo pipefail
 
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <service-name>"
+usage() {
+    echo "Usage: $0 [--no-db] [--purpose \"<one line>\"] <service-name>"
     echo "Example: $0 yc-foo"
     exit 1
-fi
+}
 
-SERVICE="$1"
-if [[ ! "$SERVICE" =~ ^yc-[a-z]+$ ]]; then
-    echo "✗ Service name must match ^yc-[a-z]+$ (got: $SERVICE)"
+WITH_DB=1
+PURPOSE=""
+SERVICE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --no-db) WITH_DB=0; shift ;;
+        --purpose) [ $# -ge 2 ] || usage; PURPOSE="$2"; shift 2 ;;
+        -*) usage ;;
+        *) [ -z "$SERVICE" ] || usage; SERVICE="$1"; shift ;;
+    esac
+done
+[ -n "$SERVICE" ] || usage
+
+if [[ ! "$SERVICE" =~ ^yc-[a-z]+(-[a-z]+)*$ ]]; then
+    echo "✗ Service name must match ^yc-[a-z]+(-[a-z]+)*\$ (got: $SERVICE)"
     exit 1
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVICE_DIR="$ROOT/services/$SERVICE"
 
-if [ -d "$SERVICE_DIR" ]; then
+if [ -e "$SERVICE_DIR" ]; then
     echo "✗ Service directory already exists: $SERVICE_DIR"
     exit 1
 fi
@@ -27,23 +47,28 @@ fi
 MODULE_PATH="github.com/slaghuis/yc-platform/services/$SERVICE"
 SHORT="${SERVICE#yc-}"
 DB_NAME="yc_$(echo "$SHORT" | tr '-' '_')"
+DB_ENV="$(echo "$SERVICE" | tr 'a-z-' 'A-Z_')_DB_URL"
+GO_VERSION="$(sed -n 's/^go \([0-9.]*\).*/\1/p' "$ROOT/go.work")"
+[ -n "$PURPOSE" ] || PURPOSE="<One-line service purpose.>"
 
-echo "▸ Creating service skeleton for $SERVICE..."
+echo "▸ Creating $SERVICE..."
+mkdir -p "$SERVICE_DIR/cmd/$SERVICE" "$SERVICE_DIR/config"
 
-mkdir -p "$SERVICE_DIR"/{api,cmd/"$SERVICE",config,internal/{app,domain,service,repository,transport/{http,events},integration},migrations,tests/{unit,integration,testdata}}
-
-# go.mod
 cat > "$SERVICE_DIR/go.mod" <<EOF
 module $MODULE_PATH
 
-go 1.26
+go $GO_VERSION
 EOF
 
-# README
+if [ $WITH_DB -eq 1 ]; then
+    DB_README="Database: \`$DB_NAME\` (\`$DB_ENV\`)."
+else
+    DB_README="No database."
+fi
 cat > "$SERVICE_DIR/README.md" <<EOF
 # $SERVICE
 
-<One-line service purpose.>
+$PURPOSE
 
 See \`docs/services/$SERVICE.md\` for the full requirement spec.
 
@@ -53,36 +78,33 @@ See \`docs/services/$SERVICE.md\` for the full requirement spec.
 task run SERVICE=$SERVICE
 \`\`\`
 
-## Database
-
-Database: \`$DB_NAME\`
-
-## Owned subjects
-
-- \`yc.<tenant>.$SHORT.>\`
+$DB_README
 EOF
 
-# Service Taskfile
 cat > "$SERVICE_DIR/Taskfile.yml" <<EOF
 version: '3'
+
+dotenv: ['../../.env']
 
 vars:
   SERVICE: $SERVICE
 
 tasks:
   build:
-    desc: Build the service binary
+    desc: Build the service binary into bin/
     sources:
       - '**/*.go'
+      - go.mod
     generates:
       - 'bin/{{.SERVICE}}'
     cmds:
       - go build -o bin/{{.SERVICE}} ./cmd/{{.SERVICE}}
 
   run:
-    desc: Run locally
+    desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
+    deps: [build]
     cmds:
-      - go run ./cmd/{{.SERVICE}}
+      - ./bin/{{.SERVICE}}
 
   test:
     desc: Unit tests
@@ -90,106 +112,93 @@ tasks:
       - go test ./...
 
   test:integration:
-    desc: Integration tests
+    desc: Integration tests (requires the dev stack)
     cmds:
       - go test -tags=integration ./...
 
-  gen:openapi:
-    desc: Regenerate OpenAPI handlers
-    sources:
-      - 'api/openapi.yaml'
-    generates:
-      - 'api/generated/*.go'
+  lint:
+    desc: Lint this module
     cmds:
-      - echo "oapi-codegen not configured for {{.SERVICE}} yet"
+      - golangci-lint run
+
+  docker:build:
+    desc: Build the Docker image
+    dir: ../..
+    cmds:
+      - docker build -t yc-platform/{{.SERVICE}}:dev -f deploy/docker/Dockerfile.service --build-arg SERVICE={{.SERVICE}} .
 EOF
 
-# Minimal main.go
 cat > "$SERVICE_DIR/cmd/$SERVICE/main.go" <<EOF
+// Command $SERVICE runs the $SERVICE service.
+//
+// See docs/services/$SERVICE.md for the requirement spec.
 package main
 
 import (
-    "context"
-    "fmt"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+	"context"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 var version = "dev"
 
 func main() {
-    ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-    defer cancel()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).
+		With("service", "$SERVICE", "version", version)
 
-    fmt.Fprintf(os.Stdout, "{\"msg\":\"service starting\",\"service\":\"$SERVICE\",\"version\":%q}\n", version)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-    <-ctx.Done()
-
-    shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancelShutdown()
-    _ = shutdownCtx
-
-    fmt.Fprintf(os.Stdout, "{\"msg\":\"service stopped\",\"service\":\"$SERVICE\"}\n")
+	logger.Info("hello")
+	<-ctx.Done()
+	logger.Info("shutting down")
 }
 EOF
 
-# Config defaults
-cat > "$SERVICE_DIR/config/config.default.yaml" <<EOF
-service: $SERVICE
-http:
-  listen: ":8080"
-log:
-  level: info
-database:
-  url: \${${SHORT^^}_DB_URL:-postgres://localhost/$DB_NAME}
-nats:
-  url: \${NATS_URL:-nats://localhost:4222}
-telemetry:
-  otlp_endpoint: \${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}
-EOF
+{
+    echo "service: $SERVICE"
+    echo "http:"
+    echo "  listen: \":8080\""
+    echo "log:"
+    echo "  level: info"
+    if [ $WITH_DB -eq 1 ]; then
+        echo "database:"
+        echo "  url: \${$DB_ENV}"
+    fi
+    echo "nats:"
+    echo "  url: \${NATS_URL}"
+    echo "telemetry:"
+    echo "  otlp_endpoint: \${OTEL_EXPORTER_OTLP_ENDPOINT}"
+} > "$SERVICE_DIR/config/config.default.yaml"
 
-# Initial migrations — outbox + processed_events (standard across all services)
-cat > "$SERVICE_DIR/migrations/001_eventbus_tables.up.sql" <<'EOF'
-CREATE TABLE IF NOT EXISTS outbox (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       TEXT NOT NULL,
-    subject         TEXT NOT NULL,
-    envelope        JSONB NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    published_at    TIMESTAMPTZ,
-    attempts        INT NOT NULL DEFAULT 0,
-    last_error      TEXT,
-    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_outbox_unpublished
-    ON outbox (next_attempt_at)
-    WHERE published_at IS NULL;
-
-CREATE TABLE IF NOT EXISTS processed_events (
-    event_id     UUID NOT NULL,
-    consumer     TEXT NOT NULL,
-    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (event_id, consumer)
-);
-CREATE INDEX IF NOT EXISTS idx_processed_events_time
-    ON processed_events (processed_at);
-EOF
-
-cat > "$SERVICE_DIR/migrations/001_eventbus_tables.down.sql" <<'EOF'
+if [ $WITH_DB -eq 1 ]; then
+    mkdir -p "$SERVICE_DIR/migrations"
+    cp "$ROOT/libs/yc-eventbus/schema.sql" "$SERVICE_DIR/migrations/001_eventbus_tables.up.sql"
+    cat > "$SERVICE_DIR/migrations/001_eventbus_tables.down.sql" <<'EOF'
 DROP TABLE IF EXISTS processed_events;
 DROP TABLE IF EXISTS outbox;
 EOF
 
-# Dockerfile symlink to shared
-ln -s "../../deploy/docker/Dockerfile.service" "$SERVICE_DIR/Dockerfile"
+    INIT="$ROOT/deploy/compose/postgres-init.sh"
+    if ! grep -qx "    $DB_NAME" "$INIT"; then
+        DB_NAME="$DB_NAME" perl -0pi -e 's/(SERVICES=\(\n(?:    \S+\n)*)\)/$1    $ENV{DB_NAME}\n)/' "$INIT"
+        echo "  ✓ Added $DB_NAME to deploy/compose/postgres-init.sh (run 'task devstack:reset' to create it)"
+    fi
 
-echo "✓ Created $SERVICE_DIR"
+    ENV_EXAMPLE="$ROOT/.env.example"
+    if ! grep -q "^$DB_ENV=" "$ENV_EXAMPLE"; then
+        echo "$DB_ENV=postgres://${DB_NAME}_app:devpass@localhost:5432/$DB_NAME?sslmode=disable" >> "$ENV_EXAMPLE"
+        echo "  ✓ Added $DB_ENV to .env.example (copy it to your .env)"
+    fi
+fi
+
+(cd "$ROOT" && go work use "./services/$SERVICE")
+echo "  ✓ Added ./services/$SERVICE to go.work"
+
+echo "✓ Created services/$SERVICE"
 echo ""
 echo "Next steps:"
-echo "  1. Add '$SERVICE' to go.work"
-echo "  2. Add '$DB_NAME' to deploy/compose/postgres-init.sh"
-echo "  3. Add '${SHORT^^}_DB_URL' to .env.example"
-echo "  4. Create docs/services/$SERVICE.md"
-echo "  5. Run: cd services/$SERVICE && go mod tidy"
+echo "  1. Write docs/services/$SERVICE.md"
+echo "  2. task run SERVICE=$SERVICE"

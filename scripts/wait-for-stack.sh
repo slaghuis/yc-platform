@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Wait for dev stack services to become healthy.
+# Wait for dev stack services to become healthy. Exits non-zero if any
+# service is not ready within the timeout.
 set -euo pipefail
 
-timeout=60
+timeout=90
 interval=2
-elapsed=0
+failed=0
 
-wait_for() {
+wait_until() {
     local name=$1
-    local url=$2
+    shift
+    local elapsed=0
     printf "  Waiting for %s..." "$name"
     while [ $elapsed -lt $timeout ]; do
-        if curl -fsS "$url" >/dev/null 2>&1; then
+        if "$@" >/dev/null 2>&1; then
             echo " ready"
             return 0
         fi
@@ -20,33 +22,28 @@ wait_for() {
         printf "."
     done
     echo " TIMEOUT"
-    return 1
+    failed=$((failed+1))
 }
 
 echo "▸ Waiting for dev stack..."
-wait_for "NATS"    "http://localhost:8222/healthz"   || true
-wait_for "MinIO"   "http://localhost:9000/minio/health/ready" || true
-wait_for "Jaeger"  "http://localhost:16686/"         || true
-wait_for "MailHog" "http://localhost:8025/"          || true
+wait_until "Postgres" docker exec yc-postgres pg_isready -U postgres
+wait_until "NATS"     curl -fsS http://localhost:8222/healthz
+wait_until "S3"       curl -fsS http://localhost:9000/healthz
+wait_until "Jaeger"   curl -fsS http://localhost:16686/
+wait_until "MailHog"  curl -fsS http://localhost:8025/
 
-# Postgres doesn't have an HTTP endpoint; probe with pg_isready via docker
-printf "  Waiting for Postgres..."
-elapsed=0
-while [ $elapsed -lt $timeout ]; do
-    if docker exec yc-postgres pg_isready -U postgres >/dev/null 2>&1; then
-        echo " ready"
-        break
-    fi
-    sleep $interval
-    elapsed=$((elapsed+interval))
-    printf "."
-done
+if [ $failed -gt 0 ]; then
+    echo ""
+    echo "✗ $failed service(s) not ready. Check: docker compose ps && docker compose logs"
+    exit 1
+fi
 
 echo ""
 echo "✓ Dev stack ready."
 echo ""
 echo "  Postgres:  localhost:5432 (postgres / devpass)"
 echo "  NATS:      localhost:4222 (admin: http://localhost:8222)"
-echo "  MinIO:     http://localhost:9001 (devkey / devsecret)"
+echo "  S3:        http://localhost:9000 (devkey / devsecret, bucket yc-images)"
+echo "  S3 admin:  http://localhost:9001"
 echo "  Jaeger:    http://localhost:16686"
 echo "  MailHog:   http://localhost:8025"

@@ -57,4 +57,3 @@ The envelope schema (`envelope/v1.json`) applies the same tenant ID pattern.
 ## Alternatives Considered
 
 - **Payload-based isolation**: single topic per event type, filter by `tenant_id` in payload. Rejected — weaker security posture, easier to accidentally leak.
-

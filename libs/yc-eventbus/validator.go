@@ -22,5 +22,8 @@ type Validator interface {
 // still in early development; real deployments must wire a real validator.
 type NoopValidator struct{}
 
+// ValidateEnvelope accepts every envelope.
 func (NoopValidator) ValidateEnvelope(context.Context, *Envelope) error { return nil }
-func (NoopValidator) ValidatePayload(context.Context, *Envelope) error  { return nil }
+
+// ValidatePayload accepts every payload.
+func (NoopValidator) ValidatePayload(context.Context, *Envelope) error { return nil }

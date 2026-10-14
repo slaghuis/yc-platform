@@ -1,0 +1,9 @@
+service: yc-gateway
+http:
+  listen: ":8080"
+log:
+  level: info
+nats:
+  url: ${NATS_URL}
+telemetry:
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}

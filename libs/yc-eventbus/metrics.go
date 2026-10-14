@@ -3,16 +3,16 @@ package eventbus
 import (
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Named for consistency with docs/standards/logging-tracing.md §12.
 const (
-	metricNamePublishTotal     = "event.publish.total"
-	metricNameConsumeTotal     = "event.consume.total"
-	metricNameOutboxPending    = "outbox.pending"
-	metricNamePublishDuration  = "event.publish_duration_seconds"
-	metricNameConsumeDuration  = "event.processing_duration_seconds"
+	metricNamePublishTotal    = "event.publish.total"
+	metricNameConsumeTotal    = "event.consume.total"
+	metricNameOutboxPending   = "outbox.pending"
+	metricNamePublishDuration = "event.publish_duration_seconds"
+	metricNameConsumeDuration = "event.processing_duration_seconds"
 )
 
 func (c *Client) initMetrics() {
@@ -44,12 +44,15 @@ func (c *Client) initMetrics() {
 func (c *Client) publishCounter() metric.Int64Counter {
 	return c.metricPublishTotal.(metric.Int64Counter)
 }
+
 func (c *Client) consumeCounter() metric.Int64Counter {
 	return c.metricConsumeTotal.(metric.Int64Counter)
 }
+
 func (c *Client) publishDuration() metric.Float64Histogram {
 	return c.metricPublishDurationSec.(metric.Float64Histogram)
 }
+
 func (c *Client) consumeDuration() metric.Float64Histogram {
 	return c.metricConsumeDurationSec.(metric.Float64Histogram)
 }

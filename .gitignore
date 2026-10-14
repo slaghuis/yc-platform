@@ -3,8 +3,15 @@
 /dist/
 coverage.out
 
+# Go binaries built inside a module directory (task build, go build)
+/services/*/bin/
+/services/*/yc-*
+/tools/*/bin/
+/tools/*/yc-*
+
 # Local configuration and dev secrets
 .env
 /deploy/compose/dev-keys/
+/docker-compose.override.yml
 
 .DS_Store

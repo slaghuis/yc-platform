@@ -1,3 +1,3 @@
 module github.com/slaghuis/yc-platform/services/yc-orders
 
-go 1.26
+go 1.26.0

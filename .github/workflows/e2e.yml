@@ -1,10 +1,13 @@
 name: E2E
 
+# Manual only until the first cross-service flow exists (implementation plan,
+# Phase 1). Re-enable the push and nightly triggers then:
+#
+#   push:
+#     branches: [main]
+#   schedule:
+#     - cron: '0 2 * * *'
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,12 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
-      - name: Install Task
-        uses: arduino/setup-task@v2
+          cache-dependency-path: '**/go.sum'
+      - uses: arduino/setup-task@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Start dev stack
         run: task devstack:up
       - name: Run E2E tests
@@ -25,7 +30,7 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: docker compose logs > docker-logs.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: docker-logs

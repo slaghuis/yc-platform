@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/slaghuis/yc-platform/libs/yc-eventbus"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 )
 
 func TestSubjectForEvent(t *testing.T) {
@@ -66,8 +66,10 @@ func TestValidateTenantID(t *testing.T) {
 	for _, id := range valid {
 		assert.NoError(t, eventbus.ValidateTenantID(id), id)
 	}
-	invalid := []string{"", "shop.abc", "*", ">", "shop abc", "Shop", "shop_abc",
-		"_shop", "-shop", "shop-", "shop--abc", strings.Repeat("a", 64)}
+	invalid := []string{
+		"", "shop.abc", "*", ">", "shop abc", "Shop", "shop_abc",
+		"_shop", "-shop", "shop-", "shop--abc", strings.Repeat("a", 64),
+	}
 	for _, id := range invalid {
 		assert.Error(t, eventbus.ValidateTenantID(id), id)
 	}

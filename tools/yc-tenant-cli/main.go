@@ -6,5 +6,5 @@ package main
 import "fmt"
 
 func main() {
-    fmt.Println("yc-tenant-cli: placeholder (not yet implemented)")
+	fmt.Println("yc-tenant-cli: placeholder (not yet implemented)")
 }

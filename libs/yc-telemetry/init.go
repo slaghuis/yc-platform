@@ -26,13 +26,13 @@ import (
 type ShutdownFunc func(ctx context.Context) error
 
 var (
-	initOnce      sync.Once
-	initErr       error
-	serviceName   atomic.Value // string
-	globalLogger  atomic.Value // *slog.Logger
-	globalTracer  atomic.Value // trace.Tracer
-	globalMeter   atomic.Value // metric.Meter
-	noopShutdown  = func(context.Context) error { return nil }
+	initOnce     sync.Once
+	initErr      error
+	serviceName  atomic.Value // string
+	globalLogger atomic.Value // *slog.Logger
+	globalTracer atomic.Value // trace.Tracer
+	globalMeter  atomic.Value // metric.Meter
+	noopShutdown = func(context.Context) error { return nil }
 )
 
 // Init configures logging, tracing, and metrics for the calling service.
@@ -57,7 +57,7 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 func doInit(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	serviceName.Store(cfg.ServiceName)
 
-	res, err := buildResource(ctx, cfg)
+	res, err := buildResource(cfg)
 	if err != nil {
 		return noopShutdown, fmt.Errorf("telemetry: build resource: %w", err)
 	}
@@ -90,12 +90,13 @@ func doInit(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	return composeShutdown(shutdownFns), nil
 }
 
-func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
-	attrs := []attribute.KeyValue{
+func buildResource(cfg Config) (*resource.Resource, error) {
+	attrs := make([]attribute.KeyValue, 0, 3+len(cfg.AdditionalResourceAttributes))
+	attrs = append(attrs,
 		semconv.ServiceName(cfg.ServiceName),
 		semconv.ServiceVersion(cfg.ServiceVersion),
 		attribute.String("deployment.environment", cfg.Environment),
-	}
+	)
 	for k, v := range cfg.AdditionalResourceAttributes {
 		attrs = append(attrs, attribute.String(k, v))
 	}

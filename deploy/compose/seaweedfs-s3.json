@@ -1,0 +1,18 @@
+{
+  "identities": [
+    {
+      "name": "dev",
+      "credentials": [
+        {
+          "accessKey": "devkey",
+          "secretKey": "devsecret"
+        }
+      ],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    },
+    {
+      "name": "anonymous",
+      "actions": ["Read:yc-images"]
+    }
+  ]
+}

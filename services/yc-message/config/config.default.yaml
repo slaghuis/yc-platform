@@ -1,0 +1,11 @@
+service: yc-message
+http:
+  listen: ":8080"
+log:
+  level: info
+database:
+  url: ${YC_MESSAGE_DB_URL}
+nats:
+  url: ${NATS_URL}
+telemetry:
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}

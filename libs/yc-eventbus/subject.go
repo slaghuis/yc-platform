@@ -50,7 +50,7 @@ func TenantOfSubject(subject string) (string, error) {
 func CheckSubjectTenant(subject, envTenantID string) error {
 	subjectTenant, err := TenantOfSubject(subject)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrPoison, err)
+		return fmt.Errorf("%w: %w", ErrPoison, err)
 	}
 	if envTenantID != subjectTenant {
 		return fmt.Errorf("%w: envelope tenant_id %q does not match subject tenant %q",
@@ -70,7 +70,8 @@ func CheckSubjectTenant(subject, envTenantID string) error {
 // domain's own aggregate (order.placed.v1, not order.order.placed.v1).
 //
 // Example: SubjectForEvent("shop-abc", "order.placed.v1")
-//          returns "yc.shop-abc.order.placed.v1"
+//
+//	returns "yc.shop-abc.order.placed.v1"
 func SubjectForEvent(tenantID, eventType string) (string, error) {
 	if err := ValidateTenantID(tenantID); err != nil {
 		return "", err

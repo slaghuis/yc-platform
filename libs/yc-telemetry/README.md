@@ -119,5 +119,3 @@ The absent items belong in `yc-httpkit`, where they can be plugged into chi midd
 2. **Metric instrument caching strategy**: I cached by name only, with the description applied on first creation. Alternative: force services to declare instruments in an `app.Instruments` struct at startup, which is more explicit but more boilerplate. Current approach matches the `telemetry.Int64Counter("name", "desc").Add(ctx, 1)` idiom used in the standards doc. Keep as is?
 
 3. **The `AuthKey` placement**: I defined `AuthKey` and `AuthAttrs` here rather than in `yc-authctx` to avoid an import cycle (both libraries need to agree on the context key). The alternative is a tiny shared package `libs/yc-context` just for the key, which some would consider cleaner. The current approach works but means `yc-authctx` will depend on `yc-telemetry` for the key definition. Preference?
-
-

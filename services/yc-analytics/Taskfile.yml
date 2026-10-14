@@ -1,0 +1,44 @@
+version: '3'
+
+dotenv: ['../../.env']
+
+vars:
+  SERVICE: yc-analytics
+
+tasks:
+  build:
+    desc: Build the service binary into bin/
+    sources:
+      - '**/*.go'
+      - go.mod
+    generates:
+      - 'bin/{{.SERVICE}}'
+    cmds:
+      - go build -o bin/{{.SERVICE}} ./cmd/{{.SERVICE}}
+
+  run:
+    desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
+    deps: [build]
+    cmds:
+      - ./bin/{{.SERVICE}}
+
+  test:
+    desc: Unit tests
+    cmds:
+      - go test ./...
+
+  test:integration:
+    desc: Integration tests (requires the dev stack)
+    cmds:
+      - go test -tags=integration ./...
+
+  lint:
+    desc: Lint this module
+    cmds:
+      - golangci-lint run
+
+  docker:build:
+    desc: Build the Docker image
+    dir: ../..
+    cmds:
+      - docker build -t yc-platform/{{.SERVICE}}:dev -f deploy/docker/Dockerfile.service --build-arg SERVICE={{.SERVICE}} .

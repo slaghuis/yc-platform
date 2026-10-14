@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -40,37 +38,29 @@ services:
       timeout: 3s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    container_name: yc-minio
+  # S3-compatible object storage. Credentials and the anonymous read grant
+  # on yc-images live in deploy/compose/seaweedfs-s3.json.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    container_name: yc-seaweedfs
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: devkey
-      MINIO_ROOT_PASSWORD: devsecret
+    command:
+      - "mini"
+      - "-dir=/data"
+      - "-bucket=yc-images"
+      - "-s3.config=/etc/seaweedfs/s3.json"
+      - "-master.telemetry=false"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:8333"        # S3 API
+      - "9001:23646"       # Admin UI
     volumes:
-      - miniodata:/data
+      - s3data:/data
+      - ./deploy/compose/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8333/healthz"]
       interval: 5s
       timeout: 3s
       retries: 10
-
-  minio-init:
-    image: minio/mc:latest
-    container_name: yc-minio-init
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 devkey devsecret &&
-      mc mb --ignore-existing local/yc-images &&
-      mc anonymous set public local/yc-images
-      "
 
   jaeger:
     image: jaegertracing/all-in-one:1.54
@@ -94,4 +84,4 @@ services:
 volumes:
   pgdata:
   natsdata:
-  miniodata:
+  s3data:

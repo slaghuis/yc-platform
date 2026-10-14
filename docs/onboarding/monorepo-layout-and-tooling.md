@@ -2,6 +2,8 @@
 
 A comprehensive specification for the yc-platform monorepo, covering structure, shared libraries, build tooling, development workflow, and CI/CD. This is intended to be the single document that the AI code factory and human developers reference when working on the platform.
 
+> The configuration files quoted below (`Taskfile.yml`, `docker-compose.yml`, `.golangci.yml`, `.editorconfig`, `.pre-commit-config.yaml`, workflows, scripts) show the design intent. Where a quoted file and the file in the repository differ, the repository file is authoritative.
+
 ---
 
 ## 1. Top-Level Directory Structure
@@ -17,7 +19,7 @@ yc-platform/
 ├── .golangci.yml
 ├── .pre-commit-config.yaml
 ├── Taskfile.yml                     # Primary task runner (alternative to Make)
-├── docker-compose.yml                # Dev stack (Postgres, NATS, MinIO, etc.)
+├── docker-compose.yml                # Dev stack (Postgres, NATS, SeaweedFS, etc.)
 ├── docker-compose.override.yml.example
 │
 ├── go.work                           # Go workspace for multi-module monorepo
@@ -432,8 +434,8 @@ tasks:
 
   # ─── Linting and formatting ───────────────────────────────
   lint:
-    desc: Run golangci-lint across all modules
-    cmd: golangci-lint run ./...
+    desc: Run golangci-lint in every module in go.work
+    cmd: ./scripts/for-each-module.sh golangci-lint run
 
   fmt:
     desc: Format Go code
@@ -484,7 +486,7 @@ tasks:
 
   # ─── Dev stack ────────────────────────────────────────────
   devstack:up:
-    desc: Start local Postgres, NATS, MinIO
+    desc: Start local Postgres, NATS, S3 (SeaweedFS)
     cmd: docker compose up -d
 
   devstack:down:
@@ -620,20 +622,18 @@ services:
       interval: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: devkey
-      MINIO_ROOT_PASSWORD: devsecret
+    command: ["mini", "-dir=/data", "-bucket=yc-images", "-s3.config=/etc/seaweedfs/s3.json"]
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:8333"        # S3 API
+      - "9001:23646"       # Admin UI
     volumes:
-      - miniodata:/data
+      - s3data:/data
+      - ./deploy/compose/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8333/healthz"]
       interval: 5s
       retries: 10
 
@@ -657,7 +657,7 @@ services:
 volumes:
   pgdata:
   natsdata:
-  miniodata:
+  s3data:
 ```
 
 ### `postgres-init.sh`
@@ -966,9 +966,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: '${{ env.GO_VERSION }}' }
-      - uses: golangci/golangci-lint-action@v4
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.14.0
+          install-only: true      # no root module; task lint runs it per module
+      - run: task lint
 
   schema-check:
     runs-on: ubuntu-latest
@@ -1108,7 +1110,9 @@ jobs:
 
 ## 11. Scaffolding — Adding a New Service
 
-`scripts/gen-service.sh <service-name>` does the following:
+The Phase 0 scaffold (`scripts/gen-service.sh`, described in `adding-a-service.md`) creates a minimal service that logs and stops cleanly, registers it in `go.work`, and wires its database into `postgres-init.sh` and `.env.example`. Once the shared libraries exist (Phase 1), the scaffold grows to the full target below.
+
+The target `scripts/gen-service.sh <service-name>` does the following:
 
 1. Create `services/<name>/` with the full directory layout
 2. Generate `go.mod` with correct module path
@@ -1321,7 +1325,7 @@ Documented in `docs/onboarding/developer-setup.md`. Verified by `task check-deps
 | Docker Compose | V2 | Dev stack |
 | Task | 3.30+ | Task runner |
 | golang-migrate | 4.17+ | DB migrations |
-| golangci-lint | 1.56+ | Linter |
+| golangci-lint | 2.x | Linter |
 | gofumpt | latest | Formatter |
 | goimports | latest | Import sort |
 | oapi-codegen | 2.0+ | OpenAPI generation |

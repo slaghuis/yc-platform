@@ -44,7 +44,7 @@ Deliver the monorepo so the AI code factory has a stable target.
 
 - Repo skeleton per the monorepo layout document
 - `go.work` configured, all empty modules created
-- Docker Compose dev stack (Postgres, NATS JetStream, MinIO, Jaeger, MailHog)
+- Docker Compose dev stack (Postgres, NATS JetStream, S3-compatible storage via SeaweedFS, Jaeger, MailHog)
 - `postgres-init.sh` creates one DB per service
 - Task runner (`Taskfile.yml`) with core tasks: `bootstrap`, `devstack:up`, `migrate:up`, `test`, `lint`
 - `.golangci.yml`, `.editorconfig`, `.pre-commit-config.yaml`
@@ -175,9 +175,9 @@ A visitor can see products with prices. No cart yet; just browse.
 **yc-image**
 - Direct upload endpoint
 - Image variant generation (xlarge, large, medium, thumbnail; WebP + JPEG)
-- MinIO storage (S3-compatible)
+- S3-compatible storage (SeaweedFS in dev)
 - Publishes `image.processed.v1`
-- CDN URL field present but may just serve from MinIO in dev
+- CDN URL field present but may just serve from the dev S3 bucket
 
 **yc-product**
 - Suppliers CRUD (system_admin)
@@ -223,7 +223,7 @@ Scripted demo:
 1. System admin seeds a supplier (via API or script)
 2. Shop admin creates products with variants and SKUs
 3. Shop admin sets base prices and tax rules
-4. Shop admin uploads product images (served from MinIO)
+4. Shop admin uploads product images (served from the dev S3 bucket)
 5. Visitor browses `GET /products` and sees products with prices in ZAR
 6. Visitor sets display currency header (or query param) and sees USD prices
 7. Full pricing audit trail visible in response for a single product
@@ -731,4 +731,3 @@ Not planned here but worth signposting so decisions in v1 don't block them:
 - SSO for shop admins
 
 Each of these should be its own project with its own plan.
-

@@ -39,7 +39,7 @@ func NewTestClient(t testing.TB, ctx context.Context, natsURL string, db *pgxpoo
 	if err != nil {
 		t.Fatalf("eventbus.NewTestClient: %v", err)
 	}
-	t.Cleanup(func() {
+	t.Cleanup(func() { //nolint:contextcheck // ctx may already be cancelled when cleanup runs
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = c.Close(shutdownCtx)

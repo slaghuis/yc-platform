@@ -24,7 +24,7 @@ services/<service>/
 └── config/config.default.yaml   — default config
 ```
 
-The current placeholders still have `main.go` at the service root; they move to `cmd/<service>/` when each service is implemented. The pipeline builds an image only for services with a `cmd/<service>` directory (ADR-018).
+Each service starts from the scaffold: `cmd/<service>/main.go`, `Taskfile.yml`, `config/config.default.yaml` and, for services with a database, the eventbus migrations. The other directories are added as the service is implemented. The pipeline and `task build` build every service that has a `cmd/<service>` directory (ADR-018), which is currently all of them.
 
 ## Scaffolding a new service
 

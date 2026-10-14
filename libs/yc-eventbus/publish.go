@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Publish writes an event to the outbox within the caller's transaction.

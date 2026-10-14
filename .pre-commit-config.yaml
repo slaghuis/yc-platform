@@ -1,0 +1,42 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        language: system
+        entry: gofumpt -w
+        files: \.go$
+
+      - id: goimports
+        name: goimports
+        language: system
+        entry: goimports -w -local github.com/slaghuis/yc-platform
+        files: \.go$
+
+      - id: golangci-lint
+        name: golangci-lint (all modules)
+        language: system
+        entry: ./scripts/for-each-module.sh golangci-lint run
+        pass_filenames: false
+        files: (\.go|go\.mod|\.golangci\.yml)$
+
+      - id: schema-validate
+        name: validate event schemas
+        language: system
+        entry: ./schemas/yc-event-schemas/scripts/validate_all.sh
+        pass_filenames: false
+        files: ^schemas/

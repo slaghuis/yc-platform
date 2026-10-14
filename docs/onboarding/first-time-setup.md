@@ -7,7 +7,7 @@ git clone https://github.com/slaghuis/yc-platform.git
 cd yc-platform
 
 task bootstrap        # installs hooks, creates .env, generates dev keys
-task devstack:up      # starts Postgres, NATS, MinIO, Jaeger, MailHog
+task devstack:up      # starts Postgres, NATS, S3 (SeaweedFS), Jaeger, MailHog
 task test             # verify everything compiles and tests pass
 ```
 
@@ -20,13 +20,14 @@ Once the dev stack is up:
 | Postgres | `postgres://postgres:devpass@localhost:5432` |
 | NATS | `nats://localhost:4222` |
 | NATS admin | http://localhost:8222 |
-| MinIO | http://localhost:9001 (devkey / devsecret) |
+| S3 API (SeaweedFS) | http://localhost:9000 (devkey / devsecret, bucket `yc-images`) |
+| S3 admin UI | http://localhost:9001 |
 | Jaeger | http://localhost:16686 |
 | MailHog | http://localhost:8025 |
 
 ## Troubleshooting
 
-**Port conflicts.** If port 5432 (or any other) is in use, remap it in `docker-compose.override.yml` at the repo root; the file contains commented examples.
+**Port conflicts.** If port 5432 (or any other) is in use, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` (gitignored) and remap the port there; the example shows how.
 
 **Dev stack won't start.**
 

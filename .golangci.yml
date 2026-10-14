@@ -1,0 +1,63 @@
+version: "2"
+
+# Run from a module directory (task lint does this for every module in
+# go.work); golangci-lint finds this file by walking up to the repo root.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - exhaustive
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    gosec:
+      excludes:
+        - G101 # false positives on config fields
+    misspell:
+      locale: UK
+    revive:
+      rules:
+        - name: exported
+        - name: var-naming
+        - name: package-comments
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+    paths:
+      - api/generated/
+      - libs/yc-events/generated/
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/slaghuis/yc-platform
+  exclusions:
+    generated: lax
+    paths:
+      - api/generated/
+      - libs/yc-events/generated/

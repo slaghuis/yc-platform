@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/slaghuis/yc-platform/libs/yc-eventbus"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 )
 
 func TestEnvelope_RoundTrip(t *testing.T) {

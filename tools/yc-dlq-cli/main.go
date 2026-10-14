@@ -6,5 +6,5 @@ package main
 import "fmt"
 
 func main() {
-    fmt.Println("yc-dlq-cli: placeholder (not yet implemented)")
+	fmt.Println("yc-dlq-cli: placeholder (not yet implemented)")
 }

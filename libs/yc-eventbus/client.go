@@ -9,7 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	"github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 )
 
 // Client is the eventbus client. Construct one per service via NewClient
@@ -17,9 +17,9 @@ import (
 type Client struct {
 	cfg Config
 
-	nc  *nats.Conn
-	js  jetstream.JetStream
-	db  *pgxpool.Pool
+	nc *nats.Conn
+	js jetstream.JetStream
+	db *pgxpool.Pool
 
 	validator Validator
 
@@ -29,11 +29,11 @@ type Client struct {
 	bgWG     sync.WaitGroup
 
 	// Metrics
-	metricPublishTotal         any // see metrics.go
-	metricConsumeTotal         any
-	metricOutboxPending        any
-	metricPublishDurationSec   any
-	metricConsumeDurationSec   any
+	metricPublishTotal       any // see metrics.go
+	metricConsumeTotal       any
+	metricOutboxPending      any
+	metricPublishDurationSec any
+	metricConsumeDurationSec any
 }
 
 // NewClient connects to NATS, ensures required streams exist, and starts
