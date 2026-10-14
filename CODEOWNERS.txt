@@ -1,0 +1,22 @@
+# Platform
+*                           @<org>/platform
+
+# Shared libraries
+/libs/                      @<org>/platform-core
+/schemas/                   @<org>/platform-core
+/libs/yc-eventbus/          @<org>/platform-core
+/libs/yc-authctx/           @<org>/platform-core
+
+# Services (future: route per service)
+/services/                  @<org>/platform
+/services/yc-identity/      @<org>/platform
+/services/yc-payment/       @<org>/platform-payments
+/services/yc-orders/        @<org>/platform-orders
+
+# Standards and ADRs — architect review
+/docs/adr/                  @<org>/architects
+/docs/standards/            @<org>/architects
+
+# CI
+/.github/                   @<org>/platform-ops
+/deploy/                    @<org>/platform-ops

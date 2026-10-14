@@ -1,0 +1,213 @@
+version: '3'
+
+vars:
+  GO_VERSION: '1.22'
+  LOCAL_PREFIX: 'github.com/<org>/yc-platform'
+  SERVICES: >-
+    yc-identity yc-gateway yc-image yc-preference yc-product
+    yc-pricing yc-inventory yc-cart yc-review yc-checkout
+    yc-payment yc-shipping yc-orders yc-message yc-audit
+    yc-monitor yc-analytics
+  LIBS: >-
+    yc-authctx yc-config yc-dbkit yc-errors yc-eventbus
+    yc-events yc-httpkit yc-money yc-telemetry yc-testkit
+
+tasks:
+  default:
+    desc: Show help
+    cmds:
+      - task --list
+
+  # ─── Bootstrap & deps ─────────────────────────────────────
+  bootstrap:
+    desc: One-time setup after fresh clone
+    cmds:
+      - ./scripts/bootstrap.sh
+
+  check-deps:
+    desc: Verify required tools are installed
+    cmds:
+      - ./scripts/check-deps.sh
+
+  tidy:
+    desc: go mod tidy for all modules
+    cmds:
+      - for: { var: LIBS }
+        cmd: (cd libs/{{.ITEM}} && go mod tidy)
+      - for: { var: SERVICES }
+        cmd: (cd services/{{.ITEM}} && go mod tidy)
+
+  # ─── Code generation ──────────────────────────────────────
+  gen:
+    desc: Regenerate all generated code
+    deps: [gen:events, gen:openapi]
+
+  gen:events:
+    desc: Regenerate Go types from JSON schemas
+    sources:
+      - 'schemas/yc-event-schemas/**/*.json'
+    generates:
+      - 'libs/yc-events/generated/**/*.go'
+    cmds:
+      - go run ./tools/yc-schema-gen
+
+  gen:openapi:
+    desc: Regenerate OpenAPI handlers/clients for all services
+    cmds:
+      - for: { var: SERVICES }
+        cmd: |
+          if [ -f services/{{.ITEM}}/api/openapi.yaml ]; then
+            (cd services/{{.ITEM}} && task gen:openapi)
+          fi
+
+  # ─── Linting and formatting ───────────────────────────────
+  lint:
+    desc: Run golangci-lint across all modules
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format all Go code
+    cmds:
+      - gofumpt -w .
+      - goimports -w -local {{.LOCAL_PREFIX}} .
+
+  schema:validate:
+    desc: Validate JSON schemas
+    cmds:
+      - ./schemas/yc-event-schemas/scripts/validate_all.sh
+
+  schema:compat:
+    desc: Check backward compatibility of schemas (against main)
+    cmds:
+      - ./schemas/yc-event-schemas/scripts/check_backward_compat.sh origin/main
+
+  # ─── Testing ──────────────────────────────────────────────
+  test:
+    desc: Run all unit tests
+    cmds:
+      - for: { var: LIBS }
+        cmd: (cd libs/{{.ITEM}} && go test ./...)
+      - for: { var: SERVICES }
+        cmd: (cd services/{{.ITEM}} && go test ./...)
+
+  test:integration:
+    desc: Run integration tests (requires devstack running)
+    cmds:
+      - for: { var: SERVICES }
+        cmd: (cd services/{{.ITEM}} && go test -tags=integration ./...)
+
+  test:e2e:
+    desc: Run end-to-end tests
+    cmds:
+      - go test -tags=e2e -v ./test/e2e/...
+
+  # ─── Build ────────────────────────────────────────────────
+  build:
+    desc: Build all services
+    cmds:
+      - for: { var: SERVICES }
+        cmd: |
+          if [ -d services/{{.ITEM}}/cmd/{{.ITEM}} ]; then
+            (cd services/{{.ITEM}} && task build)
+          fi
+
+  build:service:
+    desc: Build a single service (SERVICE=yc-identity)
+    cmds:
+      - task -d services/{{.SERVICE}} build
+
+  # ─── Docker ───────────────────────────────────────────────
+  docker:build:
+    desc: Build Docker images for all services
+    cmds:
+      - for: { var: SERVICES }
+        cmd: |
+          if [ -d services/{{.ITEM}}/cmd/{{.ITEM}} ]; then
+            docker build -t yc-platform/{{.ITEM}}:dev \
+              -f deploy/docker/Dockerfile.service \
+              --build-arg SERVICE={{.ITEM}} .
+          fi
+
+  docker:build:service:
+    desc: Build Docker image for one service (SERVICE=yc-identity)
+    cmds:
+      - docker build -t yc-platform/{{.SERVICE}}:dev
+          -f deploy/docker/Dockerfile.service
+          --build-arg SERVICE={{.SERVICE}} .
+
+  # ─── Dev stack ────────────────────────────────────────────
+  devstack:up:
+    desc: Start local Postgres, NATS, MinIO, Jaeger, MailHog
+    cmds:
+      - docker compose up -d
+      - ./scripts/wait-for-stack.sh
+
+  devstack:down:
+    desc: Stop local dev stack
+    cmds:
+      - docker compose down
+
+  devstack:reset:
+    desc: Wipe and restart dev stack (destroys all data)
+    cmds:
+      - docker compose down -v
+      - docker compose up -d
+      - ./scripts/wait-for-stack.sh
+
+  devstack:logs:
+    desc: Follow dev stack logs
+    cmds:
+      - docker compose logs -f
+
+  # ─── Migrations ───────────────────────────────────────────
+  migrate:up:
+    desc: Apply all migrations for all services
+    cmds:
+      - go run ./tools/yc-migrate up --all
+
+  migrate:up:service:
+    desc: Apply migrations for one service (SERVICE=yc-identity)
+    cmds:
+      - go run ./tools/yc-migrate up --service={{.SERVICE}}
+
+  migrate:down:service:
+    desc: Roll back one migration (SERVICE=yc-identity)
+    cmds:
+      - go run ./tools/yc-migrate down --service={{.SERVICE}}
+
+  migrate:new:
+    desc: Create a new migration (SERVICE=... NAME=...)
+    cmds:
+      - go run ./tools/yc-migrate new --service={{.SERVICE}} --name={{.NAME}}
+
+  # ─── Scaffolding ──────────────────────────────────────────
+  scaffold:service:
+    desc: Create a new service skeleton (NAME=yc-foo)
+    cmds:
+      - ./scripts/gen-service.sh {{.NAME}}
+
+  scaffold:event:
+    desc: Create a new event schema (DOMAIN=order ENTITY=order ACTION=placed VERSION=1)
+    cmds:
+      - ./scripts/gen-event.sh {{.DOMAIN}} {{.ENTITY}} {{.ACTION}} {{.VERSION}}
+
+  # ─── Convenience ──────────────────────────────────────────
+  run:
+    desc: Run a service locally (SERVICE=yc-identity)
+    cmds:
+      - task -d services/{{.SERVICE}} run
+
+  clean:
+    desc: Clean all build artifacts and caches
+    cmds:
+      - go clean -cache -testcache
+      - find . -type d -name 'bin' -exec rm -rf {} +
+
+  verify:
+    desc: Run full local verification (fmt check, lint, test)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: schema:validate
+      - task: test
