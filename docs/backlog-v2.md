@@ -1,5 +1,7 @@
 # v2 Backlog
 
+*Items taken into v1.1 are listed in `implementation-plan-v1.1.md` ("Backlog Items Taken Into v1.1") and stay here until they ship.*
+
 Work deliberately left out of v1, collected in Phase 9 from the phase write-ups (`implementation-plan.md`, "As built"), the service docs, the ADRs and the Phase 9 reports. Ranked by when it is needed, not by size. Product features with no v1 commitment (bundles, MFA, carrier integrations…) stay in each service doc's "Open Questions / Future Scope" and in `implementation-plan.md` ("What Comes After v1").
 
 ## P1: with the first tenants
