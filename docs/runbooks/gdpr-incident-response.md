@@ -6,15 +6,18 @@ yc-audit raised `audit.gdpr.cascade_incident.v1` — a user deletion did not com
 
 ## Procedure
 
-0. **Triage.** List the incidents and the register:
+0. **Triage.** Log in as a system admin (the gateway takes the access token only as a bearer header), then list the incidents and the register:
    ```bash
-   curl -b cookies.txt http://admin.localhost:8090/sysadmin/gdpr/incidents
-   curl -b cookies.txt "http://admin.localhost:8090/sysadmin/gdpr/register?status=in_progress"
+   TOKEN=$(curl -fsS -X POST http://admin.localhost:8090/login -H 'Content-Type: application/json' \
+     -d '{"email":"<email>","password":"<password>"}' | jq -r .access_token)
+   curl -H "Authorization: Bearer $TOKEN" http://admin.localhost:8090/sysadmin/gdpr/incidents
+   curl -H "Authorization: Bearer $TOKEN" "http://admin.localhost:8090/sysadmin/gdpr/register?status=in_progress"
    ```
+   From v1.1 the yc-platform-admin console shows the same under GDPR.
    One user with one missing service is usually that service's consumer. Many users missing the same service means the service is down or its handler is broken. Many users missing many services points at the event bus or yc-identity.
 1. **Identify the lagging services** for a user:
    ```bash
-   curl -b cookies.txt http://admin.localhost:8090/sysadmin/gdpr/register/<user_id>
+   curl -H "Authorization: Bearer $TOKEN" http://admin.localhost:8090/sysadmin/gdpr/register/<user_id>
    ```
    The entry lists `expected_services`, `missing_services` and each service's report (action and count). The shapes are in [`docs/services/yc-audit.md`](../services/yc-audit.md).
 2. **For each lagging service**, check its logs for its GDPR consumer (`<service>-gdpr`, subscribed to `identity.user.deleted.v1`).

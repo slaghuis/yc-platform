@@ -102,7 +102,7 @@ OpenAPI spec stub lives at `/services/yc-identity/api/openapi.yaml`.
 
 ### Phase 2 Implementation Notes
 
-The contract is `services/yc-identity/api/openapi.yaml`. Implemented: `/visitor` (through the gateway), `/register`, `/login`, `/me`, `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/promote` and `/internal/validate-token`. Refresh tokens, logout, OAuth, password reset, demote, suspend and delete come later.
+The contract is `services/yc-identity/api/openapi.yaml`. Phase 2 implemented `/visitor` (through the gateway), `/register`, `/login`, `/me`, `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/promote` and `/internal/validate-token`. Later phases added `/refresh`, `/logout`, `/password/reset-request` and `/reset-confirm`, `/oauth/{provider}/start` and `/callback`, `DELETE /me`, `DELETE /admin/users/{id}` (ADR-025) and `/internal/service-token` (ADR-021). Demote and suspend are not built (yc-platform v1.1 Phase 12, ADR-030).
 
 - **Passwords** are hashed with Argon2id (`password.argon2`: time 2, 64 MiB, 2 threads by default; weaker settings are rejected at start-up).
 - **Registration** turns the calling visitor into a customer in place: the user ID is kept, so the visitor's cart and history follow, and the visitor token stops validating. A caller without a visitor gets a new customer. Emails are unique per tenant.
