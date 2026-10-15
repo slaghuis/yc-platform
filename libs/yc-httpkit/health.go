@@ -2,8 +2,10 @@ package httpkit
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -28,8 +30,37 @@ type Check struct {
 
 // Readiness is the /readyz body.
 type Readiness struct {
-	Status string            `json:"status"` // ready | not_ready
+	Status string            `json:"status"` // ready | not_ready | draining
 	Checks map[string]string `json:"checks"` // name → ok | failing
+}
+
+// Probe is the container health check for images without a shell or curl
+// (distroless): `<service> healthcheck [url]` GETs url, by default the
+// service's own /healthz on port 8080, and returns the process exit code,
+// 0 if it answered 200 and 1 otherwise.
+func Probe(args []string) int {
+	url := "http://127.0.0.1:8080" + pathHealthz
+	if len(args) > 0 {
+		url = args[0]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "healthcheck:", url, resp.Status)
+		return 1
+	}
+	return 0
 }
 
 func isHealthPath(p string) bool {

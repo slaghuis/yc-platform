@@ -3,6 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: yc-postgres
     restart: unless-stopped
+    # Every service's pool may grow to database.max_conns (10): the stack
+    # needs more than the default 100.
+    command: ["postgres", "-c", "max_connections=300"]
     environment:
       POSTGRES_PASSWORD: devpass
       POSTGRES_DB: postgres
@@ -96,6 +99,7 @@ services:
     image: yc-platform/yc-identity:dev
     container_name: yc-identity
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_IDENTITY_DB_URL: postgres://yc_identity_app:devpass@postgres:5432/yc_identity?sslmode=disable
       YC_IDENTITY_JWT_PRIVATE_KEY_FILE: /keys/jwt-private.pem
@@ -135,6 +139,7 @@ services:
     image: yc-platform/yc-gateway:dev
     container_name: yc-gateway
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_GATEWAY_DB_URL: postgres://yc_gateway_app:devpass@postgres:5432/yc_gateway?sslmode=disable
       YC_GATEWAY__UPSTREAMS__IDENTITY: http://yc-identity:8080
@@ -142,6 +147,8 @@ services:
       # admin.localhost resolves to _platform: system admins only.
       YC_GATEWAY__PLATFORM_HOSTS: admin.localhost
       YC_GATEWAY_RATE_LIMIT: ${YC_GATEWAY_RATE_LIMIT:-true}
+      # The load test trusts its own containers to simulate many clients.
+      YC_GATEWAY__TRUSTED_PROXIES: ${YC_GATEWAY_TRUSTED_PROXIES:-}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -160,6 +167,7 @@ services:
     image: yc-platform/yc-monitor:dev
     container_name: yc-monitor
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_MONITOR_DB_URL: postgres://yc_monitor_app:devpass@postgres:5432/yc_monitor?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -181,6 +189,7 @@ services:
     image: yc-platform/yc-product:dev
     container_name: yc-product
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_PRODUCT_DB_URL: postgres://yc_product_app:devpass@postgres:5432/yc_product?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -199,6 +208,7 @@ services:
     image: yc-platform/yc-pricing:dev
     container_name: yc-pricing
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_PRICING_DB_URL: postgres://yc_pricing_app:devpass@postgres:5432/yc_pricing?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -220,6 +230,7 @@ services:
     image: yc-platform/yc-image:dev
     container_name: yc-image
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_IMAGE_DB_URL: postgres://yc_image_app:devpass@postgres:5432/yc_image?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -247,6 +258,7 @@ services:
     image: yc-platform/yc-preference:dev
     container_name: yc-preference
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_PREFERENCE_DB_URL: postgres://yc_preference_app:devpass@postgres:5432/yc_preference?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -268,6 +280,7 @@ services:
     image: yc-platform/yc-cart:dev
     container_name: yc-cart
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_CART_DB_URL: postgres://yc_cart_app:devpass@postgres:5432/yc_cart?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -290,6 +303,7 @@ services:
     image: yc-platform/yc-inventory:dev
     container_name: yc-inventory
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_INVENTORY_DB_URL: postgres://yc_inventory_app:devpass@postgres:5432/yc_inventory?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -314,6 +328,7 @@ services:
     image: yc-platform/yc-payment:dev
     container_name: yc-payment
     restart: unless-stopped
+    stop_grace_period: 40s
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -339,6 +354,7 @@ services:
     image: yc-platform/yc-shipping:dev
     container_name: yc-shipping
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_SHIPPING_DB_URL: postgres://yc_shipping_app:devpass@postgres:5432/yc_shipping?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -360,6 +376,7 @@ services:
     image: yc-platform/yc-orders:dev
     container_name: yc-orders
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_ORDERS_DB_URL: postgres://yc_orders_app:devpass@postgres:5432/yc_orders?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -385,6 +402,7 @@ services:
     container_name: yc-checkout
     hostname: yc-checkout
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_CHECKOUT_DB_URL: postgres://yc_checkout_app:devpass@postgres:5432/yc_checkout?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -409,6 +427,7 @@ services:
     image: yc-platform/yc-message:dev
     container_name: yc-message
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_MESSAGE_DB_URL: postgres://yc_message_app:devpass@postgres:5432/yc_message?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -436,6 +455,7 @@ services:
     image: yc-platform/yc-review:dev
     container_name: yc-review
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_REVIEW_DB_URL: postgres://yc_review_app:devpass@postgres:5432/yc_review?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -460,6 +480,7 @@ services:
     image: yc-platform/yc-audit:dev
     container_name: yc-audit
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_AUDIT_DB_URL: postgres://yc_audit_app:devpass@postgres:5432/yc_audit?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -481,6 +502,7 @@ services:
     image: yc-platform/yc-analytics:dev
     container_name: yc-analytics
     restart: unless-stopped
+    stop_grace_period: 40s
     environment:
       YC_ANALYTICS_DB_URL: postgres://yc_analytics_app:devpass@postgres:5432/yc_analytics?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091

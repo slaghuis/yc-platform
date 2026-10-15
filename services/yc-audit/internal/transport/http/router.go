@@ -32,9 +32,11 @@ type Audit interface {
 // NewRouter returns the service's routes on the standard httpkit chain.
 func NewRouter(svc Audit, build httpkit.BuildInfo, checks []httpkit.Check) http.Handler {
 	r := httpkit.NewRouter(httpkit.RouterOptions{
-		Build:      build,
-		Checks:     checks,
-		Middleware: []func(http.Handler) http.Handler{authctx.Middleware, authctx.Audience},
+		Build:  build,
+		Checks: checks,
+		Middleware: []func(http.Handler) http.Handler{
+			authctx.Middleware, authctx.Audience, httpkit.LimitBody(httpkit.MaxBodyBytes),
+		},
 	})
 	strict := api.NewStrictHandlerWithOptions(handlers{svc: svc}, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  httpkit.RequestError,

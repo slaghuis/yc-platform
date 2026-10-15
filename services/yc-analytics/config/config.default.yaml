@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_ANALYTICS_ADVERTISE_URL:-http://yc-analytics:8080}
-  interval: 30s
+  interval: 5s
 # Aggregates are rebuilt from the facts: days whose facts changed every
 # refresh_interval, and every shop's last nightly_days days (ending
 # yesterday) at nightly_at, UTC.

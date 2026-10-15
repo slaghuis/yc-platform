@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_PAYMENT_ADVERTISE_URL:-http://yc-payment:8080}
-  interval: 30s
+  interval: 5s
 # Shops' gateway credentials are sealed with AES-256-GCM under this key
 # (base64 of 32 bytes; generate with `openssl rand -base64 32`). Changing
 # it makes stored credentials unreadable: shops must enter them again.

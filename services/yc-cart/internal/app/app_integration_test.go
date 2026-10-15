@@ -220,6 +220,7 @@ func TestCart(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	// outbox returns the payloads of tenant's eventType events, oldest
 	// first.
 	outbox := func(tenant, eventType string) []map[string]any {

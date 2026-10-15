@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -198,6 +199,60 @@ func TestEventbus(t *testing.T) {
 			`SELECT count(*) FROM processed_events WHERE event_id = $1 AND consumer = 'relay-consumer'`,
 			g.evt.Envelope.EventID).Scan(&processed))
 		assert.Equal(t, 1, processed)
+	})
+
+	t.Run("a backlog larger than a batch is relayed in one poll", func(t *testing.T) {
+		const et = "test.backlog.queued.v1"
+		writer := h.client(t, func(cfg *eventbus.Config) { cfg.DisableRelay = true })
+		for range 150 {
+			h.publish(t, ctx, writer, event(et, map[string]string{}))
+		}
+		start := time.Now()
+		h.client(t, func(cfg *eventbus.Config) {
+			cfg.OutboxPollInterval = 500 * time.Millisecond
+			cfg.OutboxBatchSize = 50
+		})
+		require.Eventually(t, func() bool {
+			return h.outboxCount(t, et, "published_at IS NULL") == 0
+		}, waitFor, 10*time.Millisecond)
+		assert.Less(t, time.Since(start), 900*time.Millisecond, "three batches, one poll")
+	})
+
+	t.Run("a concurrent subscription handles messages at once", func(t *testing.T) {
+		const et = "test.parallel.happened.v1"
+		c := h.client(t)
+		var mu sync.Mutex
+		inFlight, most := 0, 0
+		all := make(chan struct{})
+		require.NoError(t, c.Subscribe(ctx, eventbus.SubscribeOpts{
+			Subject: "yc.*." + et, DurableName: "parallel-consumer", Concurrency: 4,
+		}, func(context.Context, eventbus.ConsumedEvent) error {
+			mu.Lock()
+			inFlight++
+			most = max(most, inFlight)
+			if inFlight == 4 {
+				close(all)
+			}
+			mu.Unlock()
+			select {
+			case <-all:
+			case <-time.After(waitFor):
+			}
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			return nil
+		}))
+		for range 4 {
+			h.publish(t, ctx, c, event(et, map[string]string{}))
+		}
+		select {
+		case <-all:
+		case <-time.After(waitFor):
+			mu.Lock()
+			defer mu.Unlock()
+			t.Fatalf("at most %d messages in flight, want 4", most)
+		}
 	})
 
 	t.Run("published events inherit causation from the consumed event", func(t *testing.T) {

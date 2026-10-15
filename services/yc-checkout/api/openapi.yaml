@@ -336,7 +336,7 @@ components:
         hosted:
           type: boolean
           description: The customer pays on the gateway's page; confirm sends a return_url and no token.
-        public_key: { type: string, description: The gateway's publishable key, for its client SDK. }
+        public_key: { type: string, description: "The gateway's publishable key, for its client SDK." }
         transaction_id: { type: string, format: uuid }
         status: { type: string }
         next_action:
@@ -385,7 +385,7 @@ components:
           items: { $ref: '#/components/schemas/ShippingOption' }
         selected_shipping_option_id: { type: string }
         totals: { $ref: '#/components/schemas/Totals' }
-        tax_inclusive: { type: boolean, description: Show gross prices when true, net otherwise. }
+        tax_inclusive: { type: boolean, description: 'Show gross prices when true, net otherwise.' }
         payment: { $ref: '#/components/schemas/PaymentState' }
         reservation: { $ref: '#/components/schemas/ReservationState' }
         order: { $ref: '#/components/schemas/OrderRef' }

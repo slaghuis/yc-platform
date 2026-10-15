@@ -170,7 +170,7 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 
 - **Popularity and favourites** come from `order.placed.v1`, which replaces `cart.item.added.v1` (no longer subscribed): each SKU of an order gains 1 popularity point, and a customer's order (not a guest's) records its products in `customer_favourites` (per customer and product: order count and last order time; resolved from the SKUs). `GET /products?favourites=true` (customers only; 400 otherwise) keeps the customer's ordered products, and `facets.favourites.product_count` counts those still active, regardless of the other filters. Likes are not favourites (ADR-024 rule 5).
 - **Ratings and likes** are per product in `product_review_stats` (`rating_count`, `rating_sum`, `like_count`, `version`), from the `product_stats` carried by `review.submitted/edited/approved/rejected/deleted.v1` and `review.like.added/removed.v1`; a lower or equal version is ignored (ADR-024 rule 4). The unused per-SKU `avg_rating`, `rating_count` and `like_count` columns were dropped. Every product summary has `reviews` (`rating_count`, `rating_average` when rated, `like_count`), and `sort=rating` orders by the average (to three decimals), unrated products last, ties newest first.
-- **Not yet subscribed:** `identity.user.deleted.v1` (deleting a customer's favourites) comes with the GDPR cascade.
+- **`identity.user.deleted.v1`** deletes the customer's favourites (GDPR cascade, ADR-025).
 
 ## Database Schema
 

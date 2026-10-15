@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"sync"
 	"testing"
@@ -75,7 +76,7 @@ func setup(t *testing.T) (http.Handler, *fakeIdentity, chan upstreamSeen) {
 	return setupLimited(t, nil)
 }
 
-func setupLimited(t *testing.T, limiter transport.Limiter) (http.Handler, *fakeIdentity, chan upstreamSeen) {
+func setupLimited(t *testing.T, limiter transport.Limiter, proxies ...netip.Prefix) (http.Handler, *fakeIdentity, chan upstreamSeen) {
 	t.Helper()
 	telemetry.InitForTest(t, "yc-gateway")
 
@@ -108,6 +109,7 @@ func setupLimited(t *testing.T, limiter transport.Limiter) (http.Handler, *fakeI
 	id := &fakeIdentity{}
 	gw := transport.New(hosts{"shop-a.test": "shop-a", "shop-b.test": "shop-b", "admin.test": "_platform"}, id, routes,
 		limiter, transport.CookieConfig{Name: "yc_visitor"})
+	gw.TrustProxies(proxies)
 	return transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil), id, seen
 }
 
@@ -164,6 +166,22 @@ func TestAnonymousGetsVisitorCookie(t *testing.T) {
 	assert.True(t, c[0].HttpOnly)
 	assert.Equal(t, http.SameSiteLaxMode, c[0].SameSite)
 	assert.Equal(t, 1, id.issued)
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	h, _, seen := setup(t)
+
+	for name, w := range map[string]*httptest.ResponseRecorder{
+		"proxied": do(h, "GET", "shop-a.test", "/me"),
+		"refused": do(h, "GET", "nope.test", "/me"),
+	} {
+		assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"), name)
+		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"), name)
+		assert.Equal(t, "default-src 'none'; frame-ancestors 'none'", w.Header().Get("Content-Security-Policy"), name)
+		assert.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"), name)
+		assert.Equal(t, "max-age=31536000", w.Header().Get("Strict-Transport-Security"), name)
+	}
+	<-seen
 }
 
 func TestCallbackRoute(t *testing.T) {
@@ -340,6 +358,35 @@ func TestRateLimit(t *testing.T) {
 		assert.Empty(t, seen)
 	})
 
+	t.Run("an invalid or foreign cookie by address, before a visitor is issued", func(t *testing.T) {
+		for _, tok := range []string{"garbage", "shop-b:visitor"} {
+			l := &recordingLimiter{deny: map[string]bool{"addr:192.0.2.1": true}}
+			h, id, seen := setupLimited(t, l)
+
+			w := do(h, "GET", "shop-a.test", "/me", cookie(tok))
+
+			assert.Equal(t, http.StatusTooManyRequests, w.Code, tok)
+			assert.Equal(t, "2", w.Header().Get("Retry-After"), tok)
+			assert.Equal(t, []string{"shop-a/visitor/addr:192.0.2.1"}, l.calls, tok)
+			assert.Zero(t, id.issued, tok)
+			assert.Empty(t, seen, tok)
+		}
+	})
+
+	t.Run("invalid bearer tokens by address", func(t *testing.T) {
+		l := &recordingLimiter{deny: map[string]bool{"addr:192.0.2.1": true}}
+		h, _, seen := setupLimited(t, l)
+
+		w := do(h, "GET", "shop-a.test", "/me", bearer("garbage"))
+
+		assert.Equal(t, http.StatusTooManyRequests, w.Code)
+		assert.Equal(t, []string{"shop-a/visitor/addr:192.0.2.1"}, l.calls)
+		assert.Empty(t, seen)
+
+		l.deny = nil
+		assert.Equal(t, http.StatusUnauthorized, do(h, "GET", "shop-a.test", "/me", bearer("garbage")).Code)
+	})
+
 	t.Run("visitors with a cookie by visitor ID", func(t *testing.T) {
 		l := &recordingLimiter{}
 		h, _, seen := setupLimited(t, l)
@@ -347,6 +394,29 @@ func TestRateLimit(t *testing.T) {
 		require.Equal(t, http.StatusTeapot, do(h, "GET", "shop-a.test", "/me", cookie("shop-a:visitor")).Code)
 		<-seen
 		assert.Equal(t, []string{"shop-a/visitor/user-shop-a:visitor"}, l.calls)
+	})
+
+	t.Run("behind trusted proxies by the forwarded client address", func(t *testing.T) {
+		lb := netip.MustParsePrefix("192.0.2.0/24")
+		for _, tc := range []struct{ name, remote, xff, want string }{
+			{"no proxies trusted ignores the header", "198.51.100.7:1234", "203.0.113.9", "198.51.100.7"},
+			{"the balancer's client", "192.0.2.1:1234", "203.0.113.9", "203.0.113.9"},
+			{"forged entries left of the client", "192.0.2.1:1234", "10.9.9.9, 203.0.113.9", "203.0.113.9"},
+			{"through two balancers", "192.0.2.1:1234", "203.0.113.9, 192.0.2.5", "203.0.113.9"},
+			{"no header falls back to the balancer", "192.0.2.1:1234", "", "192.0.2.1"},
+			{"a malformed hop stops the walk", "192.0.2.1:1234", "203.0.113.9, nonsense", "192.0.2.1"},
+		} {
+			l := &recordingLimiter{}
+			h, _, seen := setupLimited(t, l, lb)
+			require.Equal(t, http.StatusTeapot, do(h, "GET", "shop-a.test", "/me", func(r *http.Request) {
+				r.RemoteAddr = tc.remote
+				if tc.xff != "" {
+					r.Header.Set("X-Forwarded-For", tc.xff)
+				}
+			}).Code, tc.name)
+			<-seen
+			assert.Equal(t, []string{"shop-a/visitor/addr:" + tc.want}, l.calls, tc.name)
+		}
 	})
 
 	t.Run("platform hosts by address", func(t *testing.T) {

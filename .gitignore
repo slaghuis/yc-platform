@@ -9,6 +9,9 @@ coverage.out
 /tools/*/bin/
 /tools/*/yc-*
 
+# Load test runs (scripts/load-test.sh); docs/reports/ keeps the summaries
+/test/load/results/
+
 # Task's per-machine checksum cache
 .task/
 

@@ -51,8 +51,9 @@ type GatewayConfig struct {
 }
 
 // KeepRegistered registers reg with the gateway, then re-registers every
-// cfg.Interval so a restarted gateway learns the routes again. When ctx
-// ends it deregisters. It blocks until ctx ends.
+// cfg.Interval (5 s by default) so a restarted gateway learns the routes
+// again within that. An unchanged re-registration costs the gateway a map
+// lookup. When ctx ends it deregisters. It blocks until ctx ends.
 func KeepRegistered(ctx context.Context, cfg GatewayConfig, reg Registration) {
 	if cfg.InternalURL == "" {
 		return
@@ -69,7 +70,7 @@ func KeepRegistered(ctx context.Context, cfg GatewayConfig, reg Registration) {
 	}
 	interval := cfg.Interval
 	if interval <= 0 {
-		interval = 30 * time.Second
+		interval = 5 * time.Second
 	}
 	client := NewClient(ClientOptions{Timeout: 5 * time.Second})
 

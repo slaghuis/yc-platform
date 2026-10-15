@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_PRICING_ADVERTISE_URL:-http://yc-pricing:8080}
-  interval: 30s
+  interval: 5s
 # Exchange rates for display conversion (ADR-014). Frankfurter serves ECB
 # reference rates without a key; exchangerate_host needs one.
 rates:

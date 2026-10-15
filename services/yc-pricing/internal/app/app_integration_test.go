@@ -115,6 +115,7 @@ func TestPricing(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	eventsOf := func(tenant, eventType string) int {
 		var n int
 		require.NoError(t, db.QueryRow(ctx, `SELECT count(*) FROM outbox

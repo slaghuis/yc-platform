@@ -42,7 +42,9 @@ jobs:
         with:
           context: .
           file: deploy/docker/Dockerfile.service
-          build-args: SERVICE=${{ matrix.service }}
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            VERSION=${{ github.ref_name }}
           push: true
           tags: |
             ghcr.io/slaghuis/yc-platform/${{ matrix.service }}:${{ github.sha }}

@@ -1,0 +1,13 @@
+# OpenAPI lint for `task docs:api:lint`. Structural errors fail; style rules
+# that don't fit the platform are off.
+extends:
+  - minimal
+rules:
+  # Authentication happens at yc-gateway and is described in each spec's
+  # prose (ADR-020, ADR-021), not as security schemes.
+  security-defined: off
+  # Services sit behind the gateway; the shop's host is the server.
+  no-empty-servers: off
+  info-license: off
+  # yc-image answers a variant with a redirect to object storage.
+  operation-2xx-response: off

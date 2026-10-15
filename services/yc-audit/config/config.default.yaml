@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_AUDIT_ADVERTISE_URL:-http://yc-audit:8080}
-  interval: 30s
+  interval: 5s
 # The GDPR cascade register (ADR-005): a deletion is complete when every
 # expected service has published platform.gdpr.cascade_completed.v1, and
 # a compliance incident when it is not complete by the deadline.

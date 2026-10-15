@@ -291,7 +291,7 @@ type GatewayName string
 
 // GatewayTestResult defines model for GatewayTestResult.
 type GatewayTestResult struct {
-	// Message Why the gateway refused
+	// Message Why the gateway refused, when it did.
 	Message *string `json:"message,omitempty"`
 	Ok      bool    `json:"ok"`
 }

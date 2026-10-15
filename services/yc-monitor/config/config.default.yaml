@@ -14,7 +14,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_MONITOR_ADVERTISE_URL:-http://yc-monitor:8080}
-  interval: 30s
+  interval: 5s
 # Every service registered with yc-gateway is checked at <base_url>/readyz.
 health_check:
   interval: ${YC_MONITOR_HEALTH_INTERVAL:-15s}

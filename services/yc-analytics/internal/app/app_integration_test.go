@@ -138,6 +138,7 @@ func TestAnalytics(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	outbox := func(eventType string) []map[string]any {
 		t.Helper()
 		rows, err := db.Query(ctx, `SELECT envelope->'payload' FROM outbox
@@ -432,6 +433,47 @@ func TestAnalytics(t *testing.T) {
 			map[string]any{"from": from, "to": today}, nil))
 		assert.Equal(t, http.StatusBadRequest, sysadmin.do(http.MethodPost, "/sysadmin/analytics/rebuild",
 			map[string]any{"from": from, "to": today, "tenant_id": "_platform"}, nil))
+	})
+
+	t.Run("a day marked during its rebuild stays dirty", func(t *testing.T) {
+		day := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+		mark := func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO agg_dirty (tenant_id, date_key, marked_at) VALUES ('shop-a', $1, clock_timestamp())
+				ON CONFLICT (tenant_id, date_key) DO UPDATE SET marked_at = EXCLUDED.marked_at`, day)
+			return err
+		}
+		dirty := func() int {
+			var n int
+			require.NoError(t, dbkit.WithPlatformTx(ctx, db, func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT count(*) FROM agg_dirty WHERE tenant_id = 'shop-a' AND date_key = $1`, day).Scan(&n)
+			}))
+			return n
+		}
+		require.NoError(t, dbkit.WithPlatformTx(ctx, db, mark))
+
+		// A fact's transaction marks the day again and commits only after
+		// the refresher has read the marks and is clearing them.
+		marker, err := db.Begin(ctx)
+		require.NoError(t, err)
+		_, err = marker.Exec(ctx, `SELECT set_config('app.tenant_id', 'shop-a', true)`)
+		require.NoError(t, err)
+		require.NoError(t, mark(marker))
+		refreshed := make(chan error, 1)
+		go func() { _, err := a.Service.Refresh(ctx); refreshed <- err }()
+		require.Eventually(t, func() bool {
+			var waiting int
+			_ = db.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+				WHERE wait_event_type = 'Lock' AND query LIKE '%DELETE FROM agg_dirty%'`).Scan(&waiting)
+			return waiting > 0
+		}, 10*time.Second, 10*time.Millisecond, "the refresher clears the mark")
+		require.NoError(t, marker.Commit(ctx))
+		require.NoError(t, <-refreshed)
+		assert.Equal(t, 1, dirty(), "the new mark survives")
+
+		_, err = a.Service.Refresh(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, dirty(), "and the next refresh clears it")
 	})
 
 	t.Run("a deleted user's orders are pseudonymised", func(t *testing.T) {

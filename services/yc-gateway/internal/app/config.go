@@ -3,8 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
@@ -37,6 +39,9 @@ type Config struct {
 	IdentityTimeout    time.Duration           `koanf:"identity_timeout"`
 	VisitorCookie      transport.CookieConfig  `koanf:"visitor_cookie"`
 	RateLimit          service.RateLimitConfig `koanf:"rate_limit"`
+	// TrustedProxies are the load balancers' addresses or CIDRs, whose
+	// X-Forwarded-For names the client.
+	TrustedProxies []string `koanf:"trusted_proxies"`
 }
 
 // LogConfig is the `log:` block.
@@ -113,8 +118,14 @@ func (c *Config) Validate() error {
 	if c.Registry.HealthInterval <= 0 || c.Registry.HealthTimeout <= 0 || c.Registry.FailureThreshold < 1 {
 		errs = append(errs, errors.New("registry.health_interval, health_timeout and failure_threshold must be positive"))
 	}
+	if c.Registry.StartupGrace < 0 {
+		errs = append(errs, errors.New("registry.startup_grace must not be negative"))
+	}
 	if c.RateLimit.Enabled {
 		errs = append(errs, c.RateLimit.Validate())
+	}
+	if _, err := c.trustedProxies(); err != nil {
+		errs = append(errs, err)
 	}
 	if routes, err := c.routes(); err != nil {
 		errs = append(errs, err)
@@ -144,6 +155,26 @@ func (c *Config) routes() ([]domain.Route, error) {
 		})
 	}
 	return routes, nil
+}
+
+func (c *Config) trustedProxies() ([]netip.Prefix, error) {
+	prefixes := make([]netip.Prefix, 0, len(c.TrustedProxies))
+	for _, s := range c.TrustedProxies {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			addr, aerr := netip.ParseAddr(s)
+			if aerr != nil {
+				return nil, fmt.Errorf("trusted_proxies: %q is not an address or CIDR", s)
+			}
+			p = netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen())
+		}
+		prefixes = append(prefixes, p.Masked())
+	}
+	return prefixes, nil
 }
 
 func (c *Config) staticHosts() map[string]string {

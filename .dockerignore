@@ -1,0 +1,15 @@
+# Images build from go.work's modules (libs, services, test, tools); every
+# one must stay in the context. Anything else only busts the build cache.
+.git
+.github
+.cursor
+.env
+.env.*
+bin
+dist
+docs
+pipeline
+schemas
+test/load/results
+**/*.md
+**/coverage.out

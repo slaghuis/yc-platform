@@ -162,7 +162,7 @@ type QuoteInput struct {
 	DeliveryAddress Address     `json:"delivery_address"`
 	Items           []QuoteItem `json:"items"`
 
-	// SubtotalMinor Items total (gross)
+	// SubtotalMinor Items total (gross), for price-tiered rates.
 	SubtotalMinor int64 `json:"subtotal_minor"`
 }
 

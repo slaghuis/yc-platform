@@ -47,7 +47,8 @@ type Config struct {
 	// events. Default: 100ms.
 	OutboxPollInterval time.Duration
 
-	// OutboxBatchSize is the max number of outbox rows per poll. Default: 50.
+	// OutboxBatchSize is the max number of outbox rows published together;
+	// a poll keeps claiming batches until one comes back short. Default: 50.
 	OutboxBatchSize int
 
 	// OutboxMaxAttempts before a row goes to the service's local DLQ.

@@ -409,7 +409,7 @@ components:
       required: [ok]
       properties:
         ok: { type: boolean }
-        message: { type: string, description: Why the gateway refused, when it did. }
+        message: { type: string, description: 'Why the gateway refused, when it did.' }
     Capabilities:
       type: object
       required: [gateway, supports_separate_auth_capture, hosted_payment, configured]

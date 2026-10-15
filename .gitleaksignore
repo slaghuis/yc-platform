@@ -1,0 +1,9 @@
+# Reviewed in Phase 9: none of these is a real credential.
+# Dev-only field encryption key in the example environment.
+3130035ac5ca1bef899dbe66e2a1bdd75d016275:.env.example:generic-api-key:74
+# The Standard Webhooks specification's published example secret.
+3e38b05084b5f85067b410a3ec9bccff73738896:services/yc-payment/internal/gateway/yoco/yoco_test.go:generic-api-key:229
+# Fake Stripe IDs and keys in tests.
+3bf9b303ee9c3eab6e6e3bf8bcbe60dbbb05d5bc:services/yc-payment/internal/domain/payment_test.go:stripe-access-token:53
+3bf9b303ee9c3eab6e6e3bf8bcbe60dbbb05d5bc:services/yc-payment/internal/domain/payment_test.go:stripe-access-token:56
+3bf9b303ee9c3eab6e6e3bf8bcbe60dbbb05d5bc:services/yc-payment/internal/app/app_integration_test.go:stripe-access-token:186

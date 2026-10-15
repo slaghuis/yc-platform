@@ -44,7 +44,7 @@ func Subscriptions(h Handlers) []Subscription {
 		sub(ycevents.TypePlatformTenantProvisionedV1, typed(func(ctx context.Context, _ eventbus.Envelope, p ycevents.PlatformTenantProvisionedV1) error {
 			return h.TenantProvisioned(ctx, p)
 		})),
-		sub(ycevents.TypeIdentityVisitorCreatedV1, typed(h.VisitorCreated)),
+		concurrent(sub(ycevents.TypeIdentityVisitorCreatedV1, typed(h.VisitorCreated))),
 		sub(ycevents.TypeCartCreatedV1, typed(func(ctx context.Context, env eventbus.Envelope, p ycevents.CartCreatedV1) error {
 			return h.CartEvent(ctx, env, p.CartID, domain.CartCreated, p.CartType, p.UserType, p.CreatedAt)
 		})),
@@ -106,6 +106,15 @@ func payment(txID, gateway string, amount ycevents.Money, outcome domain.Payment
 		TransactionID: txID, Gateway: gateway, Currency: amount.Currency, AmountMinor: amount.AmountMinor,
 		Outcome: outcome, Reason: reason, At: at.UTC(),
 	}
+}
+
+// visitorConcurrency is how many visitor events are recorded at once: the
+// busiest event, and its facts do not depend on order.
+const visitorConcurrency = 8
+
+func concurrent(s Subscription) Subscription {
+	s.Opts.Concurrency = visitorConcurrency
+	return s
 }
 
 func sub(eventType string, h eventbus.Handler) Subscription {

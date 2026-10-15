@@ -31,6 +31,7 @@ use (
 	./services/yc-shipping
 
 	./test/e2e
+	./test/load
 
 	./tools/yc-dlq-cli
 	./tools/yc-migrate

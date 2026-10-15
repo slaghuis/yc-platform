@@ -653,6 +653,16 @@ Security review, load test, polish, documentation.
   - All deferred items from previous phases catalogued
   - Priority ranking for v2
 
+### As built
+
+The decisions are in ADR-026 (the deployment contract); the evidence is in `docs/reports/` (load test, security review, chaos test). Differences from the scope above:
+
+- **Security:** ten findings, none open at critical or high. The high one (invalid credentials skipped the gateway's rate limits) and the CI module's outdated dependencies are fixed. Login throttling, `trusted_proxies`, security headers and the audit body limit are new. Tenant isolation is tested by `testkit.AssertTenantIsolation` in every service with tenant tables and by `test/e2e/isolation_test.go` through the gateway. Sign-off is the platform owner's.
+- **Load:** `task load` (k6 in Docker, plus a Go outbox publisher) met all three targets. 500 requests/s needs several shops: the per-shop limit stays 200/s. The fixes were in the outbox relay (batched async publishing), consumer concurrency (opt-in) and the analytics refresher (per-day transactions). No indexes or caches were needed.
+- **Chaos:** `scripts/chaos-test.sh` kills or pauses each saga service, the gateway, identity, NATS and Postgres during live checkouts, then checks every saga settles and orders, payments and stock reconcile. "Slow dependencies" are `docker pause` past the callers' timeouts.
+- **Deployment:** deployment stays target-neutral until the first tenant (ADR-026). The image now has a shared module-download layer, a `VERSION` build argument and a `HEALTHCHECK` (`/app/service healthcheck`). `/readyz` reports `draining` during `http.shutdown_delay`. Services re-register every 5 s, a restarted gateway stays unready for 10 s, and compose allows 40 s to stop. One replica per service.
+- **Docs:** ADR-026, `backlog-v2.md`, the Yoco setup runbook, a rewritten tenant onboarding runbook, a first-day path in `onboarding/README.md`, stale service-doc status lines corrected. `task docs:api` renders every OpenAPI spec to HTML, and CI lints the specs (the lint found seven truncated descriptions).
+
 ### Milestone
 
 - Load test report shows platform handles target load
@@ -732,8 +742,8 @@ These are decisions deferred intentionally — they can be made when we have the
 1. **Phase 2 end**: External search engine (OpenSearch/Meilisearch) or stick with Postgres FTS? Decide based on Phase 2 performance observations.
 2. **Phase 4 end**: Payment driver pattern — stick with hand-rolled drivers or adopt a library like `go-stripe`? Decide after implementing Stripe.
 3. **Phase 6 end**: Which real South African courier to integrate first (post-v1)? Decide based on first tenant's needs.
-4. **Phase 8 end**: Analytics storage — stick with Postgres or move to ClickHouse? Decide based on query performance.
-5. **Phase 9 end**: Deployment target — Kubernetes, Nomad, ECS, or Docker Compose on a VM? Decide based on tenant onboarding model.
+4. **Phase 8 end**: Analytics storage — stick with Postgres or move to ClickHouse? Decide based on query performance. *Decided in Phase 9: Postgres (ADR-026 rule 13).*
+5. **Phase 9 end**: Deployment target — Kubernetes, Nomad, ECS, or Docker Compose on a VM? Decide based on tenant onboarding model. *Deferred to the first tenant; any target must meet the ADR-026 contract.*
 
 ---
 

@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 	"math"
-	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +63,7 @@ type Gateway struct {
 	routes  RouteMatcher
 	limiter Limiter
 	cookie  CookieConfig
+	trusted []netip.Prefix
 	proxy   *httputil.ReverseProxy
 }
 
@@ -86,10 +87,26 @@ func NewRouter(g *Gateway, build httpkit.BuildInfo, checks []httpkit.Check) http
 	r := httpkit.NewRouter(httpkit.RouterOptions{
 		Build:      build,
 		Checks:     checks,
-		Middleware: []func(http.Handler) http.Handler{g.Authenticate},
+		Middleware: []func(http.Handler) http.Handler{securityHeaders, g.Authenticate},
 	})
 	r.Handle("/*", g)
 	return r
+}
+
+// securityHeaders sets the browser hardening headers on every public
+// response. The platform serves only JSON and redirects, so nothing may be
+// framed, sniffed or loaded. Browsers ignore HSTS over plain HTTP, so it is
+// safe in local development.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Strict-Transport-Security", "max-age=31536000")
+		next.ServeHTTP(w, r)
+	})
 }
 
 type routeKey struct{}
@@ -118,7 +135,7 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 		// Third-party callbacks carry no token and must not mint visitors;
 		// the upstream verifies them.
 		if route.Callback {
-			if !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+			if !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+g.clientAddr(r)) {
 				return
 			}
 			ctx := authctx.WithAuth(r.Context(), authctx.AuthContext{
@@ -134,14 +151,14 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 		// visitor is issued for them.
 		bearer := authctx.BearerToken(r.Header)
 		anonymous := bearer == "" && !hasCookie(r, g.cookie.Name)
-		if anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+		if anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+g.clientAddr(r)) {
 			return
 		}
 
 		// Platform hosts never issue visitors (ADR-020 rule 5): without a
 		// token only anonymous routes are reachable, with no actor.
 		if tenantID == eventbus.PlatformTenantID && bearer == "" {
-			if !anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+			if !anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+g.clientAddr(r)) {
 				return
 			}
 			if !route.Anonymous {
@@ -191,14 +208,23 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 // allow applies the rate limits, writing a 429 with Retry-After when the
 // request is refused.
 func (g *Gateway) allow(w http.ResponseWriter, r *http.Request, tenantID string, actorType authctx.ActorType, actorKey string) bool {
+	if err := g.limit(w, tenantID, actorType, actorKey); err != nil {
+		ycerrors.WriteError(w, r, err)
+		return false
+	}
+	return true
+}
+
+// limit applies the rate limits, setting Retry-After and returning the 429
+// when the request is refused.
+func (g *Gateway) limit(w http.ResponseWriter, tenantID string, actorType authctx.ActorType, actorKey string) error {
 	ok, wait := g.limiter.Allow(tenantID, actorType, actorKey)
 	if ok {
-		return true
+		return nil
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
-	ycerrors.WriteError(w, r, ycerrors.RateLimited("Too many requests; try again later").
-		WithInternal("tenant %s, %s %s, wait %s", tenantID, actorType, actorKey, wait))
-	return false
+	return ycerrors.RateLimited("Too many requests; try again later").
+		WithInternal("tenant %s, %s %s, wait %s", tenantID, actorType, actorKey, wait)
 }
 
 func hasCookie(r *http.Request, name string) bool {
@@ -206,25 +232,64 @@ func hasCookie(r *http.Request, name string) bool {
 	return err == nil && c.Value != ""
 }
 
-// clientAddr is the connection's remote IP. Behind a load balancer every
-// request shares its address until trusted proxy headers are configured.
-func clientAddr(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// TrustProxies sets the load balancers in front of the gateway. A request
+// from one of them is attributed to the rightmost X-Forwarded-For address
+// outside prefixes: entries to its left are the client's to forge. Without
+// trusted proxies X-Forwarded-For is ignored, so behind a load balancer
+// every caller without credentials would share its address.
+func (g *Gateway) TrustProxies(prefixes []netip.Prefix) { g.trusted = prefixes }
+
+func (g *Gateway) isTrusted(addr netip.Addr) bool {
+	for _, p := range g.trusted {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientAddr is the caller's IP: the connection's remote address, or the
+// client a trusted proxy forwarded for.
+func (g *Gateway) clientAddr(r *http.Request) string {
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	return host
+	addr := ap.Addr().Unmap()
+	if !g.isTrusted(addr) {
+		return addr.String()
+	}
+	var hops []string
+	for _, v := range r.Header.Values("X-Forwarded-For") {
+		hops = append(hops, strings.Split(v, ",")...)
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			break
+		}
+		addr = hop.Unmap()
+		if !g.isTrusted(addr) {
+			break
+		}
+	}
+	return addr.String()
 }
 
 // identify returns the caller for tenantID. A bearer token must be valid
 // for the tenant. The visitor cookie is the gateway's own state, so a
 // stale or foreign one is replaced with a fresh visitor rather than
-// rejected.
+// rejected. Invalid credentials count against the caller's address, like
+// no credentials, so they cannot be used to dodge the limits.
 func (g *Gateway) identify(w http.ResponseWriter, r *http.Request, tenantID string) (domain.Identity, error) {
 	ctx := r.Context()
+	byAddr := func() error { return g.limit(w, tenantID, authctx.ActorVisitor, "addr:"+g.clientAddr(r)) }
 	if bearer := authctx.BearerToken(r.Header); bearer != "" {
 		id, err := g.auth.Validate(ctx, bearer)
 		if errors.Is(err, integration.ErrInvalidToken) {
+			if err := byAddr(); err != nil {
+				return domain.Identity{}, err
+			}
 			return domain.Identity{}, ycerrors.Unauthorized("Invalid or expired token")
 		}
 		if err != nil {
@@ -247,6 +312,9 @@ func (g *Gateway) identify(w http.ResponseWriter, r *http.Request, tenantID stri
 		case err == nil && id.TenantID == tenantID:
 			return id, nil
 		case err != nil && !errors.Is(err, integration.ErrInvalidToken):
+			return domain.Identity{}, err
+		}
+		if err := byAddr(); err != nil {
 			return domain.Identity{}, err
 		}
 		telemetry.LoggerFromContext(ctx).Info("replacing stale visitor cookie")

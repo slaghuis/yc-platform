@@ -32,6 +32,11 @@ password:
   reset_url: "https://{host}/account/reset-password?token={token}"
   # Logs reset tokens. Development only; refused in production.
   log_reset_links: ${YC_IDENTITY_LOG_RESET_LINKS:-false}
+  # After this many failed sign-ins for one email in a shop, sign-in is
+  # refused (429) for the rest of the window, whether or not the email is
+  # registered. 0 turns the limit off.
+  login_max_failures: 10
+  login_failure_window: 15m
 
 # Internal calls through yc-gateway (ADR-021): yc-message sends reset
 # links. With no gateway URL, reset links are not sent.

@@ -33,11 +33,14 @@ type Publisher interface {
 	Publish(ctx context.Context, tx pgx.Tx, evt eventbus.Event) error
 }
 
-// RegistryConfig tunes health polling.
+// RegistryConfig tunes health polling and startup.
 type RegistryConfig struct {
 	HealthInterval   time.Duration `koanf:"health_interval"`
 	HealthTimeout    time.Duration `koanf:"health_timeout"`
 	FailureThreshold int           `koanf:"failure_threshold"`
+	// StartupGrace is how long a new gateway reports unready while the
+	// running services re-register (every gateway.interval, 5 s).
+	StartupGrace time.Duration `koanf:"startup_grace"`
 }
 
 type registration struct {
@@ -57,6 +60,7 @@ type Registry struct {
 	cfg      RegistryConfig
 	client   *http.Client
 	now      func() time.Time
+	started  time.Time
 
 	mu    sync.Mutex
 	regs  map[string]*registration // by service name
@@ -73,6 +77,7 @@ func NewRegistry(static []domain.Route, db *pgxpool.Pool, bus Publisher, cfg Reg
 		cfg:      cfg,
 		client:   &http.Client{Timeout: cfg.HealthTimeout},
 		now:      time.Now,
+		started:  time.Now(),
 		regs:     map[string]*registration{},
 	}
 	for _, s := range static {
@@ -84,6 +89,15 @@ func NewRegistry(static []domain.Route, db *pgxpool.Pool, bus Publisher, cfg Reg
 	}
 	r.table.Store(t)
 	return r, nil
+}
+
+// Ready is the readiness check that holds a new gateway back for
+// StartupGrace, so it takes traffic only once services have re-registered.
+func (r *Registry) Ready(context.Context) error {
+	if wait := r.cfg.StartupGrace - r.now().Sub(r.started); wait > 0 {
+		return fmt.Errorf("waiting %s for services to register", wait.Round(time.Second))
+	}
+	return nil
 }
 
 // Match returns the route for a request.

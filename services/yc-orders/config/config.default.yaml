@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_ORDERS_ADVERTISE_URL:-http://yc-orders:8080}
-  interval: 30s
+  interval: 5s
 # Calls to other services through yc-gateway (ADR-021): yc-payment refunds
 # cancelled orders. The secret is yc-orders' client secret registered with
 # yc-identity.

@@ -12,7 +12,10 @@ Helper scripts called from `Taskfile.yml`. Run them through `task` rather than d
 | `gen-event.sh` | `task scaffold:event DOMAIN=order ACTION=placed VERSION=1` | Scaffold a new event schema; add `ENTITY=...` for non-root entities (`docs/onboarding/adding-an-event.md`) |
 | `wait-for-stack.sh` | (called by `task devstack:up`) | Wait for dev stack services to become healthy; fails if any is not ready |
 | `oapi-codegen.sh` | `task gen:openapi` (per service) | Generate a service's strict server from `api/openapi.yaml` with its `api/oapi-codegen.yaml` |
-| `demo-phase1.sh`, `demo-phase2.sh`, `demo-phase3.sh` | `task demo:phase1`, `demo:phase2`, `demo:phase3` | Milestone demos for each phase of `docs/implementation-plan.md`, run against the dev stack through yc-gateway |
+| `demo-phase1.sh` … `demo-phase8.sh` | `task demo:phase1` … `demo:phase8` | Milestone demos for each phase of `docs/implementation-plan.md`, run against the dev stack through yc-gateway |
+| `load-test.sh` | `task load` | Phase 9 load test: 500 RPS browse, concurrent checkouts and 1000 events/s against the running stack (`docs/reports/load-test.md`) |
+| `chaos-test.sh` | (run directly; changes the stack) | Kills or pauses services, NATS and Postgres during checkouts and checks every saga settles and the books reconcile; `./scripts/chaos-test.sh kill-orders` runs one drill (`docs/reports/chaos-test.md`) |
+| `lib/stack.sh` | (sourced by the two above) | Shared helpers: checks the stack, points yc-payment at the fake Stripe, provisions shops and catalogs, runs k6 in Docker |
 
 Event schema scripts live with the schemas in `schemas/yc-event-schemas/scripts/` (see `schemas/yc-event-schemas/README.md`).
 

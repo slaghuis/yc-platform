@@ -98,7 +98,7 @@ None directly for customers; stock is exposed indirectly via search (yc-product'
 
 ### Phase 4 Implementation Notes
 
-The contract is `services/yc-inventory/api/openapi.yaml`. Implemented: the shop admin endpoints, the three reservation endpoints, the expiry sweeper and the stock events. Not yet: `/internal/stock/batch` (yc-product keeps `in_stock` from the stock events instead), back-in-stock subscriptions, and the tenant configuration-changed, tenant-deleted and user-deleted subscriptions.
+The contract is `services/yc-inventory/api/openapi.yaml`. Implemented: the shop admin endpoints, the three reservation endpoints, the expiry sweeper and the stock events. Not yet: `/internal/stock/batch` (yc-product keeps `in_stock` from the stock events instead), back-in-stock subscriptions, and the tenant configuration-changed and tenant-deleted subscriptions. yc-inventory holds no customer data, so it takes no part in the GDPR cascade until back-in-stock subscriptions exist (ADR-025 rule 3).
 
 - **Shop settings** are `GET`/`PUT /admin/inventory/config`: `inventory_enabled` and the default, minimum and maximum reservation TTL (defaults 15, 5 and 30 minutes, from `reservation` in the config). A row is created on `platform.tenant.provisioned.v1`; until a shop changes them, the service defaults apply. Turning inventory off publishes `inventory.stock.restored.v1` for every out-of-stock SKU, and turning it on publishes `inventory.stock.depleted.v1` for them, so yc-product's `in_stock` follows.
 - **Movement history** is `GET /admin/stock/{sku_id}/history` rather than `/admin/stock/history/{sku_id}`, so every per-SKU route shares the `/admin/stock/{sku_id}` prefix.

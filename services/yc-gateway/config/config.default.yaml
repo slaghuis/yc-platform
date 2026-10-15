@@ -60,6 +60,9 @@ registry:
   health_interval: 5s
   health_timeout: 2s
   failure_threshold: 3
+  # /readyz stays unready this long after start while services re-register
+  # (every gateway.interval, 5s), so a load balancer holds traffic back.
+  startup_grace: 10s
 
 # Hostnames that resolve to _platform: system admins only, no visitors
 # (ADR-020 rule 5).
@@ -81,6 +84,12 @@ rate_limit:
   actor: {requests: 600, per: 1m, burst: 60}
   visitor: {requests: 120, per: 1m, burst: 30}
   idle_ttl: 10m
+
+# Load balancers in front of the gateway (addresses or CIDRs). Requests from
+# them are limited by the client address they append to X-Forwarded-For;
+# without them every caller without credentials shares the balancer's
+# address. Override with YC_GATEWAY__TRUSTED_PROXIES=10.0.0.0/8,...
+trusted_proxies: []
 
 token_cache_ttl: 60s
 identity_timeout: 3s

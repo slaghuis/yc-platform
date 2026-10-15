@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_REVIEW_ADVERTISE_URL:-http://yc-review:8080}
-  interval: 30s
+  interval: 5s
 # Internal calls through yc-gateway (ADR-021): yc-orders for verified
 # purchases and delivered orders' products.
 internal_calls:

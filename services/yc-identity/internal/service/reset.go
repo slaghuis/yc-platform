@@ -108,8 +108,8 @@ func (s *Service) sendResetLink(ctx context.Context, user domain.User, requestID
 }
 
 // ConfirmPasswordReset sets a new password with a reset token, revokes the
-// user's refresh tokens and outstanding reset tokens, and publishes
-// identity.user.password_changed.v1.
+// user's refresh tokens and outstanding reset tokens, clears the email's
+// failed sign-ins, and publishes identity.user.password_changed.v1.
 func (s *Service) ConfirmPasswordReset(ctx context.Context, token, pw string) error {
 	a, _ := authctx.FromContext(ctx)
 	if err := validateTenant(a.TenantID); err != nil {
@@ -147,6 +147,13 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, token, pw string) er
 		}
 		if err := s.sessions.RevokeUser(ctx, tx, user.ID); err != nil {
 			return err
+		}
+		// Proving control of the email lifts a lockout others caused.
+		if norm, ok := domain.NormaliseEmail(user.Email); ok {
+			key := failureKey(norm)
+			if err := s.failures.Clear(ctx, tx, user.TenantID, key[:]); err != nil {
+				return err
+			}
 		}
 		return s.bus.Publish(ctx, tx, eventbus.Event{
 			EventType: events.TypeIdentityUserPasswordChangedV1,

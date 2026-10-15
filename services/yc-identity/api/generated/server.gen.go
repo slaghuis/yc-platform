@@ -304,7 +304,7 @@ type SessionTokenType string
 
 // TokenIdentity defines model for TokenIdentity.
 type TokenIdentity struct {
-	// ActorID User ID
+	// ActorID User ID, or the service name for service tokens
 	ActorID   string             `json:"actor_id"`
 	ActorType ActorType          `json:"actor_type"`
 	ExpiresAt time.Time          `json:"expires_at"`
@@ -1499,6 +1499,20 @@ func (response Login401ApplicationProblemPlusJSONResponse) VisitLoginResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Login429ApplicationProblemPlusJSONResponse Problem
+
+func (response Login429ApplicationProblemPlusJSONResponse) VisitLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }

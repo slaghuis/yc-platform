@@ -50,6 +50,10 @@ type Config struct {
 	Orders Orders
 	// LogResetLinks logs reset tokens. Development only.
 	LogResetLinks bool
+	// LoginMaxFailures failed sign-ins for one email in a shop refuse the
+	// rest of the LoginFailureWindow; 0 turns the limit off.
+	LoginMaxFailures   int
+	LoginFailureWindow time.Duration
 }
 
 // Messages is yc-message's send API.
@@ -77,6 +81,7 @@ type Service struct {
 	oauth      repository.OAuth
 	resets     repository.PasswordResets
 	pseudonyms repository.Pseudonyms
+	failures   repository.LoginFailures
 	clients    map[string][sha256.Size]byte
 	cfg        Config
 	now        func() time.Time
@@ -209,6 +214,10 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 		s.hasher.VerifyNothing(pw)
 		return domain.Session{}, errBadCredentials("malformed email")
 	}
+	emailHash := failureKey(norm)
+	if err := s.checkLoginFailures(ctx, a.TenantID, emailHash[:]); err != nil {
+		return domain.Session{}, err
+	}
 
 	var user domain.User
 	err := s.inTenant(ctx, a.TenantID, func(tx pgx.Tx) error {
@@ -218,7 +227,8 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 	})
 	if ycerrors.HasCode(err, ycerrors.CodeNotFound) || (err == nil && user.PasswordHash == "") {
 		s.hasher.VerifyNothing(pw)
-		return domain.Session{}, errBadCredentials("no user with a password for this email")
+		return domain.Session{}, s.loginFailed(ctx, a.TenantID, emailHash[:],
+			errBadCredentials("no user with a password for this email"))
 	}
 	if err != nil {
 		return domain.Session{}, err
@@ -228,10 +238,12 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 		return domain.Session{}, fmt.Errorf("login: verify user %s: %w", user.ID, err)
 	}
 	if !match {
-		return domain.Session{}, errBadCredentials("wrong password for user %s", user.ID)
+		return domain.Session{}, s.loginFailed(ctx, a.TenantID, emailHash[:],
+			errBadCredentials("wrong password for user %s", user.ID))
 	}
 	if user.Status != domain.StatusActive {
-		return domain.Session{}, errBadCredentials("user %s is %s", user.ID, user.Status)
+		return domain.Session{}, s.loginFailed(ctx, a.TenantID, emailHash[:],
+			errBadCredentials("user %s is %s", user.ID, user.Status))
 	}
 
 	var previousVisitor string
@@ -244,12 +256,56 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 		if sess, _, err = s.issueSession(ctx, tx, user, ""); err != nil {
 			return err
 		}
+		if err := s.failures.Clear(ctx, tx, a.TenantID, emailHash[:]); err != nil {
+			return err
+		}
 		return s.publishLoggedIn(ctx, tx, user, sess, events.IdentityUserLoggedInV1MethodPassword, previousVisitor)
 	})
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("login: %w", err)
 	}
 	return sess, nil
+}
+
+// failureKey is the login_failures key of a normalised email.
+func failureKey(norm string) [sha256.Size]byte { return sha256.Sum256([]byte(norm)) }
+
+// checkLoginFailures refuses a sign-in once the email has failed
+// LoginMaxFailures times in the current window, before the password is
+// checked. Unknown emails count the same, so the refusal reveals nothing.
+func (s *Service) checkLoginFailures(ctx context.Context, tenantID string, emailHash []byte) error {
+	if s.cfg.LoginMaxFailures <= 0 {
+		return nil
+	}
+	var n int
+	err := s.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		var err error
+		n, err = s.failures.Count(ctx, tx, tenantID, emailHash, s.now().Add(-s.cfg.LoginFailureWindow))
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("login: %w", err)
+	}
+	if n >= s.cfg.LoginMaxFailures {
+		return ycerrors.RateLimited("Too many failed sign-ins; try again later").
+			WithInternal("%d failed sign-ins in %s", n, s.cfg.LoginFailureWindow)
+	}
+	return nil
+}
+
+// loginFailed records a failed sign-in and returns failure.
+func (s *Service) loginFailed(ctx context.Context, tenantID string, emailHash []byte, failure error) error {
+	if s.cfg.LoginMaxFailures <= 0 {
+		return failure
+	}
+	now := s.now()
+	err := s.inTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		return s.failures.Record(ctx, tx, tenantID, emailHash, now, now.Add(-s.cfg.LoginFailureWindow))
+	})
+	if err != nil {
+		return fmt.Errorf("login: %w", err)
+	}
+	return failure
 }
 
 // publishLoggedIn publishes identity.user.logged_in.v1 with previousVisitor,

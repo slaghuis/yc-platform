@@ -16,7 +16,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_IMAGE_ADVERTISE_URL:-http://yc-image:8080}
-  interval: 30s
+  interval: 5s
 # S3-compatible object storage (SeaweedFS in dev). public_endpoint is the
 # S3 URL browsers use for presigned uploads; public_base_url prefixes
 # object keys in served image URLs (the bucket's public-read URL or a CDN).

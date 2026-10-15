@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_CHECKOUT_ADVERTISE_URL:-http://yc-checkout:8080}
-  interval: 30s
+  interval: 5s
 # Saga calls through yc-gateway (ADR-019 rule 1, ADR-021). The secret is
 # yc-checkout's client secret registered with yc-identity. Each attempt
 # has a timeout; payment calls outlast the gateway's own 30 s.
