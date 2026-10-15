@@ -13,9 +13,22 @@ import (
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
 )
 
-// InternalPrefix is never routed: /internal/ endpoints are for
-// service-to-service calls inside the platform network.
+// InternalPrefix is never routed on the public listener: /internal/
+// endpoints are for service-to-service calls through the internal
+// listener (ADR-021 rule 3).
 const InternalPrefix = "/internal/"
+
+// gatewayInternal are the internal listener's own endpoints; no service
+// may register them.
+var gatewayInternal = []string{
+	"/internal/register", "/internal/deregister", "/internal/routes",
+	"/internal/service-token", "/internal/validate-token",
+}
+
+// IsInternal reports whether path is under InternalPrefix.
+func IsInternal(path string) bool {
+	return strings.HasPrefix(path, InternalPrefix) || path == strings.TrimSuffix(InternalPrefix, "/")
+}
 
 // Route forwards requests under Prefix to Upstream.
 type Route struct {
@@ -46,20 +59,26 @@ func (r Route) matches(path string) bool {
 	return len(path) == len(r.Prefix) || strings.HasSuffix(r.Prefix, "/") || path[len(r.Prefix)] == '/'
 }
 
-// Routes is a routing table.
+// Routes is a routing table. Internal routes are kept apart: only
+// MatchInternal finds them.
 type Routes struct {
 	byLength []Route // longest prefix first
+	internal []Route // longest prefix first
 }
 
 // NewRoutes validates routes and returns a table.
 func NewRoutes(routes []Route) (*Routes, error) {
 	out := make([]Route, 0, len(routes))
+	var internal []Route
 	for _, r := range routes {
 		if !strings.HasPrefix(r.Prefix, "/") {
 			return nil, fmt.Errorf("route %q: prefix must start with /", r.Prefix)
 		}
-		if strings.HasPrefix(r.Prefix+"/", InternalPrefix) {
-			return nil, fmt.Errorf("route %q: %s paths are never routed", r.Prefix, InternalPrefix)
+		isInternal := IsInternal(r.Prefix)
+		if isInternal {
+			if err := validInternal(r); err != nil {
+				return nil, err
+			}
 		}
 		if r.Upstream == nil || r.Upstream.Host == "" {
 			return nil, fmt.Errorf("route %q: upstream URL required", r.Prefix)
@@ -77,24 +96,63 @@ func NewRoutes(routes []Route) (*Routes, error) {
 			methods[i] = strings.ToUpper(m)
 		}
 		r.Methods = methods
-		out = append(out, r)
+		if isInternal {
+			internal = append(internal, r)
+		} else {
+			out = append(out, r)
+		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return len(out[i].Prefix) > len(out[j].Prefix) })
-	return &Routes{byLength: out}, nil
+	longestFirst := func(rs []Route) {
+		sort.SliceStable(rs, func(i, j int) bool { return len(rs[i].Prefix) > len(rs[j].Prefix) })
+	}
+	longestFirst(out)
+	longestFirst(internal)
+	return &Routes{byLength: out, internal: internal}, nil
 }
 
-// All returns the routes, longest prefix first.
+// validInternal checks an internal route: only a registered service may
+// own one, it admits service tokens only, and it may not shadow the
+// gateway's own internal endpoints.
+func validInternal(r Route) error {
+	if r.Service == "" {
+		return fmt.Errorf("route %q: %s paths are never routed statically", r.Prefix, InternalPrefix)
+	}
+	if len(r.Prefix) <= len(InternalPrefix) {
+		return fmt.Errorf("route %q: an internal route needs a path below %s", r.Prefix, InternalPrefix)
+	}
+	if len(r.Roles) > 0 || r.Anonymous {
+		return fmt.Errorf("route %q: internal routes admit service tokens only", r.Prefix)
+	}
+	for _, own := range gatewayInternal {
+		if r.matches(own) || strings.HasPrefix(r.Prefix, own) {
+			return fmt.Errorf("route %q: %s belongs to the gateway", r.Prefix, own)
+		}
+	}
+	return nil
+}
+
+// All returns the public routes then the internal ones, each longest
+// prefix first.
 func (t *Routes) All() []Route {
-	return slices.Clone(t.byLength)
+	return slices.Concat(t.byLength, t.internal)
 }
 
-// Match returns the route with the longest prefix of path that allows
-// method.
+// Match returns the public route with the longest prefix of path that
+// allows method. Internal paths never match.
 func (t *Routes) Match(method, path string) (Route, bool) {
-	if strings.HasPrefix(path, InternalPrefix) || path == strings.TrimSuffix(InternalPrefix, "/") {
+	if IsInternal(path) {
 		return Route{}, false
 	}
-	for _, r := range t.byLength {
+	return match(t.byLength, method, path)
+}
+
+// MatchInternal returns the internal route for a service-to-service call.
+func (t *Routes) MatchInternal(method, path string) (Route, bool) {
+	return match(t.internal, method, path)
+}
+
+func match(routes []Route, method, path string) (Route, bool) {
+	for _, r := range routes {
 		if r.matches(path) && (len(r.Methods) == 0 || slices.Contains(r.Methods, method)) {
 			return r, true
 		}

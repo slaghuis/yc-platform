@@ -43,10 +43,12 @@ type cacheEntry struct {
 func NewIdentity(baseURL string, timeout, cacheTTL time.Duration, now func() time.Time) *Identity {
 	return &Identity{
 		baseURL: strings.TrimSuffix(baseURL, "/"),
-		client:  httpkit.NewClient(httpkit.ClientOptions{Timeout: timeout, PropagateAuth: true}),
-		ttl:     cacheTTL,
-		now:     now,
-		cache:   map[[sha256.Size]byte]cacheEntry{},
+		client: httpkit.NewClient(httpkit.ClientOptions{
+			Timeout: timeout, PropagateAuth: true, CallerService: "yc-gateway",
+		}),
+		ttl:   cacheTTL,
+		now:   now,
+		cache: map[[sha256.Size]byte]cacheEntry{},
 	}
 }
 

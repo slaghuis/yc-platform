@@ -8,45 +8,70 @@ import (
 
 // Event types with a schema.
 const (
-	TypeIdentityUserLoggedInV1        = "identity.user.logged_in.v1"
-	TypeIdentityUserPromotedV1        = "identity.user.promoted.v1"
-	TypeIdentityUserRegisteredV1      = "identity.user.registered.v1"
-	TypeIdentityVisitorCreatedV1      = "identity.visitor.created.v1"
-	TypeImageDeletedV1                = "image.deleted.v1"
-	TypeImageProcessedV1              = "image.processed.v1"
-	TypeImageProcessingFailedV1       = "image.processing_failed.v1"
-	TypeImageUploadedV1               = "image.uploaded.v1"
-	TypePlatformServiceDeregisteredV1 = "platform.service.deregistered.v1"
-	TypePlatformServiceRegisteredV1   = "platform.service.registered.v1"
-	TypePlatformTenantProvisionedV1   = "platform.tenant.provisioned.v1"
-	TypePricingBasePriceRemovedV1     = "pricing.base_price.removed.v1"
-	TypePricingBasePriceSetV1         = "pricing.base_price.set.v1"
-	TypePricingConfigChangedV1        = "pricing.config.changed.v1"
-	TypePricingExchangeRatesStaleV1   = "pricing.exchange_rates_stale.v1"
-	TypePricingExchangeRatesUpdatedV1 = "pricing.exchange_rates_updated.v1"
-	TypePricingTaxClassCreatedV1      = "pricing.tax_class.created.v1"
-	TypePricingTaxClassDeletedV1      = "pricing.tax_class.deleted.v1"
-	TypePricingTaxClassUpdatedV1      = "pricing.tax_class.updated.v1"
-	TypeProductCategoryCreatedV1      = "product.category.created.v1"
-	TypeProductCategoryDeletedV1      = "product.category.deleted.v1"
-	TypeProductCategoryUpdatedV1      = "product.category.updated.v1"
-	TypeProductCreatedV1              = "product.created.v1"
-	TypeProductDeletedV1              = "product.deleted.v1"
-	TypeProductImageAttachedV1        = "product.image_attached.v1"
-	TypeProductImageDetachedV1        = "product.image_detached.v1"
-	TypeProductSKUCreatedV1           = "product.sku.created.v1"
-	TypeProductSKUDeletedV1           = "product.sku.deleted.v1"
-	TypeProductSKUUpdatedV1           = "product.sku.updated.v1"
-	TypeProductSupplierCreatedV1      = "product.supplier.created.v1"
-	TypeProductSupplierDeletedV1      = "product.supplier.deleted.v1"
-	TypeProductSupplierUpdatedV1      = "product.supplier.updated.v1"
-	TypeProductUpdatedV1              = "product.updated.v1"
-	TypeProductVariantAddedV1         = "product.variant.added.v1"
+	TypeCartClearedV1                        = "cart.cleared.v1"
+	TypeCartCreatedV1                        = "cart.created.v1"
+	TypeCartItemAddedV1                      = "cart.item.added.v1"
+	TypeCartItemMovedV1                      = "cart.item.moved.v1"
+	TypeCartItemQuantityChangedV1            = "cart.item.quantity_changed.v1"
+	TypeCartItemRemovedV1                    = "cart.item.removed.v1"
+	TypeCartMergedV1                         = "cart.merged.v1"
+	TypeIdentityOauthLinkedV1                = "identity.oauth_linked.v1"
+	TypeIdentityUserLoggedInV1               = "identity.user.logged_in.v1"
+	TypeIdentityUserPasswordChangedV1        = "identity.user.password_changed.v1"
+	TypeIdentityUserPasswordResetRequestedV1 = "identity.user.password_reset_requested.v1"
+	TypeIdentityUserPromotedV1               = "identity.user.promoted.v1"
+	TypeIdentityUserRegisteredV1             = "identity.user.registered.v1"
+	TypeIdentityVisitorCreatedV1             = "identity.visitor.created.v1"
+	TypeImageDeletedV1                       = "image.deleted.v1"
+	TypeImageProcessedV1                     = "image.processed.v1"
+	TypeImageProcessingFailedV1              = "image.processing_failed.v1"
+	TypeImageUploadedV1                      = "image.uploaded.v1"
+	TypePlatformServiceDeregisteredV1        = "platform.service.deregistered.v1"
+	TypePlatformServiceRegisteredV1          = "platform.service.registered.v1"
+	TypePlatformTenantProvisionedV1          = "platform.tenant.provisioned.v1"
+	TypePreferenceChannelAddedV1             = "preference.channel.added.v1"
+	TypePreferenceChannelChangedV1           = "preference.channel.changed.v1"
+	TypePreferenceChannelRemovedV1           = "preference.channel.removed.v1"
+	TypePreferenceCurrencyChangedV1          = "preference.currency.changed.v1"
+	TypePreferenceLocaleChangedV1            = "preference.locale.changed.v1"
+	TypePricingBasePriceRemovedV1            = "pricing.base_price.removed.v1"
+	TypePricingBasePriceSetV1                = "pricing.base_price.set.v1"
+	TypePricingConfigChangedV1               = "pricing.config.changed.v1"
+	TypePricingExchangeRatesStaleV1          = "pricing.exchange_rates_stale.v1"
+	TypePricingExchangeRatesUpdatedV1        = "pricing.exchange_rates_updated.v1"
+	TypePricingTaxClassCreatedV1             = "pricing.tax_class.created.v1"
+	TypePricingTaxClassDeletedV1             = "pricing.tax_class.deleted.v1"
+	TypePricingTaxClassUpdatedV1             = "pricing.tax_class.updated.v1"
+	TypeProductCategoryCreatedV1             = "product.category.created.v1"
+	TypeProductCategoryDeletedV1             = "product.category.deleted.v1"
+	TypeProductCategoryUpdatedV1             = "product.category.updated.v1"
+	TypeProductCreatedV1                     = "product.created.v1"
+	TypeProductDeletedV1                     = "product.deleted.v1"
+	TypeProductImageAttachedV1               = "product.image_attached.v1"
+	TypeProductImageDetachedV1               = "product.image_detached.v1"
+	TypeProductSKUCreatedV1                  = "product.sku.created.v1"
+	TypeProductSKUDeletedV1                  = "product.sku.deleted.v1"
+	TypeProductSKUUpdatedV1                  = "product.sku.updated.v1"
+	TypeProductSupplierCreatedV1             = "product.supplier.created.v1"
+	TypeProductSupplierDeletedV1             = "product.supplier.deleted.v1"
+	TypeProductSupplierUpdatedV1             = "product.supplier.updated.v1"
+	TypeProductUpdatedV1                     = "product.updated.v1"
+	TypeProductVariantAddedV1                = "product.variant.added.v1"
 )
 
 // EventTypes lists every event type with a schema, sorted.
 var EventTypes = []string{
+	TypeCartClearedV1,
+	TypeCartCreatedV1,
+	TypeCartItemAddedV1,
+	TypeCartItemMovedV1,
+	TypeCartItemQuantityChangedV1,
+	TypeCartItemRemovedV1,
+	TypeCartMergedV1,
+	TypeIdentityOauthLinkedV1,
 	TypeIdentityUserLoggedInV1,
+	TypeIdentityUserPasswordChangedV1,
+	TypeIdentityUserPasswordResetRequestedV1,
 	TypeIdentityUserPromotedV1,
 	TypeIdentityUserRegisteredV1,
 	TypeIdentityVisitorCreatedV1,
@@ -57,6 +82,11 @@ var EventTypes = []string{
 	TypePlatformServiceDeregisteredV1,
 	TypePlatformServiceRegisteredV1,
 	TypePlatformTenantProvisionedV1,
+	TypePreferenceChannelAddedV1,
+	TypePreferenceChannelChangedV1,
+	TypePreferenceChannelRemovedV1,
+	TypePreferenceCurrencyChangedV1,
+	TypePreferenceLocaleChangedV1,
 	TypePricingBasePriceRemovedV1,
 	TypePricingBasePriceSetV1,
 	TypePricingConfigChangedV1,
@@ -84,64 +114,207 @@ var EventTypes = []string{
 
 // Enum values.
 const (
-	ActorTypeVisitor                                      = "visitor"
-	ActorTypeCustomer                                     = "customer"
-	ActorTypeShopAdmin                                    = "shop_admin"
-	ActorTypeSystemAdmin                                  = "system_admin"
-	ActorTypeService                                      = "service"
-	IdentityUserLoggedInV1RoleCustomer                    = "customer"
-	IdentityUserLoggedInV1RoleShopAdmin                   = "shop_admin"
-	IdentityUserLoggedInV1RoleSystemAdmin                 = "system_admin"
-	IdentityUserLoggedInV1MethodPassword                  = "password"
-	IdentityUserLoggedInV1MethodGoogle                    = "google"
-	IdentityUserLoggedInV1MethodFacebook                  = "facebook"
-	IdentityUserPromotedV1FromRoleVisitor                 = "visitor"
-	IdentityUserPromotedV1FromRoleCustomer                = "customer"
-	IdentityUserPromotedV1FromRoleShopAdmin               = "shop_admin"
-	IdentityUserPromotedV1ToRoleCustomer                  = "customer"
-	IdentityUserPromotedV1ToRoleShopAdmin                 = "shop_admin"
-	IdentityUserRegisteredV1RoleCustomer                  = "customer"
-	IdentityUserRegisteredV1MethodPassword                = "password"
-	IdentityUserRegisteredV1MethodGoogle                  = "google"
-	IdentityUserRegisteredV1MethodFacebook                = "facebook"
-	ImageProcessedV1VariantsItemVariantOriginal           = "original"
-	ImageProcessedV1VariantsItemVariantXlarge             = "xlarge"
-	ImageProcessedV1VariantsItemVariantLarge              = "large"
-	ImageProcessedV1VariantsItemVariantMedium             = "medium"
-	ImageProcessedV1VariantsItemVariantThumbnail          = "thumbnail"
-	ImageProcessedV1VariantsItemFormatJpeg                = "jpeg"
-	ImageProcessedV1VariantsItemFormatPng                 = "png"
-	ImageProcessedV1VariantsItemFormatWebp                = "webp"
-	ImageProcessedV1VariantsItemFormatGif                 = "gif"
-	ImageProcessingFailedV1ReasonUnsupportedFormat        = "unsupported_format"
-	ImageProcessingFailedV1ReasonCorrupt                  = "corrupt"
-	ImageProcessingFailedV1ReasonTooLarge                 = "too_large"
-	ImageProcessingFailedV1ReasonBadDimensions            = "bad_dimensions"
-	ImageProcessingFailedV1ReasonStorageError             = "storage_error"
-	ImageUploadedV1ContentTypeImageJpeg                   = "image/jpeg"
-	ImageUploadedV1ContentTypeImagePng                    = "image/png"
-	ImageUploadedV1ContentTypeImageWebp                   = "image/webp"
-	ImageUploadedV1ContentTypeImageGif                    = "image/gif"
-	PlatformServiceDeregisteredV1ReasonShutdown           = "shutdown"
-	PlatformServiceDeregisteredV1ReasonHealthCheckFailed  = "health_check_failed"
-	PlatformServiceDeregisteredV1ReasonManual             = "manual"
-	PricingExchangeRatesStaleV1ProviderFrankfurter        = "frankfurter"
-	PricingExchangeRatesStaleV1ProviderExchangerateHost   = "exchangerate_host"
-	PricingExchangeRatesUpdatedV1ProviderFrankfurter      = "frankfurter"
-	PricingExchangeRatesUpdatedV1ProviderExchangerateHost = "exchangerate_host"
-	ProductCreatedV1StatusActive                          = "active"
-	ProductCreatedV1StatusInactive                        = "inactive"
-	ProductSKUCreatedV1StatusActive                       = "active"
-	ProductSKUCreatedV1StatusInactive                     = "inactive"
-	ProductSKUUpdatedV1StatusActive                       = "active"
-	ProductSKUUpdatedV1StatusInactive                     = "inactive"
-	ProductSupplierCreatedV1StatusActive                  = "active"
-	ProductSupplierCreatedV1StatusInactive                = "inactive"
-	ProductSupplierUpdatedV1StatusActive                  = "active"
-	ProductSupplierUpdatedV1StatusInactive                = "inactive"
-	ProductUpdatedV1StatusActive                          = "active"
-	ProductUpdatedV1StatusInactive                        = "inactive"
+	CartClearedV1ReasonCustomer                              = "customer"
+	CartClearedV1ReasonCheckout                              = "checkout"
+	CartCreatedV1UserTypeVisitor                             = "visitor"
+	CartCreatedV1UserTypeCustomer                            = "customer"
+	CartItemRemovedV1ReasonCustomer                          = "customer"
+	CartItemRemovedV1ReasonSKUDeleted                        = "sku_deleted"
+	ActorTypeVisitor                                         = "visitor"
+	ActorTypeCustomer                                        = "customer"
+	ActorTypeShopAdmin                                       = "shop_admin"
+	ActorTypeSystemAdmin                                     = "system_admin"
+	ActorTypeService                                         = "service"
+	IdentityOauthLinkedV1ProviderGoogle                      = "google"
+	IdentityOauthLinkedV1ProviderFacebook                    = "facebook"
+	IdentityUserLoggedInV1RoleCustomer                       = "customer"
+	IdentityUserLoggedInV1RoleShopAdmin                      = "shop_admin"
+	IdentityUserLoggedInV1RoleSystemAdmin                    = "system_admin"
+	IdentityUserLoggedInV1MethodPassword                     = "password"
+	IdentityUserLoggedInV1MethodGoogle                       = "google"
+	IdentityUserLoggedInV1MethodFacebook                     = "facebook"
+	IdentityUserPasswordChangedV1MethodReset                 = "reset"
+	IdentityUserPromotedV1FromRoleVisitor                    = "visitor"
+	IdentityUserPromotedV1FromRoleCustomer                   = "customer"
+	IdentityUserPromotedV1FromRoleShopAdmin                  = "shop_admin"
+	IdentityUserPromotedV1ToRoleCustomer                     = "customer"
+	IdentityUserPromotedV1ToRoleShopAdmin                    = "shop_admin"
+	IdentityUserRegisteredV1RoleCustomer                     = "customer"
+	IdentityUserRegisteredV1MethodPassword                   = "password"
+	IdentityUserRegisteredV1MethodGoogle                     = "google"
+	IdentityUserRegisteredV1MethodFacebook                   = "facebook"
+	ImageProcessedV1VariantsItemVariantOriginal              = "original"
+	ImageProcessedV1VariantsItemVariantXlarge                = "xlarge"
+	ImageProcessedV1VariantsItemVariantLarge                 = "large"
+	ImageProcessedV1VariantsItemVariantMedium                = "medium"
+	ImageProcessedV1VariantsItemVariantThumbnail             = "thumbnail"
+	ImageProcessedV1VariantsItemFormatJpeg                   = "jpeg"
+	ImageProcessedV1VariantsItemFormatPng                    = "png"
+	ImageProcessedV1VariantsItemFormatWebp                   = "webp"
+	ImageProcessedV1VariantsItemFormatGif                    = "gif"
+	ImageProcessingFailedV1ReasonUnsupportedFormat           = "unsupported_format"
+	ImageProcessingFailedV1ReasonCorrupt                     = "corrupt"
+	ImageProcessingFailedV1ReasonTooLarge                    = "too_large"
+	ImageProcessingFailedV1ReasonBadDimensions               = "bad_dimensions"
+	ImageProcessingFailedV1ReasonStorageError                = "storage_error"
+	ImageUploadedV1ContentTypeImageJpeg                      = "image/jpeg"
+	ImageUploadedV1ContentTypeImagePng                       = "image/png"
+	ImageUploadedV1ContentTypeImageWebp                      = "image/webp"
+	ImageUploadedV1ContentTypeImageGif                       = "image/gif"
+	PlatformServiceDeregisteredV1ReasonShutdown              = "shutdown"
+	PlatformServiceDeregisteredV1ReasonHealthCheckFailed     = "health_check_failed"
+	PlatformServiceDeregisteredV1ReasonManual                = "manual"
+	PreferenceChannelAddedV1ChannelEmail                     = "email"
+	PreferenceChannelAddedV1ChannelSms                       = "sms"
+	PreferenceChannelAddedV1ChannelWhatsapp                  = "whatsapp"
+	PreferenceChannelAddedV1ChannelTelegram                  = "telegram"
+	PreferenceChannelChangedV1PrimaryChannelEmail            = "email"
+	PreferenceChannelChangedV1PrimaryChannelSms              = "sms"
+	PreferenceChannelChangedV1PrimaryChannelWhatsapp         = "whatsapp"
+	PreferenceChannelChangedV1PrimaryChannelTelegram         = "telegram"
+	PreferenceChannelChangedV1PreviousPrimaryChannelEmail    = "email"
+	PreferenceChannelChangedV1PreviousPrimaryChannelSms      = "sms"
+	PreferenceChannelChangedV1PreviousPrimaryChannelWhatsapp = "whatsapp"
+	PreferenceChannelChangedV1PreviousPrimaryChannelTelegram = "telegram"
+	PreferenceChannelRemovedV1ChannelEmail                   = "email"
+	PreferenceChannelRemovedV1ChannelSms                     = "sms"
+	PreferenceChannelRemovedV1ChannelWhatsapp                = "whatsapp"
+	PreferenceChannelRemovedV1ChannelTelegram                = "telegram"
+	PricingExchangeRatesStaleV1ProviderFrankfurter           = "frankfurter"
+	PricingExchangeRatesStaleV1ProviderExchangerateHost      = "exchangerate_host"
+	PricingExchangeRatesUpdatedV1ProviderFrankfurter         = "frankfurter"
+	PricingExchangeRatesUpdatedV1ProviderExchangerateHost    = "exchangerate_host"
+	ProductCreatedV1StatusActive                             = "active"
+	ProductCreatedV1StatusInactive                           = "inactive"
+	ProductSKUCreatedV1StatusActive                          = "active"
+	ProductSKUCreatedV1StatusInactive                        = "inactive"
+	ProductSKUUpdatedV1StatusActive                          = "active"
+	ProductSKUUpdatedV1StatusInactive                        = "inactive"
+	ProductSupplierCreatedV1StatusActive                     = "active"
+	ProductSupplierCreatedV1StatusInactive                   = "inactive"
+	ProductSupplierUpdatedV1StatusActive                     = "active"
+	ProductSupplierUpdatedV1StatusInactive                   = "inactive"
+	ProductUpdatedV1StatusActive                             = "active"
+	ProductUpdatedV1StatusInactive                           = "inactive"
 )
+
+// CartClearedV1 is the payload of cart.cleared.v1.
+//
+// Every line was removed from a cart.
+type CartClearedV1 struct {
+	CartID   string `json:"cart_id"`
+	UserID   string `json:"user_id"`
+	CartType string `json:"cart_type"`
+	// Number of lines removed.
+	ItemCount int64     `json:"item_count"`
+	Reason    string    `json:"reason"`
+	ClearedAt time.Time `json:"cleared_at"`
+}
+
+// EventType returns cart.cleared.v1.
+func (CartClearedV1) EventType() string { return TypeCartClearedV1 }
+
+// CartCreatedV1 is the payload of cart.created.v1.
+//
+// A user's cart of a type was created by its first item.
+type CartCreatedV1 struct {
+	CartID   string `json:"cart_id"`
+	UserID   string `json:"user_id"`
+	UserType string `json:"user_type"`
+	// Tenant-configured cart type, e.g. shopping or wishlist.
+	CartType  string    `json:"cart_type"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// EventType returns cart.created.v1.
+func (CartCreatedV1) EventType() string { return TypeCartCreatedV1 }
+
+// CartItemAddedV1 is the payload of cart.item.added.v1.
+//
+// A user added a SKU to a cart, either as a new line or onto an existing one. yc-product counts it towards the product's popularity.
+type CartItemAddedV1 struct {
+	CartID        string `json:"cart_id"`
+	UserID        string `json:"user_id"`
+	CartType      string `json:"cart_type"`
+	SKUID         string `json:"sku_id"`
+	QuantityAdded int64  `json:"quantity_added"`
+	// The line's quantity after the add.
+	Quantity int64 `json:"quantity"`
+	// Gross unit price in the store currency when the line was first added.
+	UnitPrice Money     `json:"unit_price"`
+	AddedAt   time.Time `json:"added_at"`
+}
+
+// EventType returns cart.item.added.v1.
+func (CartItemAddedV1) EventType() string { return TypeCartItemAddedV1 }
+
+// CartItemMovedV1 is the payload of cart.item.moved.v1.
+//
+// A user moved a line to another of their carts, e.g. wishlist to shopping. Quantities are summed when the target already holds the SKU.
+type CartItemMovedV1 struct {
+	UserID       string `json:"user_id"`
+	SKUID        string `json:"sku_id"`
+	FromCartID   string `json:"from_cart_id"`
+	FromCartType string `json:"from_cart_type"`
+	ToCartID     string `json:"to_cart_id"`
+	ToCartType   string `json:"to_cart_type"`
+	// The quantity moved.
+	Quantity int64     `json:"quantity"`
+	MovedAt  time.Time `json:"moved_at"`
+}
+
+// EventType returns cart.item.moved.v1.
+func (CartItemMovedV1) EventType() string { return TypeCartItemMovedV1 }
+
+// CartItemQuantityChangedV1 is the payload of cart.item.quantity_changed.v1.
+//
+// A user set a cart line's quantity.
+type CartItemQuantityChangedV1 struct {
+	CartID           string    `json:"cart_id"`
+	UserID           string    `json:"user_id"`
+	CartType         string    `json:"cart_type"`
+	SKUID            string    `json:"sku_id"`
+	PreviousQuantity int64     `json:"previous_quantity"`
+	Quantity         int64     `json:"quantity"`
+	ChangedAt        time.Time `json:"changed_at"`
+}
+
+// EventType returns cart.item.quantity_changed.v1.
+func (CartItemQuantityChangedV1) EventType() string { return TypeCartItemQuantityChangedV1 }
+
+// CartItemRemovedV1 is the payload of cart.item.removed.v1.
+//
+// A line was removed from a cart.
+type CartItemRemovedV1 struct {
+	CartID   string `json:"cart_id"`
+	UserID   string `json:"user_id"`
+	CartType string `json:"cart_type"`
+	SKUID    string `json:"sku_id"`
+	// The quantity the line held.
+	Quantity  int64     `json:"quantity"`
+	Reason    string    `json:"reason"`
+	RemovedAt time.Time `json:"removed_at"`
+}
+
+// EventType returns cart.item.removed.v1.
+func (CartItemRemovedV1) EventType() string { return TypeCartItemRemovedV1 }
+
+// CartMergedV1 is the payload of cart.merged.v1.
+//
+// A visitor's cart was merged into the cart of the same type of the user who logged in. Quantities of duplicate SKUs are summed, capped at the per-SKU maximum; the visitor cart is deleted.
+type CartMergedV1 struct {
+	// The user's cart after the merge.
+	CartID    string `json:"cart_id"`
+	UserID    string `json:"user_id"`
+	VisitorID string `json:"visitor_id"`
+	CartType  string `json:"cart_type"`
+	// Number of visitor lines merged.
+	MergedItemCount int64     `json:"merged_item_count"`
+	MergedAt        time.Time `json:"merged_at"`
+}
+
+// EventType returns cart.merged.v1.
+func (CartMergedV1) EventType() string { return TypeCartMergedV1 }
 
 // Actor is the common/actor.v1.json fragment.
 //
@@ -198,6 +371,18 @@ type Money struct {
 	Currency string `json:"currency"`
 }
 
+// IdentityOauthLinkedV1 is the payload of identity.oauth_linked.v1.
+//
+// An OAuth provider account was linked to a user: on first sign-in with the provider, or to an existing account with the same verified email.
+type IdentityOauthLinkedV1 struct {
+	UserID   string    `json:"user_id"`
+	Provider string    `json:"provider"`
+	LinkedAt time.Time `json:"linked_at"`
+}
+
+// EventType returns identity.oauth_linked.v1.
+func (IdentityOauthLinkedV1) EventType() string { return TypeIdentityOauthLinkedV1 }
+
 // IdentityUserLoggedInV1 is the payload of identity.user.logged_in.v1.
 //
 // A registered user logged in. yc-cart merges the previous visitor's cart into the user's.
@@ -212,6 +397,36 @@ type IdentityUserLoggedInV1 struct {
 
 // EventType returns identity.user.logged_in.v1.
 func (IdentityUserLoggedInV1) EventType() string { return TypeIdentityUserLoggedInV1 }
+
+// IdentityUserPasswordChangedV1 is the payload of identity.user.password_changed.v1.
+//
+// A user's password was changed. Every refresh token the user held is revoked.
+type IdentityUserPasswordChangedV1 struct {
+	UserID    string    `json:"user_id"`
+	Method    string    `json:"method"`
+	ChangedAt time.Time `json:"changed_at"`
+}
+
+// EventType returns identity.user.password_changed.v1.
+func (IdentityUserPasswordChangedV1) EventType() string { return TypeIdentityUserPasswordChangedV1 }
+
+// IdentityUserPasswordResetRequestedV1 is the payload of identity.user.password_reset_requested.v1.
+//
+// A user asked to reset their password. Carries no reset token: the link is delivered by a direct yc-message send, never through the bus (event-conventions §18). Published only for an active user with that email; unknown emails publish nothing.
+type IdentityUserPasswordResetRequestedV1 struct {
+	UserID string `json:"user_id"`
+	// PII (event-conventions §18).
+	Email string `json:"email"`
+	// Identifies the reset request; not usable to reset the password.
+	RequestID   string    `json:"request_id"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	RequestedAt time.Time `json:"requested_at"`
+}
+
+// EventType returns identity.user.password_reset_requested.v1.
+func (IdentityUserPasswordResetRequestedV1) EventType() string {
+	return TypeIdentityUserPasswordResetRequestedV1
+}
 
 // IdentityUserPromotedV1 is the payload of identity.user.promoted.v1.
 //
@@ -377,6 +592,73 @@ type PlatformTenantProvisionedV1 struct {
 
 // EventType returns platform.tenant.provisioned.v1.
 func (PlatformTenantProvisionedV1) EventType() string { return TypePlatformTenantProvisionedV1 }
+
+// PreferenceChannelAddedV1 is the payload of preference.channel.added.v1.
+//
+// A user added a messaging channel, or replaced its address. The channel is unverified; yc-message sends the verification message.
+type PreferenceChannelAddedV1 struct {
+	UserID  string `json:"user_id"`
+	Channel string `json:"channel"`
+	// Email address, E.164 number or handle. PII (event-conventions §18).
+	Address string    `json:"address"`
+	AddedAt time.Time `json:"added_at"`
+}
+
+// EventType returns preference.channel.added.v1.
+func (PreferenceChannelAddedV1) EventType() string { return TypePreferenceChannelAddedV1 }
+
+// PreferenceChannelChangedV1 is the payload of preference.channel.changed.v1.
+//
+// A user's primary messaging channel changed.
+type PreferenceChannelChangedV1 struct {
+	UserID                 string    `json:"user_id"`
+	PrimaryChannel         string    `json:"primary_channel"`
+	PreviousPrimaryChannel *string   `json:"previous_primary_channel,omitempty"`
+	ChangedAt              time.Time `json:"changed_at"`
+}
+
+// EventType returns preference.channel.changed.v1.
+func (PreferenceChannelChangedV1) EventType() string { return TypePreferenceChannelChangedV1 }
+
+// PreferenceChannelRemovedV1 is the payload of preference.channel.removed.v1.
+//
+// A user removed a messaging channel.
+type PreferenceChannelRemovedV1 struct {
+	UserID    string    `json:"user_id"`
+	Channel   string    `json:"channel"`
+	RemovedAt time.Time `json:"removed_at"`
+}
+
+// EventType returns preference.channel.removed.v1.
+func (PreferenceChannelRemovedV1) EventType() string { return TypePreferenceChannelRemovedV1 }
+
+// PreferenceCurrencyChangedV1 is the payload of preference.currency.changed.v1.
+//
+// A user's display currency changed, including when it was first seeded. yc-cart keeps a copy to render cart totals (ADR-014: display only).
+type PreferenceCurrencyChangedV1 struct {
+	UserID          string `json:"user_id"`
+	DisplayCurrency string `json:"display_currency"`
+	// Absent when the preference was first seeded.
+	PreviousDisplayCurrency *string   `json:"previous_display_currency,omitempty"`
+	ChangedAt               time.Time `json:"changed_at"`
+}
+
+// EventType returns preference.currency.changed.v1.
+func (PreferenceCurrencyChangedV1) EventType() string { return TypePreferenceCurrencyChangedV1 }
+
+// PreferenceLocaleChangedV1 is the payload of preference.locale.changed.v1.
+//
+// A user's locale changed.
+type PreferenceLocaleChangedV1 struct {
+	UserID string `json:"user_id"`
+	// BCP 47 tag, e.g. en-ZA.
+	Locale         string    `json:"locale"`
+	PreviousLocale *string   `json:"previous_locale,omitempty"`
+	ChangedAt      time.Time `json:"changed_at"`
+}
+
+// EventType returns preference.locale.changed.v1.
+func (PreferenceLocaleChangedV1) EventType() string { return TypePreferenceLocaleChangedV1 }
 
 // PricingBasePriceRemovedV1 is the payload of pricing.base_price.removed.v1.
 //

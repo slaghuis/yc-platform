@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: yc-preference
+  version: 0.1.0
+  description: |
+    Per-customer preferences (docs/services/yc-preference.md). Phase 3
+    subset: display currency, locale, messaging channels and the primary
+    channel, and shop defaults.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /preferences/me is for signed-in customers and
+    shop admins; /admin/ requires shop_admin and acts on the caller's shop.
+    Errors are application/problem+json (error-handling.md).
+
+paths:
+  /preferences/me:
+    get:
+      summary: Get my preferences
+      description: Returns the shop defaults, with stored false, until the user changes something.
+      operationId: getMyPreferences
+      responses:
+        '200':
+          description: The preferences.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '403': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Update my preferences
+      description: Changes the settings present. The primary channel must be one of my channels.
+      operationId: updateMyPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreferencesPatch' }
+      responses:
+        '200':
+          description: The updated preferences.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /preferences/me/channels:
+    get:
+      summary: List my messaging channels
+      operationId: listMyChannels
+      responses:
+        '200':
+          description: The channels.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Add a messaging channel, or replace its address
+      description: A new address is unverified until yc-message verifies it.
+      operationId: putMyChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelInput' }
+      responses:
+        '200':
+          description: The channel existed; its address was replaced or unchanged.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagingChannel' }
+        '201':
+          description: The channel was added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagingChannel' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /preferences/me/channels/{channel}:
+    delete:
+      summary: Remove a messaging channel
+      operationId: deleteMyChannel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Channel' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/preferences/defaults:
+    get:
+      summary: Get the shop's default preferences
+      operationId: getDefaults
+      responses:
+        '200':
+          description: The defaults.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Defaults' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Set the shop's default preferences
+      description: Applies to users without stored preferences and to new customers.
+      operationId: putDefaults
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DefaultsInput' }
+      responses:
+        '200':
+          description: The defaults.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Defaults' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  schemas:
+    Channel:
+      type: string
+      enum: [email, sms, whatsapp, telegram]
+
+    Preferences:
+      type: object
+      required: [user_id, display_currency, locale, channels, stored]
+      properties:
+        user_id: { type: string, format: uuid }
+        display_currency: { type: string, description: ISO 4217 code; prices are shown in it (ADR-014). }
+        locale: { type: string, description: BCP 47 language tag. }
+        primary_channel: { $ref: '#/components/schemas/Channel' }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/MessagingChannel' }
+        stored:
+          type: boolean
+          description: False while the values are the shop's defaults.
+        updated_at: { type: string, format: date-time }
+
+    PreferencesPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        display_currency: { type: string }
+        locale: { type: string }
+        primary_channel: { $ref: '#/components/schemas/Channel' }
+
+    MessagingChannel:
+      type: object
+      required: [channel, address, verified, created_at]
+      properties:
+        channel: { $ref: '#/components/schemas/Channel' }
+        address: { type: string }
+        verified: { type: boolean }
+        verified_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    ChannelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MessagingChannel' }
+
+    ChannelInput:
+      type: object
+      required: [channel, address]
+      additionalProperties: false
+      properties:
+        channel: { $ref: '#/components/schemas/Channel' }
+        address:
+          type: string
+          maxLength: 320
+          description: Email address, E.164 phone number (sms, whatsapp) or Telegram username.
+
+    Defaults:
+      type: object
+      required: [display_currency, locale]
+      properties:
+        display_currency: { type: string }
+        locale: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    DefaultsInput:
+      type: object
+      required: [display_currency, locale]
+      additionalProperties: false
+      properties:
+        display_currency: { type: string }
+        locale: { type: string }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

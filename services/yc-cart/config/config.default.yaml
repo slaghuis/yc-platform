@@ -1,11 +1,36 @@
 service: yc-cart
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_CART_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_CART_ADVERTISE_URL:-http://yc-cart:8080}
+  interval: 30s
+# Calls to other services through yc-gateway (ADR-021): yc-pricing prices
+# lines. The secret is yc-cart's client secret registered with yc-identity.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_CART_SERVICE_SECRET}
+  timeout: 5s
+# Cart types every shop offers until per-shop configuration arrives.
+cart_types:
+  shopping:
+    convertible: true
+    merge_on_login: true
+    max_items: 100
+    max_quantity: 99
+  wishlist:
+    convertible: false
+    merge_on_login: true
+    max_items: 500
+    max_quantity: 99

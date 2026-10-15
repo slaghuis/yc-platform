@@ -111,6 +111,55 @@ func (Users) Create(ctx context.Context, tx pgx.Tx, tenantID string, role domain
 	return u, nil
 }
 
+// RegisterOAuth turns the active visitor id into a customer with email and
+// no password. It returns a not_found error when id is not an active
+// visitor.
+func (Users) RegisterOAuth(ctx context.Context, tx pgx.Tx, id, email, displayName string) (domain.User, error) {
+	u, err := scanUser(tx.QueryRow(ctx, `
+		UPDATE users
+		   SET email = $2, display_name = NULLIF($3, ''), role = $4, updated_at = NOW()
+		 WHERE id = $1 AND role = $5 AND status = 'active'
+		RETURNING `+userColumns,
+		id, email, displayName, domain.RoleCustomer, domain.RoleVisitor))
+	switch {
+	case dbkit.IsNoRows(err):
+		return domain.User{}, ycerrors.NotFound("Visitor", id)
+	case dbkit.IsUniqueViolation(err):
+		return domain.User{}, ErrEmailTaken
+	case err != nil:
+		return domain.User{}, fmt.Errorf("register visitor via oauth: %w", err)
+	}
+	return u, nil
+}
+
+// CreateOAuth inserts a customer with email and no password.
+func (Users) CreateOAuth(ctx context.Context, tx pgx.Tx, tenantID, email, displayName string) (domain.User, error) {
+	u, err := scanUser(tx.QueryRow(ctx, `
+		INSERT INTO users (tenant_id, email, display_name, role)
+		VALUES ($1, $2, NULLIF($3, ''), $4)
+		RETURNING `+userColumns,
+		tenantID, email, displayName, domain.RoleCustomer))
+	if dbkit.IsUniqueViolation(err) {
+		return domain.User{}, ErrEmailTaken
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("insert oauth user: %w", err)
+	}
+	return u, nil
+}
+
+// SetPassword replaces the password hash of user id.
+func (Users) SetPassword(ctx context.Context, tx pgx.Tx, id, hash string) error {
+	tag, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, id, hash)
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ycerrors.NotFound("User", id)
+	}
+	return nil
+}
+
 // SetRole changes the role of user id.
 func (Users) SetRole(ctx context.Context, tx pgx.Tx, id string, role domain.Role) (domain.User, error) {
 	u, err := scanUser(tx.QueryRow(ctx,

@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -46,8 +48,55 @@ func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...s
 	return nil
 }
 
-// Browse returns up to limit active products after the cursor, newest
-// first, that have an active SKU matching f.
+// AddPopularity adds n to a SKU's popularity score.
+func (Catalog) AddPopularity(ctx context.Context, tx pgx.Tx, skuID string, n int64) error {
+	_, err := tx.Exec(ctx, `UPDATE sku_search_projection SET popularity_score = popularity_score + $2
+		WHERE sku_id = $1`, skuID, n)
+	if err != nil {
+		return fmt.Errorf("add popularity: %w", err)
+	}
+	return nil
+}
+
+// SetBasePrice records a SKU's base price in minor units (nil when
+// removed) as of at, unless a later change is already recorded.
+func (Catalog) SetBasePrice(ctx context.Context, tx pgx.Tx, skuID string, minor *int64, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE sku_search_projection SET base_price = $2, base_price_at = $3
+		WHERE sku_id = $1 AND (base_price_at IS NULL OR base_price_at <= $3)`, skuID, minor, at)
+	if err != nil {
+		return fmt.Errorf("set base price: %w", err)
+	}
+	return nil
+}
+
+// priceKey sorts unpriced products last in either direction.
+const (
+	unpricedAsc  = math.MaxInt64
+	unpricedDesc = -1
+)
+
+// SortKey is p's cursor key under sort.
+func SortKey(sort domain.Sort, p domain.ProductSummary) int64 {
+	switch sort {
+	case domain.SortPopular:
+		return p.Popularity
+	case domain.SortPriceAsc:
+		if p.MinBasePrice == nil {
+			return unpricedAsc
+		}
+		return *p.MinBasePrice
+	case domain.SortPriceDesc:
+		if p.MinBasePrice == nil {
+			return unpricedDesc
+		}
+		return *p.MinBasePrice
+	case domain.SortNewest:
+	}
+	return 0
+}
+
+// Browse returns up to limit active products after the cursor, in
+// f.Sort order (newest when empty), that have an active SKU matching f.
 func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, after *Cursor, limit int) ([]domain.ProductSummary, error) {
 	var args []any
 	arg := func(v any) string {
@@ -75,14 +124,48 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	if f.SupplierID != "" {
 		where = append(where, `p.supplier_id = `+arg(f.SupplierID)+`::uuid`)
 	}
-	if after != nil {
-		where = append(where, fmt.Sprintf(`(p.created_at, p.id) < (%s, %s::uuid)`, arg(after.CreatedAt), arg(after.ID)))
+
+	var order, cursor string
+	switch f.Sort {
+	case domain.SortPopular:
+		order = `b.popularity DESC, b.created_at DESC, b.id DESC`
+		if after != nil {
+			cursor = fmt.Sprintf(`(b.popularity, b.created_at, b.id) < (%s::bigint, %s, %s::uuid)`,
+				arg(after.Key), arg(after.CreatedAt), arg(after.ID))
+		}
+	case domain.SortPriceAsc:
+		key := fmt.Sprintf(`COALESCE(b.min_price, %d)`, unpricedAsc)
+		order = key + ` ASC, b.id ASC`
+		if after != nil {
+			cursor = fmt.Sprintf(`(%s, b.id) > (%s::bigint, %s::uuid)`, key, arg(after.Key), arg(after.ID))
+		}
+	case domain.SortPriceDesc:
+		key := fmt.Sprintf(`COALESCE(b.min_price, %d)`, unpricedDesc)
+		order = key + ` DESC, b.id DESC`
+		if after != nil {
+			cursor = fmt.Sprintf(`(%s, b.id) < (%s::bigint, %s::uuid)`, key, arg(after.Key), arg(after.ID))
+		}
+	case domain.SortNewest, "":
+		order = `b.created_at DESC, b.id DESC`
+		if after != nil {
+			cursor = fmt.Sprintf(`(b.created_at, b.id) < (%s, %s::uuid)`, arg(after.CreatedAt), arg(after.ID))
+		}
 	}
-	q := `SELECT p.id, COALESCE(p.supplier_id::text, ''), p.name, p.description, p.is_digital, p.created_at,
-			COALESCE((SELECT array_agg(pc.category_id::text ORDER BY pc.category_id)
-				FROM product_categories pc WHERE pc.product_id = p.id), '{}')
-		FROM products p WHERE ` + strings.Join(where, " AND ") +
-		fmt.Sprintf(` ORDER BY p.created_at DESC, p.id DESC LIMIT %d`, limit)
+	if cursor != "" {
+		cursor = ` WHERE ` + cursor
+	}
+	q := `SELECT b.id, b.supplier_id, b.name, b.description, b.is_digital, b.created_at, b.category_ids,
+			b.popularity, b.min_price
+		FROM (SELECT p.id, COALESCE(p.supplier_id::text, '') AS supplier_id, p.name, p.description, p.is_digital,
+				p.created_at,
+				COALESCE((SELECT array_agg(pc.category_id::text ORDER BY pc.category_id)
+					FROM product_categories pc WHERE pc.product_id = p.id), '{}') AS category_ids,
+				COALESCE((SELECT SUM(sp.popularity_score) FROM sku_search_projection sp
+					WHERE sp.product_id = p.id AND sp.status = 'active'), 0)::bigint AS popularity,
+				(SELECT MIN(sp.base_price) FROM sku_search_projection sp
+					WHERE sp.product_id = p.id AND sp.status = 'active') AS min_price
+			FROM products p WHERE ` + strings.Join(where, " AND ") + `) b` + cursor +
+		fmt.Sprintf(` ORDER BY %s LIMIT %d`, order, limit)
 
 	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
@@ -90,7 +173,8 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ProductSummary, error) {
 		var p domain.ProductSummary
-		err := r.Scan(&p.ID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.CreatedAt, &p.CategoryIDs)
+		err := r.Scan(&p.ID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.CreatedAt, &p.CategoryIDs,
+			&p.Popularity, &p.MinBasePrice)
 		return p, err
 	})
 	if err != nil {

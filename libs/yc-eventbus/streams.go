@@ -11,6 +11,7 @@ import (
 const (
 	retentionYear = 365 * 24 * time.Hour
 	retentionDLQ  = 90 * 24 * time.Hour
+	retentionOps  = 90 * 24 * time.Hour
 	retentionWeek = 7 * 24 * time.Hour
 )
 
@@ -54,7 +55,17 @@ func DomainStream(domain string, maxAge time.Duration, aggregateEvents ...string
 //
 // TODO(ADR-004): identity.user.deleted.v1 needs 7-year retention; move it
 // to its own stream when yc-identity starts publishing it.
-func IdentityStream() StreamConfig { return DomainStream("identity", retentionYear) }
+func IdentityStream() StreamConfig {
+	return DomainStream("identity", retentionYear, "identity.oauth_linked.v1")
+}
+
+// CartStream is the cart domain (90-day retention, ADR-004).
+func CartStream() StreamConfig {
+	return DomainStream("cart", retentionOps, "cart.created.v1", "cart.cleared.v1", "cart.merged.v1")
+}
+
+// PreferenceStream is the preference domain (90-day retention, ADR-004).
+func PreferenceStream() StreamConfig { return DomainStream("preference", retentionOps) }
 
 // PlatformStream is the platform domain (unlimited retention, ADR-004).
 func PlatformStream() StreamConfig { return DomainStream("platform", 0) }

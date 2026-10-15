@@ -46,13 +46,37 @@ func TestRoutesMatch(t *testing.T) {
 	}
 }
 
+func TestRoutesMatchInternal(t *testing.T) {
+	routes, err := domain.NewRoutes([]domain.Route{
+		{Prefix: "/prices", Upstream: u("http://pricing")},
+		{Prefix: "/internal/evaluate", Methods: []string{"post"}, Upstream: u("http://pricing"), Service: "yc-pricing"},
+	})
+	require.NoError(t, err)
+
+	r, ok := routes.MatchInternal("POST", "/internal/evaluate")
+	require.True(t, ok)
+	assert.Equal(t, "yc-pricing", r.Service)
+	_, ok = routes.MatchInternal("GET", "/internal/evaluate")
+	assert.False(t, ok, "method")
+	_, ok = routes.MatchInternal("GET", "/prices")
+	assert.False(t, ok, "public routes are not internal")
+	_, ok = routes.Match("POST", "/internal/evaluate")
+	assert.False(t, ok, "internal routes are not public")
+	assert.Len(t, routes.All(), 2)
+}
+
 func TestNewRoutesRejects(t *testing.T) {
 	for name, r := range map[string]domain.Route{
-		"internal":     {Prefix: "/internal", Upstream: u("http://x")},
-		"internal sub": {Prefix: "/internal/x", Upstream: u("http://x")},
-		"relative":     {Prefix: "me", Upstream: u("http://x")},
-		"no upstream":  {Prefix: "/me"},
-		"bad role":     {Prefix: "/me", Upstream: u("http://x"), Roles: []authctx.ActorType{"root"}},
+		"internal":            {Prefix: "/internal", Upstream: u("http://x")},
+		"static internal":     {Prefix: "/internal/x", Upstream: u("http://x")},
+		"internal root":       {Prefix: "/internal/", Upstream: u("http://x"), Service: "yc-x"},
+		"internal with roles": {Prefix: "/internal/x", Upstream: u("http://x"), Service: "yc-x", Roles: []authctx.ActorType{authctx.ActorCustomer}},
+		"internal anonymous":  {Prefix: "/internal/x", Upstream: u("http://x"), Service: "yc-x", Anonymous: true},
+		"gateway's own":       {Prefix: "/internal/register", Upstream: u("http://x"), Service: "yc-x"},
+		"service tokens":      {Prefix: "/internal/service-token/x", Upstream: u("http://x"), Service: "yc-x"},
+		"relative":            {Prefix: "me", Upstream: u("http://x")},
+		"no upstream":         {Prefix: "/me"},
+		"bad role":            {Prefix: "/me", Upstream: u("http://x"), Roles: []authctx.ActorType{"root"}},
 	} {
 		_, err := domain.NewRoutes([]domain.Route{r})
 		assert.Error(t, err, name)

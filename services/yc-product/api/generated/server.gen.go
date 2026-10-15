@@ -18,6 +18,30 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 )
 
+// Defines values for Sort.
+const (
+	Newest    Sort = "newest"
+	Popular   Sort = "popular"
+	PriceAsc  Sort = "price_asc"
+	PriceDesc Sort = "price_desc"
+)
+
+// Valid indicates whether the value is a known member of the Sort enum.
+func (e Sort) Valid() bool {
+	switch e {
+	case Newest:
+		return true
+	case Popular:
+		return true
+	case PriceAsc:
+		return true
+	case PriceDesc:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Status.
 const (
 	Active   Status = "active"
@@ -82,6 +106,15 @@ type CreateSupplierRequest struct {
 	TenantID string   `json:"tenant_id"`
 }
 
+// Facets Facets beyond the filters; which appear depends on the caller.
+type Facets struct {
+	// Favourites Customers only: the products they buy most. Empty until order
+	// history arrives (yc-orders).
+	Favourites *struct {
+		ProductCount int `json:"product_count"`
+	} `json:"favourites,omitempty"`
+}
+
 // PageInfo Cursor pagination (api-conventions.md §7).
 type PageInfo = httpkit.PageInfo
 
@@ -138,10 +171,13 @@ type ProductInput struct {
 
 // ProductList defines model for ProductList.
 type ProductList struct {
-	Items []ProductSummary `json:"items"`
+	// Facets Facets beyond the filters; which appear depends on the caller.
+	Facets Facets           `json:"facets"`
+	Items  []ProductSummary `json:"items"`
 
 	// Page Cursor pagination (api-conventions.md §7).
 	Page PageInfo `json:"page"`
+	Sort Sort     `json:"sort"`
 }
 
 // ProductSummary defines model for ProductSummary.
@@ -196,6 +232,9 @@ type SKUSummary struct {
 	// VariantValues Variant axis to value, e.g. {"color":"Red","size":"M"}.
 	VariantValues VariantValues `json:"variant_values"`
 }
+
+// Sort defines model for Sort.
+type Sort string
 
 // Status defines model for Status.
 type Status string
@@ -265,8 +304,14 @@ type BrowseProductsParams struct {
 	Q          *string             `form:"q,omitempty" json:"q,omitempty"`
 	Category   *openapi_types.UUID `form:"category,omitempty" json:"category,omitempty"`
 	SupplierID *openapi_types.UUID `form:"supplier_id,omitempty" json:"supplier_id,omitempty"`
-	PageSize   *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
-	Cursor     *Cursor             `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Sort popular (adds to cart, shop-wide), newest, or price_asc and
+	// price_desc by the lowest base price of the active SKUs, unpriced
+	// products last. Base prices are net or gross per the shop's tax
+	// setting (ADR-016).
+	Sort     *Sort     `form:"sort,omitempty" json:"sort,omitempty"`
+	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListSuppliersParams defines parameters for ListSuppliers.
@@ -876,6 +921,19 @@ func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "supplier_id"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "supplier_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
 		}
 		return
 	}

@@ -315,6 +315,11 @@ type ListPricesParams struct {
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// EvaluatePricesInternalParams defines parameters for EvaluatePricesInternal.
+type EvaluatePricesInternalParams struct {
+	XYCDisplayCurrency *DisplayCurrencyHeader `json:"X-YC-Display-Currency,omitempty"`
+}
+
 // EvaluatePricesParams defines parameters for EvaluatePrices.
 type EvaluatePricesParams struct {
 	DisplayCurrency    *DisplayCurrencyQuery  `form:"display_currency,omitempty" json:"display_currency,omitempty"`
@@ -336,6 +341,9 @@ type PutPricingConfigJSONRequestBody = PricingConfigInput
 
 // PutTaxClassJSONRequestBody defines body for PutTaxClass for application/json ContentType.
 type PutTaxClassJSONRequestBody = TaxClassInput
+
+// EvaluatePricesInternalJSONRequestBody defines body for EvaluatePricesInternal for application/json ContentType.
+type EvaluatePricesInternalJSONRequestBody = EvaluateRequest
 
 // EvaluatePricesJSONRequestBody defines body for EvaluatePrices for application/json ContentType.
 type EvaluatePricesJSONRequestBody = EvaluateRequest
@@ -372,6 +380,9 @@ type ServerInterface interface {
 	// PutTaxClass Create or replace a tax class
 	// (PUT /admin/tax-classes/{class_id})
 	PutTaxClass(w http.ResponseWriter, r *http.Request, classID ClassID)
+	// EvaluatePricesInternal Price SKUs for another service
+	// (POST /internal/prices/evaluate)
+	EvaluatePricesInternal(w http.ResponseWriter, r *http.Request, params EvaluatePricesInternalParams)
 	// EvaluatePrices Price SKUs
 	// (POST /prices/evaluate)
 	EvaluatePrices(w http.ResponseWriter, r *http.Request, params EvaluatePricesParams)
@@ -441,6 +452,12 @@ func (_ Unimplemented) GetTaxClass(w http.ResponseWriter, r *http.Request, class
 // PutTaxClass Create or replace a tax class
 // (PUT /admin/tax-classes/{class_id})
 func (_ Unimplemented) PutTaxClass(w http.ResponseWriter, r *http.Request, classID ClassID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EvaluatePricesInternal Price SKUs for another service
+// (POST /internal/prices/evaluate)
+func (_ Unimplemented) EvaluatePricesInternal(w http.ResponseWriter, r *http.Request, params EvaluatePricesInternalParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -709,6 +726,47 @@ func (siw *ServerInterfaceWrapper) PutTaxClass(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// EvaluatePricesInternal operation middleware
+func (siw *ServerInterfaceWrapper) EvaluatePricesInternal(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EvaluatePricesInternalParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-YC-Display-Currency" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-YC-Display-Currency")]; found {
+		var XYCDisplayCurrency DisplayCurrencyHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-YC-Display-Currency", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-YC-Display-Currency", valueList[0], &XYCDisplayCurrency, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-YC-Display-Currency", Err: err})
+			return
+		}
+
+		params.XYCDisplayCurrency = &XYCDisplayCurrency
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EvaluatePricesInternal(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // EvaluatePrices operation middleware
 func (siw *ServerInterfaceWrapper) EvaluatePrices(w http.ResponseWriter, r *http.Request) {
 
@@ -954,6 +1012,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/prices/evaluate", wrapper.EvaluatePrices)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/prices/evaluate", wrapper.EvaluatePricesInternal)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/prices/sku/{id}", wrapper.GetSKUPrice)
@@ -1544,6 +1605,73 @@ func (response PutTaxClass403ApplicationProblemPlusJSONResponse) VisitPutTaxClas
 	return err
 }
 
+type EvaluatePricesInternalRequestObject struct {
+	Params EvaluatePricesInternalParams
+	Body   *EvaluatePricesInternalJSONRequestBody
+}
+
+type EvaluatePricesInternalResponseObject interface {
+	VisitEvaluatePricesInternalResponse(w http.ResponseWriter) error
+}
+
+type EvaluatePricesInternal200JSONResponse PricingResult
+
+func (response EvaluatePricesInternal200JSONResponse) VisitEvaluatePricesInternalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EvaluatePricesInternal400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response EvaluatePricesInternal400ApplicationProblemPlusJSONResponse) VisitEvaluatePricesInternalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EvaluatePricesInternal401ApplicationProblemPlusJSONResponse Problem
+
+func (response EvaluatePricesInternal401ApplicationProblemPlusJSONResponse) VisitEvaluatePricesInternalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EvaluatePricesInternal409ApplicationProblemPlusJSONResponse Problem
+
+func (response EvaluatePricesInternal409ApplicationProblemPlusJSONResponse) VisitEvaluatePricesInternalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type EvaluatePricesRequestObject struct {
 	Params EvaluatePricesParams
 	Body   *EvaluatePricesJSONRequestBody
@@ -1696,6 +1824,9 @@ type StrictServerInterface interface {
 	// PutTaxClass Create or replace a tax class
 	// (PUT /admin/tax-classes/{class_id})
 	PutTaxClass(ctx context.Context, request PutTaxClassRequestObject) (PutTaxClassResponseObject, error)
+	// EvaluatePricesInternal Price SKUs for another service
+	// (POST /internal/prices/evaluate)
+	EvaluatePricesInternal(ctx context.Context, request EvaluatePricesInternalRequestObject) (EvaluatePricesInternalResponseObject, error)
 	// EvaluatePrices Price SKUs
 	// (POST /prices/evaluate)
 	EvaluatePrices(ctx context.Context, request EvaluatePricesRequestObject) (EvaluatePricesResponseObject, error)
@@ -2011,6 +2142,39 @@ func (sh *strictHandler) PutTaxClass(w http.ResponseWriter, r *http.Request, cla
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PutTaxClassResponseObject); ok {
 		if err := validResponse.VisitPutTaxClassResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EvaluatePricesInternal operation middleware
+func (sh *strictHandler) EvaluatePricesInternal(w http.ResponseWriter, r *http.Request, params EvaluatePricesInternalParams) {
+	var request EvaluatePricesInternalRequestObject
+
+	request.Params = params
+
+	var body EvaluatePricesInternalJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EvaluatePricesInternal(ctx, request.(EvaluatePricesInternalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EvaluatePricesInternal")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EvaluatePricesInternalResponseObject); ok {
+		if err := validResponse.VisitEvaluatePricesInternalResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

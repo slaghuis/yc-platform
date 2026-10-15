@@ -168,6 +168,11 @@ The contract is `services/yc-pricing/api/openapi.yaml`. Differences from the tab
 - **Exchange rates.** The default provider is Frankfurter (ECB reference rates, no key); `exchangerate_host` needs `rates.exchangerate_host.access_key`. Rates for every store currency (plus `rates.base_currencies`) are refreshed at startup and then hourly; a new or changed store currency is fetched straight away, through yc-pricing's own consumer of `pricing.config.changed.v1`. Only the latest rate per pair is kept; a missing pair is derived from its inverse. When fetches have failed for `rates.stale_after` (24h), `pricing.exchange_rates_stale.v1` is published at most once per period, and the last known rate is still used.
 - The service registers its routes with yc-gateway at startup (`gateway.internal_url`).
 
+### Phase 3 Implementation Notes
+
+- **`POST /internal/prices/evaluate`** is the service-to-service form of `POST /prices/evaluate` (same body and result), reached only through yc-gateway's internal listener with a service token (ADR-021). yc-cart uses it to snapshot and re-price cart lines. The display currency comes from the body, then `X-YC-Display-Currency`; the gateway forwards the calling service (`X-YC-Caller-Service`) and the tenant the service acts for. `/internal/prices/sku/{id}` is not implemented; callers evaluate quantity 1.
+- **Promotions** are still not in the pipeline; they arrive with yc-promotion.
+
 ## Database Schema
 
 Database: **`yc_pricing`**

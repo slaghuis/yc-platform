@@ -106,6 +106,19 @@ Only `convertible` carts can start a checkout.
 | PUT | `/admin/cart-types` | Configure cart types | shop_admin |
 | GET | `/admin/abandoned-carts` | List abandoned carts (for recovery campaigns) | shop_admin |
 
+### Phase 3 Implementation Notes
+
+The contract is `services/yc-cart/api/openapi.yaml`. Implemented: the public endpoints above for visitors and customers (`/carts` route; other actors get 403). Internal endpoints (Phase 4, yc-checkout), admin endpoints, expiry, abandoned-cart detection and the GDPR cascade come later.
+
+- **Cart types** come from configuration (`cart_types`): `shopping` (convertible, merge on login, 100 lines, 99 per SKU) and `wishlist` (merge on login, 500 lines, 99 per SKU). Per-tenant configuration (`tenant_cart_config`) arrives with the admin API. An unknown type is 404. `GET /carts` lists every configured type, created or not; a cart is created (`cart.created.v1`) by its first add.
+- **Price snapshot.** Adding a SKU prices quantity 1 through `POST /internal/prices/evaluate` on yc-pricing, called through yc-gateway's internal listener with a service token (ADR-021, client `yc-cart`, `YC_CART_SERVICE_SECRET`). A new line stores the **gross unit price in the store currency**; adding to an existing line sums the quantity and keeps the snapshot. An unknown SKU is 404; a SKU without a price is 409; going over `max_items` or `max_quantity` is 409.
+- **Change detection on read.** Every read re-prices all lines (batches of 100) and returns, per line, the snapshot (`unit_price`), the `current_unit_price`, `line_total` and `price_changed`, plus the cart's `subtotal` at current prices and `price_changed` if any line changed. Snapshots are never overwritten. Lines that can no longer be priced are `available: false` with the reason and left out of the subtotal.
+- **Display currency** is converted on read and never stored: the `display_currency` query parameter, then `X-YC-Display-Currency`, then the customer's preference, which yc-cart keeps in `display_currencies` from `preference.currency.changed.v1` (an older `changed_at` is ignored). The response's `display` block carries the rate and converted amounts; it is absent for the store currency or when yc-pricing has no rate (yc-cart retries without the display currency rather than failing).
+- **Visitor merge** runs on `identity.user.logged_in.v1` for customers with a `previous_visitor_id` (password or OAuth login). For each type with `merge_on_login`, the visitor's lines merge into the customer's cart: duplicate SKUs sum (capped at `max_quantity`) and keep the customer's snapshot; new lines are taken oldest first until `max_items`. The visitor cart is then deleted and `cart.merged.v1` published, so a redelivered login finds nothing to merge. Registration keeps the visitor's user ID, so the cart simply stays with the new customer and no merge is needed.
+- **Moves** keep the snapshot on a new destination line and publish `cart.item.moved.v1`; `quantity` defaults to the whole line.
+- **Deleted SKUs** (`product.sku.deleted.v1`, and the `sku_ids` of `product.deleted.v1`) are removed from every cart in the shop with `cart.item.removed.v1` reason `sku_deleted`.
+- **Not yet subscribed:** `identity.user.registered.v1` (not needed, see above), `identity.user.deleted.v1`, inventory, promotions, tenant lifecycle and checkout events.
+
 ## Database Schema
 
 Database: **`yc_cart`**
@@ -174,16 +187,16 @@ CREATE POLICY tenant_isolation ON carts
 
 | Event | Action |
 |---|---|
-| `identity.user.registered.v1` | Trigger merge of visitor carts for this user |
-| `identity.user.logged_in.v1` | Trigger merge of visitor carts (if a visitor session preceded login) |
+| `identity.user.logged_in.v1` | Trigger merge of visitor carts (if a visitor session preceded login: `previous_visitor_id`) |
 | `identity.user.deleted.v1` | Delete all user carts; publish `platform.gdpr.cascade_completed.v1` |
 | `product.sku.deleted.v1` | Remove the SKU from all carts; emit `cart.item.removed.v1` |
+| `product.deleted.v1` | Remove the product's SKUs (`sku_ids`) from all carts; emit `cart.item.removed.v1` |
 | `product.sku.updated.v1` | No action on cart content, but freshen snapshots on next read |
 | `pricing.base_price.set.v1` | No immediate action (change detection on read) |
 | `pricing.promotion.started.v1` | No immediate action |
 | `inventory.stock.depleted.v1` | Flag affected cart lines as "unavailable" (not removed; UX decides) |
 | `inventory.stock.restored.v1` | Clear "unavailable" flag |
-| `preference.currency.changed.v1` | Refresh cart display currency on next read (no stored change) |
+| `preference.currency.changed.v1` | Record the customer's display currency for reads (cart contents unchanged) |
 | `platform.tenant.provisioned.v1` | Create default `tenant_cart_config` |
 | `platform.tenant.deleted.v1` | Delete all tenant carts |
 | `checkout.completed.v1` | Clear the source cart |

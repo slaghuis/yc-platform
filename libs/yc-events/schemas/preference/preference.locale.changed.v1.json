@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.locale.changed.v1.json",
+  "title": "preference.locale.changed.v1",
+  "description": "A user's locale changed.",
+  "type": "object",
+  "required": ["user_id", "locale", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "locale": {
+      "type": "string",
+      "description": "BCP 47 tag, e.g. en-ZA."
+    },
+    "previous_locale": {
+      "type": "string"
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

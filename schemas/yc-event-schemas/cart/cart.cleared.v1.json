@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.cleared.v1.json",
+  "title": "cart.cleared.v1",
+  "description": "Every line was removed from a cart.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "cart_type", "item_count", "reason", "cleared_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "item_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of lines removed."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["customer", "checkout"]
+    },
+    "cleared_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

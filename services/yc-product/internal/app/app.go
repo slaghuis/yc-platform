@@ -15,6 +15,7 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	"github.com/slaghuis/yc-platform/services/yc-product/internal/service"
+	subscribers "github.com/slaghuis/yc-platform/services/yc-product/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-product/internal/transport/http"
 	"github.com/slaghuis/yc-platform/services/yc-product/migrations"
 )
@@ -62,7 +63,8 @@ type App struct {
 }
 
 // New migrates the database (when configured), connects to Postgres and
-// NATS, and builds the HTTP handler.
+// NATS, subscribes the search projection to cart and pricing events and
+// builds the HTTP handler.
 func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err error) {
 	a := &App{}
 	defer func() {
@@ -91,14 +93,23 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams:     []eventbus.StreamConfig{eventbus.ProductStream(), eventbus.DLQStream()},
+		Streams: []eventbus.StreamConfig{
+			eventbus.ProductStream(), eventbus.CartStream(), eventbus.PricingStream(), eventbus.DLQStream(),
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	a.Handler = transport.NewRouter(service.New(db, bus), build, []httpkit.Check{
+	svc := service.New(db, bus)
+	for _, sub := range subscribers.Subscriptions(svc) {
+		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
+			return nil, err
+		}
+	}
+
+	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
 	})

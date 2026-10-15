@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.channel.removed.v1.json",
+  "title": "preference.channel.removed.v1",
+  "description": "A user removed a messaging channel.",
+  "type": "object",
+  "required": ["user_id", "channel", "removed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["email", "sms", "whatsapp", "telegram"]
+    },
+    "removed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

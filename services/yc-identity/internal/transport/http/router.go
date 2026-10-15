@@ -21,7 +21,14 @@ type Identity interface {
 	CreateVisitor(ctx context.Context, tenantID string) (domain.Session, error)
 	Register(ctx context.Context, reg domain.Registration) (domain.Session, error)
 	Login(ctx context.Context, email, password string) (domain.Session, error)
+	Refresh(ctx context.Context, raw string) (domain.Session, error)
+	Logout(ctx context.Context, rawRefresh string) error
+	RequestPasswordReset(ctx context.Context, email string) error
+	ConfirmPasswordReset(ctx context.Context, token, password string) error
+	StartOAuth(ctx context.Context, provider, host, loginHint string) (string, error)
+	CompleteOAuth(ctx context.Context, provider, code, state string) (domain.Session, error)
 	ValidateToken(ctx context.Context, raw string) (domain.Session, error)
+	IssueServiceToken(ctx context.Context, clientID, secret string) (domain.Session, error)
 	Me(ctx context.Context) (domain.User, error)
 	ListUsers(ctx context.Context, f repository.Filter, after *repository.Cursor, limit int) ([]domain.User, *repository.Cursor, error)
 	GetUser(ctx context.Context, id string) (domain.User, error)
@@ -29,15 +36,14 @@ type Identity interface {
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
-// /internal/ routes are reached only from inside the platform network;
-// yc-gateway never routes them. Service tokens come with ADR-019's
-// internal-call client.
+// /internal/ routes are reached through yc-gateway's internal listener
+// (ADR-021).
 func NewRouter(svc Identity, build httpkit.BuildInfo, checks []httpkit.Check) http.Handler {
 	r := httpkit.NewRouter(httpkit.RouterOptions{
 		Build:  build,
 		Checks: checks,
 		Middleware: []func(http.Handler) http.Handler{
-			authctx.Middleware, authctx.Audience, httpkit.LimitBody(httpkit.MaxBodyBytes),
+			authctx.Middleware, authctx.Audience, httpkit.LimitBody(httpkit.MaxBodyBytes), withHost,
 		},
 	})
 	strict := api.NewStrictHandlerWithOptions(handlers{svc: svc}, nil, api.StrictHTTPServerOptions{
@@ -50,6 +56,20 @@ func NewRouter(svc Identity, build httpkit.BuildInfo, checks []httpkit.Check) ht
 
 type handlers struct {
 	svc Identity
+}
+
+type hostKey struct{}
+
+// withHost records the host the client called: yc-gateway's
+// X-Forwarded-Host, or the request's own Host when called directly.
+func withHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Header.Get("X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), hostKey{}, host)))
+	})
 }
 
 var _ api.StrictServerInterface = handlers{}
@@ -86,6 +106,73 @@ func (h handlers) Login(ctx context.Context, req api.LoginRequestObject) (api.Lo
 		return nil, err
 	}
 	return api.Login200JSONResponse(session(sess)), nil
+}
+
+func (h handlers) Refresh(ctx context.Context, req api.RefreshRequestObject) (api.RefreshResponseObject, error) {
+	if req.Body.RefreshToken == "" {
+		return nil, ycerrors.Validation().Field("refresh_token", "required", "Refresh token is required").Build()
+	}
+	sess, err := h.svc.Refresh(ctx, req.Body.RefreshToken)
+	if err != nil {
+		return nil, err
+	}
+	return api.Refresh200JSONResponse(session(sess)), nil
+}
+
+func (h handlers) Logout(ctx context.Context, req api.LogoutRequestObject) (api.LogoutResponseObject, error) {
+	var refresh string
+	if req.Body != nil && req.Body.RefreshToken != nil {
+		refresh = *req.Body.RefreshToken
+	}
+	if err := h.svc.Logout(ctx, refresh); err != nil {
+		return nil, err
+	}
+	return api.Logout204Response{}, nil
+}
+
+func (h handlers) RequestPasswordReset(ctx context.Context, req api.RequestPasswordResetRequestObject) (api.RequestPasswordResetResponseObject, error) {
+	if err := h.svc.RequestPasswordReset(ctx, req.Body.Email); err != nil {
+		return nil, err
+	}
+	return api.RequestPasswordReset202Response{}, nil
+}
+
+func (h handlers) ConfirmPasswordReset(ctx context.Context, req api.ConfirmPasswordResetRequestObject) (api.ConfirmPasswordResetResponseObject, error) {
+	if err := h.svc.ConfirmPasswordReset(ctx, req.Body.Token, req.Body.Password); err != nil {
+		return nil, err
+	}
+	return api.ConfirmPasswordReset204Response{}, nil
+}
+
+func (h handlers) StartOAuth(ctx context.Context, req api.StartOAuthRequestObject) (api.StartOAuthResponseObject, error) {
+	var hint string
+	if req.Body != nil && req.Body.LoginHint != nil {
+		hint = *req.Body.LoginHint
+	}
+	host, _ := ctx.Value(hostKey{}).(string)
+	u, err := h.svc.StartOAuth(ctx, string(req.Provider), host, hint)
+	if err != nil {
+		return nil, err
+	}
+	return api.StartOAuth200JSONResponse{AuthorizationURL: u}, nil
+}
+
+func (h handlers) CompleteOAuth(ctx context.Context, req api.CompleteOAuthRequestObject) (api.CompleteOAuthResponseObject, error) {
+	sess, err := h.svc.CompleteOAuth(ctx, string(req.Provider), req.Body.Code, req.Body.State)
+	if err != nil {
+		return nil, err
+	}
+	return api.CompleteOAuth200JSONResponse(session(sess)), nil
+}
+
+func (h handlers) IssueServiceToken(ctx context.Context, req api.IssueServiceTokenRequestObject) (api.IssueServiceTokenResponseObject, error) {
+	sess, err := h.svc.IssueServiceToken(ctx, req.Body.ClientID, req.Body.ClientSecret)
+	if err != nil {
+		return nil, err
+	}
+	return api.IssueServiceToken200JSONResponse{
+		AccessToken: sess.Token, TokenType: "Bearer", ExpiresAt: sess.ExpiresAt.UTC(),
+	}, nil
 }
 
 func (h handlers) GetMe(ctx context.Context, _ api.GetMeRequestObject) (api.GetMeResponseObject, error) {
@@ -167,7 +254,7 @@ func (h handlers) ValidateToken(ctx context.Context, req api.ValidateTokenReques
 	}
 	return api.ValidateToken200JSONResponse{
 		TenantID:  sess.TenantID,
-		ActorID:   parseUUID(sess.UserID),
+		ActorID:   sess.UserID,
 		ActorType: api.ActorType(sess.Role.ActorType()),
 		Jti:       parseUUID(sess.TokenID),
 		ExpiresAt: sess.ExpiresAt.UTC(),
@@ -175,7 +262,7 @@ func (h handlers) ValidateToken(ctx context.Context, req api.ValidateTokenReques
 }
 
 func session(s domain.Session) api.Session {
-	return api.Session{
+	out := api.Session{
 		AccessToken: s.Token,
 		TokenType:   "Bearer",
 		ExpiresAt:   s.ExpiresAt.UTC(),
@@ -183,6 +270,11 @@ func session(s domain.Session) api.Session {
 		TenantID:    s.TenantID,
 		Role:        api.Role(s.Role),
 	}
+	if s.RefreshToken != "" {
+		exp := s.RefreshExpiresAt.UTC()
+		out.RefreshToken, out.RefreshExpiresAt = &s.RefreshToken, &exp
+	}
+	return out
 }
 
 func user(u domain.User) api.User {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -84,15 +85,30 @@ func (e Role) Valid() bool {
 	}
 }
 
+// Defines values for ServiceTokenTokenType.
+const (
+	ServiceTokenTokenTypeBearer ServiceTokenTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the ServiceTokenTokenType enum.
+func (e ServiceTokenTokenType) Valid() bool {
+	switch e {
+	case ServiceTokenTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SessionTokenType.
 const (
-	Bearer SessionTokenType = "Bearer"
+	SessionTokenTypeBearer SessionTokenType = "Bearer"
 )
 
 // Valid indicates whether the value is a known member of the SessionTokenType enum.
 func (e SessionTokenType) Valid() bool {
 	switch e {
-	case Bearer:
+	case SessionTokenTypeBearer:
 		return true
 	default:
 		return false
@@ -120,6 +136,60 @@ func (e UserStatus) Valid() bool {
 	}
 }
 
+// Defines values for Provider.
+const (
+	ProviderFacebook Provider = "facebook"
+	ProviderGoogle   Provider = "google"
+)
+
+// Valid indicates whether the value is a known member of the Provider enum.
+func (e Provider) Valid() bool {
+	switch e {
+	case ProviderFacebook:
+		return true
+	case ProviderGoogle:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CompleteOAuthParamsProvider.
+const (
+	CompleteOAuthParamsProviderFacebook CompleteOAuthParamsProvider = "facebook"
+	CompleteOAuthParamsProviderGoogle   CompleteOAuthParamsProvider = "google"
+)
+
+// Valid indicates whether the value is a known member of the CompleteOAuthParamsProvider enum.
+func (e CompleteOAuthParamsProvider) Valid() bool {
+	switch e {
+	case CompleteOAuthParamsProviderFacebook:
+		return true
+	case CompleteOAuthParamsProviderGoogle:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StartOAuthParamsProvider.
+const (
+	StartOAuthParamsProviderFacebook StartOAuthParamsProvider = "facebook"
+	StartOAuthParamsProviderGoogle   StartOAuthParamsProvider = "google"
+)
+
+// Valid indicates whether the value is a known member of the StartOAuthParamsProvider enum.
+func (e StartOAuthParamsProvider) Valid() bool {
+	switch e {
+	case StartOAuthParamsProviderFacebook:
+		return true
+	case StartOAuthParamsProviderGoogle:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActorType defines model for ActorType.
 type ActorType string
 
@@ -129,8 +199,41 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// LogoutRequest defines model for LogoutRequest.
+type LogoutRequest struct {
+	RefreshToken *string `json:"refresh_token,omitempty"`
+}
+
+// OAuthCallback defines model for OAuthCallback.
+type OAuthCallback struct {
+	Code  string `json:"code"`
+	State string `json:"state"`
+}
+
+// OAuthStart defines model for OAuthStart.
+type OAuthStart struct {
+	AuthorizationURL string `json:"authorization_url"`
+}
+
+// OAuthStartRequest defines model for OAuthStartRequest.
+type OAuthStartRequest struct {
+	// LoginHint Email to suggest to the provider.
+	LoginHint *string `json:"login_hint,omitempty"`
+}
+
 // PageInfo Cursor pagination (api-conventions.md §7).
 type PageInfo = httpkit.PageInfo
+
+// PasswordResetConfirm defines model for PasswordResetConfirm.
+type PasswordResetConfirm struct {
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
+
+// PasswordResetRequest defines model for PasswordResetRequest.
+type PasswordResetRequest struct {
+	Email string `json:"email"`
+}
 
 // Problem RFC 9457 problem details (docs/standards/error-handling.md).
 type Problem struct {
@@ -155,6 +258,11 @@ type PromoteRequest struct {
 // PromoteRequestRole defines model for PromoteRequest.Role.
 type PromoteRequestRole string
 
+// RefreshRequest defines model for RefreshRequest.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
 // RegisterRequest defines model for RegisterRequest.
 type RegisterRequest struct {
 	DisplayName *string             `json:"display_name,omitempty"`
@@ -165,15 +273,30 @@ type RegisterRequest struct {
 // Role defines model for Role.
 type Role string
 
+// ServiceToken defines model for ServiceToken.
+type ServiceToken struct {
+	// AccessToken RS256 JWT with actor_type service
+	AccessToken string                `json:"access_token"`
+	ExpiresAt   time.Time             `json:"expires_at"`
+	TokenType   ServiceTokenTokenType `json:"token_type"`
+}
+
+// ServiceTokenTokenType defines model for ServiceToken.TokenType.
+type ServiceTokenTokenType string
+
 // Session defines model for Session.
 type Session struct {
 	// AccessToken RS256 JWT
-	AccessToken string             `json:"access_token"`
-	ExpiresAt   time.Time          `json:"expires_at"`
-	Role        Role               `json:"role"`
-	TenantID    string             `json:"tenant_id"`
-	TokenType   SessionTokenType   `json:"token_type"`
-	UserID      openapi_types.UUID `json:"user_id"`
+	AccessToken      string     `json:"access_token"`
+	ExpiresAt        time.Time  `json:"expires_at"`
+	RefreshExpiresAt *time.Time `json:"refresh_expires_at,omitempty"`
+
+	// RefreshToken Opaque, single use; absent for visitors.
+	RefreshToken *string            `json:"refresh_token,omitempty"`
+	Role         Role               `json:"role"`
+	TenantID     string             `json:"tenant_id"`
+	TokenType    SessionTokenType   `json:"token_type"`
+	UserID       openapi_types.UUID `json:"user_id"`
 }
 
 // SessionTokenType defines model for Session.TokenType.
@@ -181,7 +304,8 @@ type SessionTokenType string
 
 // TokenIdentity defines model for TokenIdentity.
 type TokenIdentity struct {
-	ActorID   openapi_types.UUID `json:"actor_id"`
+	// ActorID User ID
+	ActorID   string             `json:"actor_id"`
 	ActorType ActorType          `json:"actor_type"`
 	ExpiresAt time.Time          `json:"expires_at"`
 	Jti       openapi_types.UUID `json:"jti"`
@@ -218,6 +342,9 @@ type Cursor = string
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// Provider defines model for Provider.
+type Provider string
+
 // UserID defines model for UserID.
 type UserID = openapi_types.UUID
 
@@ -230,19 +357,52 @@ type ListUsersParams struct {
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// IssueServiceTokenJSONBody defines parameters for IssueServiceToken.
+type IssueServiceTokenJSONBody struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+}
+
 // ValidateTokenJSONBody defines parameters for ValidateToken.
 type ValidateTokenJSONBody struct {
 	Token string `json:"token"`
 }
 
+// CompleteOAuthParamsProvider defines parameters for CompleteOAuth.
+type CompleteOAuthParamsProvider string
+
+// StartOAuthParamsProvider defines parameters for StartOAuth.
+type StartOAuthParamsProvider string
+
 // PromoteUserJSONRequestBody defines body for PromoteUser for application/json ContentType.
 type PromoteUserJSONRequestBody = PromoteRequest
+
+// IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
+type IssueServiceTokenJSONRequestBody IssueServiceTokenJSONBody
 
 // ValidateTokenJSONRequestBody defines body for ValidateToken for application/json ContentType.
 type ValidateTokenJSONRequestBody ValidateTokenJSONBody
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// LogoutJSONRequestBody defines body for Logout for application/json ContentType.
+type LogoutJSONRequestBody = LogoutRequest
+
+// CompleteOAuthJSONRequestBody defines body for CompleteOAuth for application/json ContentType.
+type CompleteOAuthJSONRequestBody = OAuthCallback
+
+// StartOAuthJSONRequestBody defines body for StartOAuth for application/json ContentType.
+type StartOAuthJSONRequestBody = OAuthStartRequest
+
+// ConfirmPasswordResetJSONRequestBody defines body for ConfirmPasswordReset for application/json ContentType.
+type ConfirmPasswordResetJSONRequestBody = PasswordResetConfirm
+
+// RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
+type RequestPasswordResetJSONRequestBody = PasswordResetRequest
+
+// RefreshJSONRequestBody defines body for Refresh for application/json ContentType.
+type RefreshJSONRequestBody = RefreshRequest
 
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = RegisterRequest
@@ -258,15 +418,36 @@ type ServerInterface interface {
 	// PromoteUser Promote a user (system_admin)
 	// (POST /admin/users/{id}/promote)
 	PromoteUser(w http.ResponseWriter, r *http.Request, id UserID)
+	// IssueServiceToken Issue a service token (ADR-021)
+	// (POST /internal/service-token)
+	IssueServiceToken(w http.ResponseWriter, r *http.Request)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(w http.ResponseWriter, r *http.Request)
 	// Login Log in with email and password
 	// (POST /login)
 	Login(w http.ResponseWriter, r *http.Request)
+	// Logout Log out
+	// (POST /logout)
+	Logout(w http.ResponseWriter, r *http.Request)
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// CompleteOAuth Complete signing in with an OAuth provider
+	// (POST /oauth/{provider}/callback)
+	CompleteOAuth(w http.ResponseWriter, r *http.Request, provider CompleteOAuthParamsProvider)
+	// StartOAuth Start signing in with an OAuth provider
+	// (POST /oauth/{provider}/start)
+	StartOAuth(w http.ResponseWriter, r *http.Request, provider StartOAuthParamsProvider)
+	// ConfirmPasswordReset Set a new password with a reset token
+	// (POST /password/reset-confirm)
+	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
+	// RequestPasswordReset Start a password reset
+	// (POST /password/reset-request)
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	// Refresh Exchange a refresh token for a new session
+	// (POST /refresh)
+	Refresh(w http.ResponseWriter, r *http.Request)
 	// Register Register with email and password
 	// (POST /register)
 	Register(w http.ResponseWriter, r *http.Request)
@@ -297,6 +478,12 @@ func (_ Unimplemented) PromoteUser(w http.ResponseWriter, r *http.Request, id Us
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// IssueServiceToken Issue a service token (ADR-021)
+// (POST /internal/service-token)
+func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ValidateToken Validate an access token (called by yc-gateway)
 // (POST /internal/validate-token)
 func (_ Unimplemented) ValidateToken(w http.ResponseWriter, r *http.Request) {
@@ -309,9 +496,45 @@ func (_ Unimplemented) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Logout Log out
+// (POST /logout)
+func (_ Unimplemented) Logout(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetMe The caller's own user
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CompleteOAuth Complete signing in with an OAuth provider
+// (POST /oauth/{provider}/callback)
+func (_ Unimplemented) CompleteOAuth(w http.ResponseWriter, r *http.Request, provider CompleteOAuthParamsProvider) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StartOAuth Start signing in with an OAuth provider
+// (POST /oauth/{provider}/start)
+func (_ Unimplemented) StartOAuth(w http.ResponseWriter, r *http.Request, provider StartOAuthParamsProvider) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ConfirmPasswordReset Set a new password with a reset token
+// (POST /password/reset-confirm)
+func (_ Unimplemented) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RequestPasswordReset Start a password reset
+// (POST /password/reset-request)
+func (_ Unimplemented) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Refresh Exchange a refresh token for a new session
+// (POST /refresh)
+func (_ Unimplemented) Refresh(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -473,6 +696,20 @@ func (siw *ServerInterfaceWrapper) PromoteUser(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// IssueServiceToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueServiceToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateToken operation middleware
 func (siw *ServerInterfaceWrapper) ValidateToken(w http.ResponseWriter, r *http.Request) {
 
@@ -501,11 +738,119 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteOAuth operation middleware
+func (siw *ServerInterfaceWrapper) CompleteOAuth(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider" -------------
+	var provider CompleteOAuthParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", chi.URLParam(r, "provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteOAuth(w, r, provider)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartOAuth operation middleware
+func (siw *ServerInterfaceWrapper) StartOAuth(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider" -------------
+	var provider StartOAuthParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", chi.URLParam(r, "provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartOAuth(w, r, provider)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmPasswordReset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestPasswordReset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Refresh operation middleware
+func (siw *ServerInterfaceWrapper) Refresh(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Refresh(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -666,6 +1011,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/login", wrapper.Login)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/refresh", wrapper.Refresh)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/logout", wrapper.Logout)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/password/reset-request", wrapper.RequestPasswordReset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/password/reset-confirm", wrapper.ConfirmPasswordReset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/oauth/{provider}/start", wrapper.StartOAuth)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/oauth/{provider}/callback", wrapper.CompleteOAuth)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
@@ -679,6 +1042,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/validate-token", wrapper.ValidateToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/service-token", wrapper.IssueServiceToken)
 	})
 
 	return r
@@ -843,6 +1209,58 @@ func (response PromoteUser404ApplicationProblemPlusJSONResponse) VisitPromoteUse
 	return err
 }
 
+type IssueServiceTokenRequestObject struct {
+	Body *IssueServiceTokenJSONRequestBody
+}
+
+type IssueServiceTokenResponseObject interface {
+	VisitIssueServiceTokenResponse(w http.ResponseWriter) error
+}
+
+type IssueServiceToken200JSONResponse ServiceToken
+
+func (response IssueServiceToken200JSONResponse) VisitIssueServiceTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueServiceToken400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response IssueServiceToken400ApplicationProblemPlusJSONResponse) VisitIssueServiceTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueServiceToken401ApplicationProblemPlusJSONResponse Problem
+
+func (response IssueServiceToken401ApplicationProblemPlusJSONResponse) VisitIssueServiceTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ValidateTokenRequestObject struct {
 	Body *ValidateTokenJSONRequestBody
 }
@@ -947,6 +1365,38 @@ func (response Login401ApplicationProblemPlusJSONResponse) VisitLoginResponse(w 
 	return err
 }
 
+type LogoutRequestObject struct {
+	Body *LogoutJSONRequestBody
+}
+
+type LogoutResponseObject interface {
+	VisitLogoutResponse(w http.ResponseWriter) error
+}
+
+type Logout204Response struct {
+}
+
+func (response Logout204Response) VisitLogoutResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type Logout401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response Logout401ApplicationProblemPlusJSONResponse) VisitLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -994,6 +1444,256 @@ func (response GetMe404ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteOAuthRequestObject struct {
+	Provider CompleteOAuthParamsProvider `json:"provider"`
+	Body     *CompleteOAuthJSONRequestBody
+}
+
+type CompleteOAuthResponseObject interface {
+	VisitCompleteOAuthResponse(w http.ResponseWriter) error
+}
+
+type CompleteOAuth200JSONResponse Session
+
+func (response CompleteOAuth200JSONResponse) VisitCompleteOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteOAuth400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CompleteOAuth400ApplicationProblemPlusJSONResponse) VisitCompleteOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteOAuth401ApplicationProblemPlusJSONResponse Problem
+
+func (response CompleteOAuth401ApplicationProblemPlusJSONResponse) VisitCompleteOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteOAuth404ApplicationProblemPlusJSONResponse Problem
+
+func (response CompleteOAuth404ApplicationProblemPlusJSONResponse) VisitCompleteOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteOAuth409ApplicationProblemPlusJSONResponse Problem
+
+func (response CompleteOAuth409ApplicationProblemPlusJSONResponse) VisitCompleteOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartOAuthRequestObject struct {
+	Provider StartOAuthParamsProvider `json:"provider"`
+	Body     *StartOAuthJSONRequestBody
+}
+
+type StartOAuthResponseObject interface {
+	VisitStartOAuthResponse(w http.ResponseWriter) error
+}
+
+type StartOAuth200JSONResponse OAuthStart
+
+func (response StartOAuth200JSONResponse) VisitStartOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartOAuth400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartOAuth400ApplicationProblemPlusJSONResponse) VisitStartOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartOAuth404ApplicationProblemPlusJSONResponse Problem
+
+func (response StartOAuth404ApplicationProblemPlusJSONResponse) VisitStartOAuthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordResetRequestObject struct {
+	Body *ConfirmPasswordResetJSONRequestBody
+}
+
+type ConfirmPasswordResetResponseObject interface {
+	VisitConfirmPasswordResetResponse(w http.ResponseWriter) error
+}
+
+type ConfirmPasswordReset204Response struct {
+}
+
+func (response ConfirmPasswordReset204Response) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ConfirmPasswordReset400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmPasswordReset400ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordResetRequestObject struct {
+	Body *RequestPasswordResetJSONRequestBody
+}
+
+type RequestPasswordResetResponseObject interface {
+	VisitRequestPasswordResetResponse(w http.ResponseWriter) error
+}
+
+type RequestPasswordReset202Response struct {
+}
+
+func (response RequestPasswordReset202Response) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type RequestPasswordReset400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset400ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefreshRequestObject struct {
+	Body *RefreshJSONRequestBody
+}
+
+type RefreshResponseObject interface {
+	VisitRefreshResponse(w http.ResponseWriter) error
+}
+
+type Refresh200JSONResponse Session
+
+func (response Refresh200JSONResponse) VisitRefreshResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Refresh400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response Refresh400ApplicationProblemPlusJSONResponse) VisitRefreshResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Refresh401ApplicationProblemPlusJSONResponse Problem
+
+func (response Refresh401ApplicationProblemPlusJSONResponse) VisitRefreshResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1098,15 +1798,36 @@ type StrictServerInterface interface {
 	// PromoteUser Promote a user (system_admin)
 	// (POST /admin/users/{id}/promote)
 	PromoteUser(ctx context.Context, request PromoteUserRequestObject) (PromoteUserResponseObject, error)
+	// IssueServiceToken Issue a service token (ADR-021)
+	// (POST /internal/service-token)
+	IssueServiceToken(ctx context.Context, request IssueServiceTokenRequestObject) (IssueServiceTokenResponseObject, error)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(ctx context.Context, request ValidateTokenRequestObject) (ValidateTokenResponseObject, error)
 	// Login Log in with email and password
 	// (POST /login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
+	// Logout Log out
+	// (POST /logout)
+	Logout(ctx context.Context, request LogoutRequestObject) (LogoutResponseObject, error)
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// CompleteOAuth Complete signing in with an OAuth provider
+	// (POST /oauth/{provider}/callback)
+	CompleteOAuth(ctx context.Context, request CompleteOAuthRequestObject) (CompleteOAuthResponseObject, error)
+	// StartOAuth Start signing in with an OAuth provider
+	// (POST /oauth/{provider}/start)
+	StartOAuth(ctx context.Context, request StartOAuthRequestObject) (StartOAuthResponseObject, error)
+	// ConfirmPasswordReset Set a new password with a reset token
+	// (POST /password/reset-confirm)
+	ConfirmPasswordReset(ctx context.Context, request ConfirmPasswordResetRequestObject) (ConfirmPasswordResetResponseObject, error)
+	// RequestPasswordReset Start a password reset
+	// (POST /password/reset-request)
+	RequestPasswordReset(ctx context.Context, request RequestPasswordResetRequestObject) (RequestPasswordResetResponseObject, error)
+	// Refresh Exchange a refresh token for a new session
+	// (POST /refresh)
+	Refresh(ctx context.Context, request RefreshRequestObject) (RefreshResponseObject, error)
 	// Register Register with email and password
 	// (POST /register)
 	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
@@ -1239,6 +1960,37 @@ func (sh *strictHandler) PromoteUser(w http.ResponseWriter, r *http.Request, id 
 	}
 }
 
+// IssueServiceToken operation middleware
+func (sh *strictHandler) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+	var request IssueServiceTokenRequestObject
+
+	var body IssueServiceTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueServiceToken(ctx, request.(IssueServiceTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueServiceToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueServiceTokenResponseObject); ok {
+		if err := validResponse.VisitIssueServiceTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ValidateToken operation middleware
 func (sh *strictHandler) ValidateToken(w http.ResponseWriter, r *http.Request) {
 	var request ValidateTokenRequestObject
@@ -1301,6 +2053,40 @@ func (sh *strictHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Logout operation middleware
+func (sh *strictHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var request LogoutRequestObject
+
+	var body LogoutJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Logout(ctx, request.(LogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Logout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogoutResponseObject); ok {
+		if err := validResponse.VisitLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -1318,6 +2104,168 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteOAuth operation middleware
+func (sh *strictHandler) CompleteOAuth(w http.ResponseWriter, r *http.Request, provider CompleteOAuthParamsProvider) {
+	var request CompleteOAuthRequestObject
+
+	request.Provider = provider
+
+	var body CompleteOAuthJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteOAuth(ctx, request.(CompleteOAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteOAuth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteOAuthResponseObject); ok {
+		if err := validResponse.VisitCompleteOAuthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartOAuth operation middleware
+func (sh *strictHandler) StartOAuth(w http.ResponseWriter, r *http.Request, provider StartOAuthParamsProvider) {
+	var request StartOAuthRequestObject
+
+	request.Provider = provider
+
+	var body StartOAuthJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartOAuth(ctx, request.(StartOAuthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartOAuth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartOAuthResponseObject); ok {
+		if err := validResponse.VisitStartOAuthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfirmPasswordReset operation middleware
+func (sh *strictHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var request ConfirmPasswordResetRequestObject
+
+	var body ConfirmPasswordResetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfirmPasswordReset(ctx, request.(ConfirmPasswordResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfirmPasswordReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfirmPasswordResetResponseObject); ok {
+		if err := validResponse.VisitConfirmPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestPasswordReset operation middleware
+func (sh *strictHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var request RequestPasswordResetRequestObject
+
+	var body RequestPasswordResetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestPasswordReset(ctx, request.(RequestPasswordResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestPasswordReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestPasswordResetResponseObject); ok {
+		if err := validResponse.VisitRequestPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Refresh operation middleware
+func (sh *strictHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var request RefreshRequestObject
+
+	var body RefreshJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Refresh(ctx, request.(RefreshRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Refresh")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefreshResponseObject); ok {
+		if err := validResponse.VisitRefreshResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

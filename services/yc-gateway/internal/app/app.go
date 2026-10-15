@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -131,12 +132,21 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	a.closers = append(a.closers, func(context.Context) error { stopPoll(); pollWG.Wait(); return nil })
 
 	identity := integration.NewIdentity(cfg.Upstreams[identityUpstream], cfg.IdentityTimeout, cfg.TokenCacheTTL, time.Now)
-	gw := transport.New(a.Hosts, identity, a.Registry, cfg.VisitorCookie)
+	var limiter transport.Limiter
+	if cfg.RateLimit.Enabled {
+		limiter = service.NewRateLimiter(cfg.RateLimit, time.Now)
+	}
+	gw := transport.New(a.Hosts, identity, a.Registry, limiter, cfg.VisitorCookie)
 	a.Handler = transport.NewRouter(gw, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
 	})
-	a.InternalHandler = transport.NewInternalRouter(a.Registry, build)
+	identityURL, err := url.Parse(cfg.Upstreams[identityUpstream])
+	if err != nil {
+		return nil, fmt.Errorf("upstreams.identity: %w", err)
+	}
+	internal := transport.NewInternal(identity, a.Registry, identityURL)
+	a.InternalHandler = transport.NewInternalRouter(a.Registry, internal, build)
 	return a, nil
 }
 

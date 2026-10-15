@@ -2,8 +2,9 @@ service: yc-gateway
 environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
-# Registration endpoints (ADR-020 rule 6). Never expose outside the
-# platform network: it has no authentication until service tokens exist.
+# Registration endpoints (ADR-020 rule 6) and service-to-service calls
+# (ADR-021). Never expose outside the platform network: the registration
+# endpoints have no authentication.
 internal_http:
   listen: ":8091"
 log:
@@ -21,9 +22,9 @@ upstreams:
   identity: http://yc-identity:8080
 
 # Static routes (docs/services/yc-gateway.md, Routing). Longest prefix wins;
-# empty roles admit any actor, visitors included. /internal/ is never routed.
-# Services add their own routes by registering; a registered route may not
-# reuse a static prefix.
+# empty roles admit any actor, visitors included. /internal/ is never routed
+# here. Services add their own routes by registering; a registered route may
+# not reuse a static prefix.
 routes:
   - prefix: /me
     methods: [GET]
@@ -35,6 +36,20 @@ routes:
     methods: [POST]
     upstream: identity
     anonymous: true
+  - prefix: /refresh
+    methods: [POST]
+    upstream: identity
+    anonymous: true
+  - prefix: /logout
+    methods: [POST]
+    upstream: identity
+  - prefix: /password
+    methods: [POST]
+    upstream: identity
+    anonymous: true
+  - prefix: /oauth
+    methods: [POST]
+    upstream: identity
   - prefix: /admin/users
     upstream: identity
     roles: [shop_admin, system_admin]
@@ -54,6 +69,18 @@ platform_hosts: []
 # are normally added by platform.tenant.provisioned.v1.
 tenant_hosts: []
 tenant_hosts_refresh: 30s
+
+# Token buckets per gateway instance (docs/services/yc-gateway.md, Rate
+# Limiting): requests per period, up to burst at once; requests 0 is
+# unlimited. Visitors, and callers without credentials (by address), get the
+# stricter visitor quota.
+rate_limit:
+  enabled: ${YC_GATEWAY_RATE_LIMIT:-true}
+  tenant: {requests: 200, per: 1s, burst: 400}
+  tenant_overrides: {}
+  actor: {requests: 600, per: 1m, burst: 60}
+  visitor: {requests: 120, per: 1m, burst: 30}
+  idle_ttl: 10m
 
 token_cache_ttl: 60s
 identity_timeout: 3s

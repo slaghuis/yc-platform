@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: yc-pricing
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Prices, tax and display currency (docs/services/yc-pricing.md, ADR-014,
     ADR-016). Phase 2 subset: base prices, tax classes, the BasePrice → Tax →
@@ -39,6 +39,32 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PricingResult' }
         '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/prices/evaluate:
+    post:
+      summary: Price SKUs for another service
+      description: |
+        The same evaluation as POST /prices/evaluate, for service-to-service
+        calls through yc-gateway's internal listener (ADR-021). yc-cart
+        snapshots and re-checks prices with it. The display currency comes
+        from the body or the X-YC-Display-Currency header.
+      operationId: evaluatePricesInternal
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateRequest' }
+      responses:
+        '200':
+          description: The evaluation, with its audit trail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
   /prices/sku/{id}:

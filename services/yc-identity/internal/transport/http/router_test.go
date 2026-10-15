@@ -34,6 +34,16 @@ type fakeIdentity struct {
 	after    *repository.Cursor
 	limit    int
 	promoted domain.Role
+	refresh  string
+	email    string
+	reset    string
+	oauth    string
+}
+
+// internal marks req as an /internal/ call yc-gateway forwarded.
+func internal(req *http.Request) *http.Request {
+	req.Header.Set(authctx.HeaderCallerService, "yc-gateway")
+	return req
 }
 
 func (f *fakeIdentity) CreateVisitor(_ context.Context, tenantID string) (domain.Session, error) {
@@ -57,7 +67,52 @@ func (f *fakeIdentity) Login(_ context.Context, email, pw string) (domain.Sessio
 	return domain.Session{Token: "cust", UserID: userID, TenantID: "shop-a", Role: domain.RoleCustomer}, nil
 }
 
+func (f *fakeIdentity) Refresh(_ context.Context, raw string) (domain.Session, error) {
+	if raw != "r1" {
+		return domain.Session{}, ycerrors.Unauthorized("Invalid or expired refresh token")
+	}
+	return domain.Session{
+		Token: "cust", UserID: userID, TenantID: "shop-a", Role: domain.RoleCustomer,
+		RefreshToken: "r2", RefreshExpiresAt: time.Unix(1700000000, 0),
+	}, nil
+}
+
+func (f *fakeIdentity) Logout(_ context.Context, raw string) error {
+	f.refresh = raw
+	return nil
+}
+
+func (f *fakeIdentity) RequestPasswordReset(_ context.Context, email string) error {
+	f.email = email
+	return nil
+}
+
+func (f *fakeIdentity) ConfirmPasswordReset(_ context.Context, token, pw string) error {
+	f.reset = token + "/" + pw
+	return nil
+}
+
+func (f *fakeIdentity) StartOAuth(_ context.Context, provider, host, hint string) (string, error) {
+	f.oauth = provider + " " + host + " " + hint
+	return "https://provider.test/auth", nil
+}
+
+func (f *fakeIdentity) CompleteOAuth(_ context.Context, provider, code, state string) (domain.Session, error) {
+	f.oauth = provider + " " + code + " " + state
+	return domain.Session{Token: "cust", UserID: userID, TenantID: "shop-a", Role: domain.RoleCustomer}, nil
+}
+
+func (f *fakeIdentity) IssueServiceToken(_ context.Context, id, secret string) (domain.Session, error) {
+	if id != "yc-cart" || secret != "s" {
+		return domain.Session{}, ycerrors.Unauthorized("Invalid client credentials")
+	}
+	return domain.Session{Token: "svc", UserID: id, TenantID: "_platform", Role: domain.RoleService, ExpiresAt: time.Unix(1700000000, 0)}, nil
+}
+
 func (f *fakeIdentity) ValidateToken(_ context.Context, raw string) (domain.Session, error) {
+	if raw == "svc" {
+		return domain.Session{TokenID: jti, UserID: "yc-cart", TenantID: "_platform", Role: domain.RoleService}, nil
+	}
 	if raw != "good" {
 		return domain.Session{}, ycerrors.Unauthorized("Invalid or expired token")
 	}
@@ -156,8 +211,8 @@ func TestRoutes(t *testing.T) {
 	})
 
 	t.Run("validate token", func(t *testing.T) {
-		rec := serve(t, &fakeIdentity{}, httptest.NewRequest(http.MethodPost, "/internal/validate-token",
-			strings.NewReader(`{"token":"good"}`)))
+		rec := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/validate-token",
+			strings.NewReader(`{"token":"good"}`))))
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		var body map[string]any
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
@@ -167,16 +222,100 @@ func TestRoutes(t *testing.T) {
 		assert.Equal(t, jti, body["jti"])
 	})
 
-	t.Run("invalid token is 401", func(t *testing.T) {
+	t.Run("validate service token", func(t *testing.T) {
+		rec := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/validate-token",
+			strings.NewReader(`{"token":"svc"}`))))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, "yc-cart", body["actor_id"])
+		assert.Equal(t, "service", body["actor_type"])
+	})
+
+	t.Run("internal routes need a caller service", func(t *testing.T) {
 		rec := serve(t, &fakeIdentity{}, httptest.NewRequest(http.MethodPost, "/internal/validate-token",
-			strings.NewReader(`{"token":"bad"}`)))
+			strings.NewReader(`{"token":"good"}`)))
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	})
+
+	t.Run("invalid token is 401", func(t *testing.T) {
+		rec := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/validate-token",
+			strings.NewReader(`{"token":"bad"}`))))
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
 
 	t.Run("missing token is 400", func(t *testing.T) {
-		rec := serve(t, &fakeIdentity{}, httptest.NewRequest(http.MethodPost, "/internal/validate-token",
-			strings.NewReader(`{}`)))
+		rec := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/validate-token",
+			strings.NewReader(`{}`))))
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("service token", func(t *testing.T) {
+		rec := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/service-token",
+			strings.NewReader(`{"client_id":"yc-cart","client_secret":"s"}`))))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var body api.ServiceToken
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, "svc", body.AccessToken)
+		bad := serve(t, &fakeIdentity{}, internal(httptest.NewRequest(http.MethodPost, "/internal/service-token",
+			strings.NewReader(`{"client_id":"yc-cart","client_secret":"x"}`))))
+		assert.Equal(t, http.StatusUnauthorized, bad.Code)
+	})
+
+	t.Run("refresh returns the rotated token", func(t *testing.T) {
+		rec := serve(t, &fakeIdentity{}, as(httptest.NewRequest(http.MethodPost, "/refresh",
+			strings.NewReader(`{"refresh_token":"r1"}`)), "shop-a", ""))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var body api.Session
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.NotNil(t, body.RefreshToken)
+		assert.Equal(t, "r2", *body.RefreshToken)
+		assert.NotNil(t, body.RefreshExpiresAt)
+
+		empty := serve(t, &fakeIdentity{}, as(httptest.NewRequest(http.MethodPost, "/refresh",
+			strings.NewReader(`{"refresh_token":""}`)), "shop-a", ""))
+		assert.Equal(t, http.StatusBadRequest, empty.Code)
+	})
+
+	t.Run("logout with and without a body", func(t *testing.T) {
+		f := &fakeIdentity{}
+		rec := serve(t, f, as(httptest.NewRequest(http.MethodPost, "/logout",
+			strings.NewReader(`{"refresh_token":"r1"}`)), "shop-a", "customer"))
+		require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+		assert.Equal(t, "r1", f.refresh)
+		req := as(httptest.NewRequest(http.MethodPost, "/logout", http.NoBody), "shop-a", "customer")
+		assert.Equal(t, http.StatusNoContent, serve(t, &fakeIdentity{}, req).Code)
+	})
+
+	t.Run("password reset", func(t *testing.T) {
+		f := &fakeIdentity{}
+		rec := serve(t, f, as(httptest.NewRequest(http.MethodPost, "/password/reset-request",
+			strings.NewReader(`{"email":"a@b.co"}`)), "shop-a", ""))
+		assert.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+		assert.Equal(t, "a@b.co", f.email)
+		rec = serve(t, f, as(httptest.NewRequest(http.MethodPost, "/password/reset-confirm",
+			strings.NewReader(`{"token":"t","password":"a-new-password"}`)), "shop-a", ""))
+		assert.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+		assert.Equal(t, "t/a-new-password", f.reset)
+	})
+
+	t.Run("oauth start uses the forwarded host", func(t *testing.T) {
+		f := &fakeIdentity{}
+		req := as(httptest.NewRequest(http.MethodPost, "/oauth/google/start",
+			strings.NewReader(`{"login_hint":"a@b.co"}`)), "shop-a", "visitor")
+		req.Header.Set("X-Forwarded-Host", "shop-a.test")
+		rec := serve(t, f, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, "google shop-a.test a@b.co", f.oauth)
+		assert.Contains(t, rec.Body.String(), "https://provider.test/auth")
+	})
+
+	t.Run("oauth callback", func(t *testing.T) {
+		f := &fakeIdentity{}
+		rec := serve(t, f, as(httptest.NewRequest(http.MethodPost, "/oauth/facebook/callback",
+			strings.NewReader(`{"code":"c","state":"s"}`)), "shop-a", "visitor"))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, "facebook c s", f.oauth)
 	})
 
 	t.Run("me requires an actor", func(t *testing.T) {

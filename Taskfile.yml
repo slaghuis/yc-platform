@@ -142,6 +142,11 @@ tasks:
     cmds:
       - ./scripts/demo-phase2.sh
 
+  demo:phase3:
+    desc: Run the Phase 3 milestone demo against the running stack (see scripts/demo-phase3.sh)
+    cmds:
+      - ./scripts/demo-phase3.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:

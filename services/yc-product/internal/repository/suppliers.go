@@ -21,6 +21,10 @@ type Catalog struct{}
 type Cursor struct {
 	CreatedAt time.Time `json:"c"`
 	ID        string    `json:"i"`
+	// Sort and Key position a browse cursor under a sort other than
+	// newest: Key is the popularity or price key of the last product.
+	Sort string `json:"s,omitempty"`
+	Key  int64  `json:"k,omitempty"`
 }
 
 const supplierColumns = `id, tenant_id, name, contact, status, created_at, updated_at`

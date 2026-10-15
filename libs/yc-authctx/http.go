@@ -16,6 +16,9 @@ const (
 	HeaderActorID       = "X-YC-Actor-ID"
 	HeaderActorType     = "X-YC-Actor-Type"
 	HeaderCorrelationID = "X-YC-Correlation-ID"
+	// HeaderCallerService names the service behind an /internal/ call
+	// (ADR-021 rule 4).
+	HeaderCallerService = "X-YC-Caller-Service"
 )
 
 // SetHeaders writes a onto outbound request headers so the next hop sees the
@@ -36,6 +39,7 @@ func StripHeaders(h http.Header) {
 	h.Del(HeaderTenantID)
 	h.Del(HeaderActorID)
 	h.Del(HeaderActorType)
+	h.Del(HeaderCallerService)
 }
 
 // BearerToken returns the token from an "Authorization: Bearer" header, or
@@ -62,6 +66,7 @@ func Middleware(next http.Handler) http.Handler {
 		a.ActorID = r.Header.Get(HeaderActorID)
 		a.ActorType = ActorType(r.Header.Get(HeaderActorType))
 		a.Token = BearerToken(r.Header)
+		a.CallerService = r.Header.Get(HeaderCallerService)
 		if a.CorrelationID == "" {
 			a.CorrelationID = r.Header.Get(HeaderCorrelationID)
 		}
@@ -96,8 +101,9 @@ func Require(types ...ActorType) func(http.Handler) http.Handler {
 
 // Audience enforces the audience encoded in the URL (api-conventions.md
 // §3): /admin/ admits shop_admin and system_admin, /sysadmin/ admits
-// system_admin. Other paths pass; handlers check finer rules. Mount it
-// after Middleware.
+// system_admin, /internal/ admits only calls yc-gateway marked with a
+// caller service (ADR-021 rule 5). Other paths pass; handlers check finer
+// rules. Mount it after Middleware.
 func Audience(next http.Handler) http.Handler {
 	admin := Require(ActorShopAdmin, ActorSystemAdmin)(next)
 	sysadmin := Require(ActorSystemAdmin)(next)
@@ -107,6 +113,12 @@ func Audience(next http.Handler) http.Handler {
 			admin.ServeHTTP(w, r)
 		case p == "/sysadmin" || strings.HasPrefix(p, "/sysadmin/"):
 			sysadmin.ServeHTTP(w, r)
+		case p == "/internal" || strings.HasPrefix(p, "/internal/"):
+			if a, _ := FromContext(r.Context()); a.CallerService == "" {
+				ycerrors.WriteError(w, r, ycerrors.Unauthorized("Service token required"))
+				return
+			}
+			next.ServeHTTP(w, r)
 		default:
 			next.ServeHTTP(w, r)
 		}

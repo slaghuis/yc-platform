@@ -72,6 +72,11 @@ type upstreamSeen struct {
 
 func setup(t *testing.T) (http.Handler, *fakeIdentity, chan upstreamSeen) {
 	t.Helper()
+	return setupLimited(t, nil)
+}
+
+func setupLimited(t *testing.T, limiter transport.Limiter) (http.Handler, *fakeIdentity, chan upstreamSeen) {
+	t.Helper()
 	telemetry.InitForTest(t, "yc-gateway")
 
 	seen := make(chan upstreamSeen, 1)
@@ -101,7 +106,7 @@ func setup(t *testing.T) (http.Handler, *fakeIdentity, chan upstreamSeen) {
 
 	id := &fakeIdentity{}
 	gw := transport.New(hosts{"shop-a.test": "shop-a", "shop-b.test": "shop-b", "admin.test": "_platform"}, id, routes,
-		transport.CookieConfig{Name: "yc_visitor"})
+		limiter, transport.CookieConfig{Name: "yc_visitor"})
 	return transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil), id, seen
 }
 
@@ -215,6 +220,7 @@ func TestRejections(t *testing.T) {
 		{"bearer for other shop", "shop-a.test", "GET", "/me", []func(*http.Request){bearer("shop-b:customer")}, 403, ycerrors.CodeForbidden},
 		{"visitor on customer route", "shop-a.test", "GET", "/account", nil, 401, ycerrors.CodeUnauthorized},
 		{"wrong role", "shop-a.test", "GET", "/account", []func(*http.Request){bearer("shop-a:shop_admin")}, 403, ycerrors.CodeForbidden},
+		{"service token on the public listener", "admin.test", "GET", "/me", []func(*http.Request){bearer("_platform:service")}, 401, ycerrors.CodeUnauthorized},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, _, seen := setup(t)
@@ -273,6 +279,66 @@ func TestPlatformHost(t *testing.T) {
 	})
 }
 
+// recordingLimiter refuses actor keys in deny and records every call.
+type recordingLimiter struct {
+	mu    sync.Mutex
+	calls []string
+	deny  map[string]bool
+}
+
+func (l *recordingLimiter) Allow(tenantID string, actorType authctx.ActorType, actorKey string) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls = append(l.calls, tenantID+"/"+string(actorType)+"/"+actorKey)
+	if l.deny[actorKey] {
+		return false, 1500 * time.Millisecond
+	}
+	return true, 0
+}
+
+func TestRateLimit(t *testing.T) {
+	t.Run("signed-in actors by ID", func(t *testing.T) {
+		l := &recordingLimiter{}
+		h, _, seen := setupLimited(t, l)
+
+		require.Equal(t, http.StatusTeapot, do(h, "GET", "shop-a.test", "/me", bearer("shop-a:customer")).Code)
+		<-seen
+		assert.Equal(t, []string{"shop-a/customer/user-shop-a:customer"}, l.calls)
+	})
+
+	t.Run("callers without credentials by address, before a visitor is issued", func(t *testing.T) {
+		l := &recordingLimiter{deny: map[string]bool{"addr:192.0.2.1": true}}
+		h, id, seen := setupLimited(t, l)
+
+		w := do(h, "GET", "shop-a.test", "/me")
+
+		assert.Equal(t, http.StatusTooManyRequests, w.Code)
+		assert.Equal(t, ycerrors.CodeRateLimited, problemCode(t, w))
+		assert.Equal(t, "2", w.Header().Get("Retry-After"))
+		assert.Equal(t, []string{"shop-a/visitor/addr:192.0.2.1"}, l.calls)
+		assert.Zero(t, id.issued)
+		assert.Empty(t, seen)
+	})
+
+	t.Run("visitors with a cookie by visitor ID", func(t *testing.T) {
+		l := &recordingLimiter{}
+		h, _, seen := setupLimited(t, l)
+
+		require.Equal(t, http.StatusTeapot, do(h, "GET", "shop-a.test", "/me", cookie("shop-a:visitor")).Code)
+		<-seen
+		assert.Equal(t, []string{"shop-a/visitor/user-shop-a:visitor"}, l.calls)
+	})
+
+	t.Run("platform hosts by address", func(t *testing.T) {
+		l := &recordingLimiter{}
+		h, _, seen := setupLimited(t, l)
+
+		require.Equal(t, http.StatusTeapot, do(h, "POST", "admin.test", "/login", cookie("shop-a:visitor")).Code)
+		<-seen
+		assert.Equal(t, []string{"_platform/visitor/addr:192.0.2.1"}, l.calls)
+	})
+}
+
 func TestIdentityDown(t *testing.T) {
 	h, id, _ := setup(t)
 	id.failing = true
@@ -295,7 +361,7 @@ func TestUpstreamDown(t *testing.T) {
 	telemetry.InitForTest(t, "yc-gateway")
 	routes, err := domain.NewRoutes([]domain.Route{{Prefix: "/me", Upstream: &url.URL{Scheme: "http", Host: "127.0.0.1:1"}}})
 	require.NoError(t, err)
-	gw := transport.New(hosts{"shop-a.test": "shop-a"}, &fakeIdentity{}, routes, transport.CookieConfig{Name: "yc_visitor"})
+	gw := transport.New(hosts{"shop-a.test": "shop-a"}, &fakeIdentity{}, routes, nil, transport.CookieConfig{Name: "yc_visitor"})
 	h := transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil)
 
 	w := do(h, "GET", "shop-a.test", "/me")

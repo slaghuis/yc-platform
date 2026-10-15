@@ -12,8 +12,10 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -75,6 +77,30 @@ func as(tenant, actorID, actorType string) map[string]string {
 	return h
 }
 
+// facebookStub serves Facebook's token and profile endpoints for an account
+// whose email belongs to an existing user.
+func facebookStub(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			_ = r.ParseForm()
+			if r.Form.Get("code") != "good-code" || r.Form.Get("code_verifier") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"fb-at","token_type":"Bearer","expires_in":3600}`))
+		case "/me":
+			_, _ = w.Write([]byte(`{"id":"fb-1","email":"bob@example.com","name":"Bob"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 type validated struct {
 	TenantID  string `json:"tenant_id"`
 	ActorID   string `json:"actor_id"`
@@ -99,6 +125,16 @@ func TestIdentity(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_IDENTITY__PASSWORD__ARGON2__TIME", "1")
 	t.Setenv("YC_IDENTITY__PASSWORD__ARGON2__MEMORY_KB", "8192")
+	t.Setenv("YC_IDENTITY_LOG_RESET_LINKS", "true")
+	const cartSecret = "cart-secret-0123456789-0123456789-abcdef"
+	t.Setenv("YC_CART_SERVICE_SECRET", cartSecret)
+	t.Setenv("YC_IDENTITY__OAUTH__GOOGLE__FAKE", "true")
+	fb := facebookStub(t)
+	t.Setenv("YC_IDENTITY_FACEBOOK_CLIENT_ID", "fb-client")
+	t.Setenv("YC_IDENTITY_FACEBOOK_CLIENT_SECRET", "fb-secret")
+	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__AUTH_URL", fb.URL+"/auth")
+	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__TOKEN_URL", fb.URL+"/token")
+	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__USERINFO_URL", fb.URL+"/me")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -133,10 +169,22 @@ func TestIdentity(t *testing.T) {
 		require.NoError(t, json.Unmarshal(msg.Data, &env))
 		return env
 	}
+	// eventWith waits until the last event on subject has a payload
+	// containing want, since an earlier event may still be the last one.
+	eventWith := func(t *testing.T, subject, want string) eventbus.Envelope {
+		t.Helper()
+		var env eventbus.Envelope
+		require.Eventually(t, func() bool {
+			env = lastEvent(t, subject)
+			return bytes.Contains(env.Payload, []byte(want))
+		}, 10*time.Second, 50*time.Millisecond, subject+" with "+want)
+		return env
+	}
+	internal := map[string]string{authctx.HeaderCallerService: "yc-gateway"}
 	validate := func(t *testing.T, token string) (validated, int) {
 		t.Helper()
 		var v validated
-		code := call(t, srv, http.MethodPost, "/internal/validate-token", map[string]string{"token": token}, nil, &v)
+		code := call(t, srv, http.MethodPost, "/internal/validate-token", map[string]string{"token": token}, internal, &v)
 		return v, code
 	}
 
@@ -148,6 +196,7 @@ func TestIdentity(t *testing.T) {
 		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/visitor", nil, hdr, &visitor))
 		assert.Equal(t, "shop-a", visitor.TenantID)
 		assert.WithinDuration(t, time.Now().Add(cfg.JWT.VisitorTokenTTL), visitor.ExpiresAt, time.Minute)
+		assert.Nil(t, visitor.RefreshToken, "visitors get no refresh token")
 
 		env := lastEvent(t, "yc.shop-a.identity.visitor.created.v1")
 		assert.Equal(t, "shop-a", env.TenantID)
@@ -233,6 +282,173 @@ func TestIdentity(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", unknown, as("shop-a", "", ""), nil))
 		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", body, as("shop-c", "", ""), nil),
 			"emails are scoped to a tenant")
+	})
+
+	t.Run("service tokens", func(t *testing.T) {
+		var tok api.ServiceToken
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/internal/service-token",
+			map[string]string{"client_id": "yc-cart", "client_secret": cartSecret}, internal, &tok))
+		v, code := validate(t, tok.AccessToken)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, validated{TenantID: "_platform", ActorID: "yc-cart", ActorType: "service"}, v)
+
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/internal/service-token",
+			map[string]string{"client_id": "yc-cart", "client_secret": "wrong"}, internal, nil))
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/internal/service-token",
+			map[string]string{"client_id": "yc-nope", "client_secret": cartSecret}, internal, nil))
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/internal/service-token",
+			map[string]string{"client_id": "yc-cart", "client_secret": cartSecret}, nil, nil), "needs the gateway")
+	})
+
+	bob := map[string]string{"email": "bob@example.com", "password": "bobs first password"}
+	var bobID string
+	t.Run("refresh rotates, reuse revokes the login, logout revokes", func(t *testing.T) {
+		var reg api.Session
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", bob, as("shop-c", "", ""), &reg))
+		bobID = reg.UserID.String()
+		require.NotNil(t, reg.RefreshToken)
+		assert.WithinDuration(t, time.Now().Add(cfg.JWT.RefreshTokenTTL), *reg.RefreshExpiresAt, time.Minute)
+
+		var next api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *reg.RefreshToken}, as("shop-c", "", ""), &next))
+		require.NotNil(t, next.RefreshToken)
+		assert.NotEqual(t, *reg.RefreshToken, *next.RefreshToken)
+		assert.Equal(t, bobID, next.UserID.String())
+		_, code := validate(t, next.AccessToken)
+		assert.Equal(t, http.StatusOK, code)
+
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *next.RefreshToken}, as("shop-a", "", ""), nil), "other tenant")
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *reg.RefreshToken}, as("shop-c", "", ""), nil), "reused token")
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *next.RefreshToken}, as("shop-c", "", ""), nil), "reuse revoked the login")
+
+		var s2 api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), &s2))
+		hdr := as("shop-c", bobID, "customer")
+		hdr["Authorization"] = "Bearer " + s2.AccessToken
+		require.Equal(t, http.StatusNoContent, call(t, srv, http.MethodPost, "/logout",
+			map[string]string{"refresh_token": *s2.RefreshToken}, hdr, nil))
+		_, code = validate(t, s2.AccessToken)
+		assert.Equal(t, http.StatusUnauthorized, code, "logged-out access token")
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *s2.RefreshToken}, as("shop-c", "", ""), nil), "logged-out refresh token")
+	})
+
+	t.Run("password reset", func(t *testing.T) {
+		require.Equal(t, http.StatusAccepted, call(t, srv, http.MethodPost, "/password/reset-request",
+			map[string]string{"email": "nobody@example.com"}, as("shop-c", "", ""), nil), "unknown email looks the same")
+		require.Equal(t, http.StatusAccepted, call(t, srv, http.MethodPost, "/password/reset-request",
+			map[string]string{"email": "Bob@Example.com"}, as("shop-c", "", ""), nil))
+
+		env := lastEvent(t, "yc.shop-c.identity.user.password_reset_requested.v1")
+		var req events.IdentityUserPasswordResetRequestedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &req))
+		assert.Equal(t, bobID, req.UserID)
+		assert.Equal(t, "bob@example.com", req.Email)
+
+		m := regexp.MustCompile(`"reset_token":"([^"]+)"`).FindStringSubmatch(logs.String())
+		require.Len(t, m, 2, "log_reset_links logs the token")
+		token := m[1]
+		assert.NotContains(t, string(env.Payload), token, "the event carries no token")
+
+		var sess api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), &sess))
+
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/password/reset-confirm",
+			map[string]string{"token": token, "password": "a brand new password"}, as("shop-a", "", ""), nil), "other tenant")
+		require.Equal(t, http.StatusNoContent, call(t, srv, http.MethodPost, "/password/reset-confirm",
+			map[string]string{"token": token, "password": "a brand new password"}, as("shop-c", "", ""), nil))
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/password/reset-confirm",
+			map[string]string{"token": token, "password": "yet another password"}, as("shop-c", "", ""), nil), "single use")
+
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil))
+		bob["password"] = "a brand new password"
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil))
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",
+			map[string]string{"refresh_token": *sess.RefreshToken}, as("shop-c", "", ""), nil), "refresh tokens revoked")
+
+		env = lastEvent(t, "yc.shop-c.identity.user.password_changed.v1")
+		assert.Equal(t, bobID, env.Actor.ID)
+	})
+
+	oauthFlow := func(t *testing.T, provider, visitorID, hint string) (code, state string) {
+		t.Helper()
+		hdr := as("shop-c", visitorID, "visitor")
+		hdr["X-Forwarded-Host"] = "shop-c.test"
+		var start api.OAuthStart
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/oauth/"+provider+"/start",
+			map[string]string{"login_hint": hint}, hdr, &start))
+		u, err := url.Parse(start.AuthorizationURL)
+		require.NoError(t, err)
+		q := u.Query()
+		if provider == "google" {
+			assert.Equal(t, "https://shop-c.test/auth/callback/google", u.Scheme+"://"+u.Host+u.Path, "fake redirects straight back")
+			return q.Get("code"), q.Get("state")
+		}
+		assert.Equal(t, "https://shop-c.test/auth/callback/facebook", q.Get("redirect_uri"))
+		assert.NotEmpty(t, q.Get("code_challenge"))
+		return "good-code", q.Get("state")
+	}
+	newVisitor := func(t *testing.T) string {
+		t.Helper()
+		var v api.Session
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/visitor", nil, as("shop-c", "", ""), &v))
+		return v.UserID.String()
+	}
+
+	t.Run("oauth registers the visitor in place, then logs in", func(t *testing.T) {
+		v1 := newVisitor(t)
+		code, state := oauthFlow(t, "google", v1, "cat@example.com")
+		var sess api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/oauth/google/callback",
+			map[string]string{"code": code, "state": state}, as("shop-c", v1, "visitor"), &sess))
+		assert.Equal(t, v1, sess.UserID.String(), "the visitor keeps its user ID")
+		assert.Equal(t, api.Role("customer"), sess.Role)
+		require.NotNil(t, sess.RefreshToken)
+		var reg events.IdentityUserRegisteredV1
+		require.NoError(t, json.Unmarshal(eventWith(t, "yc.shop-c.identity.user.registered.v1", v1).Payload, &reg))
+		assert.Equal(t, "google", reg.Method)
+		assert.Equal(t, "cat@example.com", reg.Email)
+		eventWith(t, "yc.shop-c.identity.oauth_linked.v1", v1)
+
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/oauth/google/callback",
+			map[string]string{"code": code, "state": state}, as("shop-c", v1, "visitor"), nil), "state is single use")
+
+		v2 := newVisitor(t)
+		code, state = oauthFlow(t, "google", v2, "cat@example.com")
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/oauth/google/callback",
+			map[string]string{"code": code, "state": state}, as("shop-c", v2, "visitor"), &sess))
+		assert.Equal(t, v1, sess.UserID.String(), "the linked account logs in")
+		var in events.IdentityUserLoggedInV1
+		require.NoError(t, json.Unmarshal(eventWith(t, "yc.shop-c.identity.user.logged_in.v1", v2).Payload, &in))
+		assert.Equal(t, "google", in.Method)
+		require.NotNil(t, in.PreviousVisitorID)
+		assert.Equal(t, v2, *in.PreviousVisitorID, "the second visitor's cart merges")
+	})
+
+	t.Run("oauth links a verified email to an existing account", func(t *testing.T) {
+		v := newVisitor(t)
+		code, state := oauthFlow(t, "google", v, "bob@example.com")
+		var sess api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/oauth/google/callback",
+			map[string]string{"code": code, "state": state}, as("shop-c", v, "visitor"), &sess))
+		assert.Equal(t, bobID, sess.UserID.String())
+		eventWith(t, "yc.shop-c.identity.oauth_linked.v1", bobID)
+	})
+
+	t.Run("facebook never links an existing account by email", func(t *testing.T) {
+		v := newVisitor(t)
+		code, state := oauthFlow(t, "facebook", v, "")
+		assert.Equal(t, http.StatusConflict, call(t, srv, http.MethodPost, "/oauth/facebook/callback",
+			map[string]string{"code": code, "state": state}, as("shop-c", v, "visitor"), nil))
+	})
+
+	t.Run("oauth on the platform host is refused", func(t *testing.T) {
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/oauth/google/start",
+			nil, as("_platform", "", ""), nil))
 	})
 
 	var sysadmin api.Session

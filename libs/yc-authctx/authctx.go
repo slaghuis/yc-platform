@@ -40,6 +40,11 @@ type AuthContext struct {
 	// Token is the raw access token, propagated on outbound calls so the
 	// auth chain is preserved through yc-gateway. Never log it.
 	Token string
+
+	// CallerService is the service that made an /internal/ call, as
+	// yc-gateway established from its service token (ADR-021); "" for
+	// requests from the public listener.
+	CallerService string
 }
 
 // Authenticated reports whether an actor has been established.

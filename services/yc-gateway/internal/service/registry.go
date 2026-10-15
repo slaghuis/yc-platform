@@ -91,6 +91,12 @@ func (r *Registry) Match(method, path string) (domain.Route, bool) {
 	return r.table.Load().Match(method, path)
 }
 
+// MatchInternal returns the registered route for a service-to-service
+// call.
+func (r *Registry) MatchInternal(method, path string) (domain.Route, bool) {
+	return r.table.Load().MatchInternal(method, path)
+}
+
 // Routes returns every route, longest prefix first.
 func (r *Registry) Routes() []domain.Route {
 	return r.table.Load().All()

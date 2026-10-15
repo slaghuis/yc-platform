@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.item.added.v1.json",
+  "title": "cart.item.added.v1",
+  "description": "A user added a SKU to a cart, either as a new line or onto an existing one. yc-product counts it towards the product's popularity.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "cart_type", "sku_id", "quantity_added", "quantity", "unit_price", "added_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "quantity_added": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The line's quantity after the add."
+    },
+    "unit_price": {
+      "$ref": "../common/money.v1.json",
+      "description": "Gross unit price in the store currency when the line was first added."
+    },
+    "added_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

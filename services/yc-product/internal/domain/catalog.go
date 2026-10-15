@@ -352,22 +352,67 @@ type ProductSummary struct {
 	PrimaryImageID string
 	SKUs           []SKU
 	CreatedAt      time.Time
+	// Popularity is the sum of the active SKUs' popularity scores.
+	Popularity int64
+	// MinBasePrice is the lowest base price of the active SKUs in minor
+	// units of the store currency, or nil when none is priced.
+	MinBasePrice *int64
 }
 
-// BrowseFilter narrows GET /products.
+// Sort orders a browse result.
+type Sort string
+
+// Browse sorts. Price sorts use base prices, which may be net or gross
+// (ADR-016); unpriced products come last.
+const (
+	SortPopular   Sort = "popular"
+	SortNewest    Sort = "newest"
+	SortPriceAsc  Sort = "price_asc"
+	SortPriceDesc Sort = "price_desc"
+)
+
+// Valid reports whether s is a known sort.
+func (s Sort) Valid() bool {
+	switch s {
+	case SortPopular, SortNewest, SortPriceAsc, SortPriceDesc:
+		return true
+	}
+	return false
+}
+
+// BrowseFilter narrows and orders GET /products.
 type BrowseFilter struct {
 	Query      string
 	CategoryID string
 	SupplierID string
+	Sort       Sort
 }
 
-// Validate normalises f.
+// Validate normalises f. An empty Sort is left for the caller's default.
 func (f *BrowseFilter) Validate() error {
 	f.Query = strings.TrimSpace(f.Query)
 	if utf8.RuneCountInString(f.Query) > MaxQueryLen {
 		return ycerrors.Validation().Field("q", "too_long", fmt.Sprintf("At most %d characters", MaxQueryLen)).Build()
 	}
+	if f.Sort != "" && !f.Sort.Valid() {
+		return ycerrors.Validation().Field("sort", "invalid", "Use popular, newest, price_asc or price_desc").Build()
+	}
 	return nil
+}
+
+// Browse is a page of products with the sort applied and the facets the
+// caller sees.
+type Browse struct {
+	Items []ProductSummary
+	Sort  Sort
+	// Favourites is shown to customers only: products they buy most. It is
+	// empty until order history arrives.
+	Favourites *FavouritesFacet
+}
+
+// FavouritesFacet is the customer's "My favourites" facet.
+type FavouritesFacet struct {
+	ProductCount int
 }
 
 func checkText(v *ycerrors.ValidationBuilder, field, s string, maxLen int, required bool) {

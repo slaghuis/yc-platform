@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.created.v1.json",
+  "title": "cart.created.v1",
+  "description": "A user's cart of a type was created by its first item.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "user_type", "cart_type", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_type": {
+      "type": "string",
+      "enum": ["visitor", "customer"]
+    },
+    "cart_type": {
+      "type": "string",
+      "description": "Tenant-configured cart type, e.g. shopping or wishlist."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

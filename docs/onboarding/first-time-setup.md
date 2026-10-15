@@ -27,7 +27,7 @@ Once the dev stack is up:
 
 ## Application Services
 
-`task devstack:app` builds and starts the application services in Docker (compose profile `app`). `task demo:phase1` runs the Phase 1 milestone demo and the outbox and DLQ drills (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part); `task demo:phase2` runs the catalog-and-browse milestone through the gateway. Product, pricing and image register their routes with the gateway on start-up, so give them a few seconds after `readyz`.
+`task devstack:app` builds and starts the application services in Docker (compose profile `app`). `task demo:phase1` runs the Phase 1 milestone demo and the outbox and DLQ drills (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part); `task demo:phase2` runs the catalog-and-browse milestone through the gateway; `task demo:phase3` runs the cart milestone (visitor cart, registration, fake Google login and merge, display currency, price change, popularity search, rate limits). Product, pricing, image, preference and cart register their routes with the gateway on start-up, so give them a few seconds after `readyz`.
 
 | Service | URL |
 |---|---|
@@ -37,6 +37,8 @@ Once the dev stack is up:
 | yc-product | http://localhost:8083 |
 | yc-pricing | http://localhost:8084 — exchange rates come from api.frankfurter.dev, so display currencies need internet access |
 | yc-image | http://localhost:8085 — image URLs point at the S3 bucket on http://localhost:9000 |
+| yc-preference | http://localhost:8086 |
+| yc-cart | http://localhost:8087 — prices carts through the gateway's internal listener (`YC_CART_SERVICE_SECRET`) |
 
 The first system admin is created with `docker exec -e YC_BOOTSTRAP_ADMIN_PASSWORD=… yc-identity /app/service bootstrap-admin --email you@example.com` (or `task run SERVICE=yc-identity -- bootstrap-admin …` locally); log in on `admin.localhost`. Shop admins register on their shop as customers and a system admin promotes them (`POST /admin/users/{id}/promote` on the admin host).
 
