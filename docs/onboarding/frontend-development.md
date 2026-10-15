@@ -39,6 +39,7 @@ A customer registers on the storefront like any shopper.
 
 - The browser calls only its frontend. The frontend's server calls `http://localhost:8090` (`YC_GATEWAY_URL`) with `Host` set to the browser's host **without the port** (`admin.localhost`, `yc-demo.localhost`).
 - Running a frontend without the edge (`http://localhost:3000`) works when it sends a fixed host instead (`YC_PLATFORM_HOST=admin.localhost` for the console).
+- Node's built-in `fetch` silently replaces a `Host` header with the URL's host, so the gateway answers for `localhost`. Send gateway calls through `node:http` (yc-platform-admin `src/server/gateway/transport.ts` is a `fetch`-compatible wrapper for openapi-fetch).
 - Tokens stay in the frontend's sealed session cookie; the shop relays the gateway's `yc_visitor` cookie both ways (ADR-027 rules 7–10).
 
 ## Ports and Links
@@ -66,5 +67,6 @@ The frontends build against a yc-platform tag, never `main` (ADR-028 rule 9): `s
 | `502` from the edge | The frontend is not running on its port, or the gateway is down (`docker ps`). |
 | Nothing on `localhost:8070` | Another program holds the port: set `YC_EDGE_PORT`. |
 | `404 Unknown shop` | The host is not mapped: run `task devstack:seed`, or provision the shop. |
+| `404 Unknown shop` from a frontend's server although `curl -H 'Host: …'` works | The frontend called the gateway with Node's `fetch`, which drops `Host`; use `node:http`. |
 | `401` on `admin.localhost` with a shop admin | Expected: only system admins sign in on the platform host. |
 | An upload to storage fails CORS | The page's origin is not a shop host on the edge port, or the seed has not run since the port changed. |
