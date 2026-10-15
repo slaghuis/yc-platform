@@ -25,15 +25,20 @@ Once the dev stack is up:
 | Jaeger | http://localhost:16686 |
 | MailHog | http://localhost:8025 |
 
-## Phase 1 Services
+## Application Services
 
-`task devstack:app` builds and starts yc-identity, yc-gateway and yc-monitor in Docker (compose profile `app`); `task demo:phase1` then runs the milestone demo and the outbox and DLQ drills against them (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part).
+`task devstack:app` builds and starts the application services in Docker (compose profile `app`). `task demo:phase1` runs the Phase 1 milestone demo and the outbox and DLQ drills (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part); `task demo:phase2` runs the catalog-and-browse milestone through the gateway. Product, pricing and image register their routes with the gateway on start-up, so give them a few seconds after `readyz`.
 
 | Service | URL |
 |---|---|
-| yc-gateway | http://localhost:8090 — send `Host: demo-shop.localhost` after the demo provisions `demo-shop` |
+| yc-gateway | http://localhost:8090 — send `Host: demo-shop.localhost` after a demo provisions `demo-shop`, or `Host: admin.localhost` (the platform host: system admins only) |
 | yc-identity | http://localhost:8081 |
 | yc-monitor | http://localhost:8082 — `/sysadmin/*` needs `X-YC-Tenant-ID: _platform` and `X-YC-Actor-Type: system_admin` headers |
+| yc-product | http://localhost:8083 |
+| yc-pricing | http://localhost:8084 — exchange rates come from api.frankfurter.dev, so display currencies need internet access |
+| yc-image | http://localhost:8085 — image URLs point at the S3 bucket on http://localhost:9000 |
+
+The first system admin is created with `docker exec -e YC_BOOTSTRAP_ADMIN_PASSWORD=… yc-identity /app/service bootstrap-admin --email you@example.com` (or `task run SERVICE=yc-identity -- bootstrap-admin …` locally); log in on `admin.localhost`. Shop admins register on their shop as customers and a system admin promotes them (`POST /admin/users/{id}/promote` on the admin host).
 
 `task run SERVICE=…` uses the same host ports (set in `.env`). Stop the containers first, or they hold the ports.
 
