@@ -64,22 +64,127 @@ func (Carts) List(ctx context.Context, tx pgx.Tx, tenantID, userID string) ([]do
 
 // Create creates userID's cart of cartType unless it exists, reporting
 // whether it did. Lock it with Get afterwards.
-func (Carts) Create(ctx context.Context, tx pgx.Tx, tenantID, userID, cartType string, now time.Time) (bool, error) {
-	tag, err := tx.Exec(ctx, `INSERT INTO carts (tenant_id, user_id, cart_type, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $4) ON CONFLICT (tenant_id, user_id, cart_type) DO NOTHING`,
-		tenantID, userID, cartType, now)
+func (Carts) Create(ctx context.Context, tx pgx.Tx, tenantID, userID, cartType string, customer bool, now time.Time) (bool, error) {
+	tag, err := tx.Exec(ctx, `INSERT INTO carts (tenant_id, user_id, cart_type, user_type, created_at, updated_at)
+		VALUES ($1, $2, $3, CASE WHEN $4 THEN 'customer' ELSE 'visitor' END, $5, $5)
+		ON CONFLICT (tenant_id, user_id, cart_type) DO NOTHING`,
+		tenantID, userID, cartType, customer, now)
 	if err != nil {
 		return false, fmt.Errorf("create cart: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
 }
 
-// Touch records activity on a cart.
-func (Carts) Touch(ctx context.Context, tx pgx.Tx, cartID string, now time.Time) error {
-	if _, err := tx.Exec(ctx, `UPDATE carts SET updated_at = $2 WHERE id = $1`, cartID, now); err != nil {
+// Touch records activity on a cart, which ends an abandoned spell. A
+// customer's activity makes it a customer's cart.
+func (Carts) Touch(ctx context.Context, tx pgx.Tx, cartID string, customer bool, now time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE carts SET updated_at = $2, abandoned_at = NULL,
+			user_type = CASE WHEN $3 THEN 'customer' ELSE user_type END
+		WHERE id = $1`, cartID, now, customer)
+	if err != nil {
 		return fmt.Errorf("touch cart: %w", err)
 	}
 	return nil
+}
+
+// Due is a cart a background job picks up, in its shop.
+type Due struct {
+	TenantID string
+	CartID   string
+}
+
+// IdleCarts returns customers' carts of cartTypes with lines and no
+// activity since before that have not been announced as abandoned, across
+// shops. Call it in a platform transaction.
+func (Carts) IdleCarts(ctx context.Context, tx pgx.Tx, cartTypes []string, before time.Time, limit int) ([]Due, error) {
+	rows, err := tx.Query(ctx, `SELECT c.tenant_id, c.id FROM carts c
+		WHERE c.user_type = 'customer' AND c.abandoned_at IS NULL AND c.updated_at <= $2
+			AND c.cart_type = ANY($1) AND EXISTS (SELECT 1 FROM cart_items i WHERE i.cart_id = c.id)
+		ORDER BY c.updated_at LIMIT $3`, cartTypes, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("idle carts: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Due, error) {
+		var d Due
+		err := r.Scan(&d.TenantID, &d.CartID)
+		return d, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("idle carts: %w", err)
+	}
+	return out, nil
+}
+
+// LockIdle locks a cart that is still idle since before and not announced,
+// with its lines.
+func (Carts) LockIdle(ctx context.Context, tx pgx.Tx, tenantID, cartID string, before time.Time) (domain.Cart, bool, error) {
+	var c domain.Cart
+	err := tx.QueryRow(ctx, `SELECT id, user_id, cart_type, created_at, updated_at FROM carts
+		WHERE tenant_id = $1 AND id = $2 AND user_type = 'customer' AND abandoned_at IS NULL AND updated_at <= $3
+		FOR UPDATE SKIP LOCKED`, tenantID, cartID, before).Scan(&c.ID, &c.UserID, &c.Type, &c.CreatedAt, &c.UpdatedAt)
+	if dbkit.IsNoRows(err) {
+		return c, false, nil
+	}
+	if err != nil {
+		return c, false, fmt.Errorf("lock idle cart: %w", err)
+	}
+	if c.Items, err = items(ctx, tx, c.ID); err != nil {
+		return c, false, err
+	}
+	return c, true, nil
+}
+
+// MarkAbandoned records that the cart was announced as abandoned.
+func (Carts) MarkAbandoned(ctx context.Context, tx pgx.Tx, cartID string, now time.Time) error {
+	if _, err := tx.Exec(ctx, `UPDATE carts SET abandoned_at = $2 WHERE id = $1`, cartID, now); err != nil {
+		return fmt.Errorf("mark cart abandoned: %w", err)
+	}
+	return nil
+}
+
+// Abandoned is a cart announced as abandoned and not used since.
+type Abandoned struct {
+	CartID         string
+	UserID         string
+	CartType       string
+	Lines          int
+	Quantity       int
+	LastActivityAt time.Time
+	AbandonedAt    time.Time
+}
+
+// AbandonedCursor is the position after the last cart of a page.
+type AbandonedCursor struct {
+	AbandonedAt time.Time `json:"a"`
+	ID          string    `json:"i"`
+}
+
+// AbandonedCarts returns up to limit abandoned carts, most recently
+// abandoned first, after the cursor.
+func (Carts) AbandonedCarts(ctx context.Context, tx pgx.Tx, tenantID string, after *AbandonedCursor, limit int) ([]Abandoned, error) {
+	q := `SELECT c.id, c.user_id, c.cart_type, COUNT(i.sku_id), COALESCE(SUM(i.quantity), 0), c.updated_at, c.abandoned_at
+		FROM carts c LEFT JOIN cart_items i ON i.cart_id = c.id
+		WHERE c.tenant_id = $1 AND c.abandoned_at IS NOT NULL`
+	args := []any{tenantID}
+	if after != nil {
+		args = append(args, after.AbandonedAt, after.ID)
+		q += ` AND (c.abandoned_at, c.id) < ($2, $3)`
+	}
+	args = append(args, limit)
+	q += fmt.Sprintf(` GROUP BY c.id ORDER BY c.abandoned_at DESC, c.id DESC LIMIT $%d`, len(args))
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list abandoned carts: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Abandoned, error) {
+		var a Abandoned
+		err := r.Scan(&a.CartID, &a.UserID, &a.CartType, &a.Lines, &a.Quantity, &a.LastActivityAt, &a.AbandonedAt)
+		return a, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list abandoned carts: %w", err)
+	}
+	return out, nil
 }
 
 // Delete removes a cart and its lines.

@@ -60,6 +60,7 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 // App is the wired service. Telemetry must be initialised first.
 type App struct {
 	Handler http.Handler
+	Service *service.Service
 	closers []func(context.Context) error
 }
 
@@ -105,12 +106,18 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	a.closers = append(a.closers, bus.Close)
 
 	pricing := integration.NewPricing(httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls))
-	svc := service.New(db, bus, pricing, cfg.types())
+	svc := service.New(db, bus, pricing, cfg.types(), service.Abandonment{After: cfg.Abandoned.After})
+	a.Service = svc
 	for _, sub := range subscribers.Subscriptions(svc) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
 			return nil, err
 		}
 	}
+
+	bgCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	var wg sync.WaitGroup
+	wg.Go(func() { svc.RunAbandonedSweeper(bgCtx, cfg.Abandoned.SweepInterval) })
+	a.closers = append(a.closers, func(context.Context) error { stop(); wg.Wait(); return nil })
 
 	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
@@ -119,7 +126,8 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	return a, nil
 }
 
-// Close stops the event bus, then closes the database pool.
+// Close stops the abandoned-cart sweeper and the event bus, then closes
+// the database pool.
 func (a *App) Close(ctx context.Context) error {
 	var errs []error
 	for i := len(a.closers) - 1; i >= 0; i-- {

@@ -34,7 +34,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `identity.user.demoted.v1` | yc-identity | yc-audit | Role changed downward |
 | `identity.user.logged_in.v1` | yc-identity | yc-cart | Successful login |
 | `identity.user.login_failed.v1` | yc-identity | yc-audit | Failed login (for brute-force detection) |
-| `identity.user.password_reset_requested.v1` | yc-identity | yc-message | Reset flow started |
+| `identity.user.password_reset_requested.v1` | yc-identity | — | Reset flow started (no token; yc-identity sends the link through yc-message `POST /internal/send`, ADR-023) |
 | `identity.user.password_changed.v1` | yc-identity | — | Password successfully changed |
 | `identity.user.suspended.v1` | yc-identity | yc-audit | Admin-suspended |
 | `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-image, yc-inventory, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping | Deletion triggered — kicks off GDPR cascade |
@@ -102,7 +102,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
 | `cart.created.v1` | yc-cart | yc-analytics | New cart (first add) |
-| `cart.item.added.v1` | yc-cart | yc-analytics, yc-product | Item added |
+| `cart.item.added.v1` | yc-cart | yc-analytics | Item added |
 | `cart.item.removed.v1` | yc-cart | — | Item removed |
 | `cart.item.quantity_changed.v1` | yc-cart | — | Quantity updated |
 | `cart.item.moved.v1` | yc-cart | — | Item moved between carts |
@@ -128,11 +128,11 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `review.submitted.v1` | yc-review | yc-analytics | New review (goes to pending or auto-approved) |
-| `review.approved.v1` | yc-review | yc-analytics, yc-product | Review approved (triggers search projection update) |
-| `review.rejected.v1` | yc-review | yc-analytics, yc-image | Review rejected |
-| `review.edited.v1` | yc-review | — | Author edited (may re-enter pending) |
-| `review.deleted.v1` | yc-review | — | Author or admin deleted |
+| `review.submitted.v1` | yc-review | yc-analytics, yc-product | New review (goes to pending or auto-approved); review and like events carry the product's versioned stats (ADR-024) |
+| `review.approved.v1` | yc-review | yc-analytics, yc-product | Review approved |
+| `review.rejected.v1` | yc-review | yc-analytics, yc-image, yc-product | Review rejected (by a moderator, or no verified purchase) |
+| `review.edited.v1` | yc-review | yc-product | Author edited (re-enters pending under manual moderation) |
+| `review.deleted.v1` | yc-review | yc-product | Author or admin deleted |
 | `review.responded.v1` | yc-review | — | Shop admin added response |
 | `review.like.added.v1` | yc-review | yc-product | Product liked |
 | `review.like.removed.v1` | yc-review | yc-product | Product unliked |
@@ -215,7 +215,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `message.bounced.v1` | yc-message | yc-preference | Hard bounce — triggers channel unverification |
 | `message.failed.v1` | yc-message | — | Exhausted retries |
 | `message.verification_sent.v1` | yc-message | — | Verification code dispatched |
-| `message.verification_confirmed.v1` | yc-message | — | User entered correct code |
+| `message.verification_confirmed.v1` | yc-message | yc-preference | User entered correct code |
 
 ## Image Domain
 

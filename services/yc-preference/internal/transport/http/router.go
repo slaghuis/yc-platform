@@ -5,6 +5,7 @@ package http
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -22,6 +23,9 @@ type Preferences interface {
 	DeleteChannel(ctx context.Context, c domain.Channel) error
 	GetDefaults(ctx context.Context) (domain.Defaults, error)
 	PutDefaults(ctx context.Context, d domain.Defaults) (domain.Defaults, error)
+	VerifyChannel(ctx context.Context, c domain.Channel, code string) (domain.MessagingChannel, error)
+	ResendVerification(ctx context.Context, c domain.Channel) (time.Time, error)
+	ForUser(ctx context.Context, userID string) (domain.Preferences, error)
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -46,7 +50,32 @@ func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/preferences", Roles: []string{string(authctx.ActorCustomer), string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/preferences", Roles: []string{string(authctx.ActorShopAdmin)}},
+		{Prefix: "/internal/preferences", Methods: []string{http.MethodGet}},
 	}
+}
+
+func (h handlers) VerifyMyChannel(ctx context.Context, req api.VerifyMyChannelRequestObject) (api.VerifyMyChannelResponseObject, error) {
+	c, err := h.svc.VerifyChannel(ctx, domain.Channel(req.Channel), req.Body.Code)
+	if err != nil {
+		return nil, err
+	}
+	return api.VerifyMyChannel200JSONResponse(channel(c)), nil
+}
+
+func (h handlers) ResendMyChannelCode(ctx context.Context, req api.ResendMyChannelCodeRequestObject) (api.ResendMyChannelCodeResponseObject, error) {
+	expires, err := h.svc.ResendVerification(ctx, domain.Channel(req.Channel))
+	if err != nil {
+		return nil, err
+	}
+	return api.ResendMyChannelCode202JSONResponse{ExpiresAt: expires.UTC()}, nil
+}
+
+func (h handlers) GetUserPreferences(ctx context.Context, req api.GetUserPreferencesRequestObject) (api.GetUserPreferencesResponseObject, error) {
+	p, err := h.svc.ForUser(ctx, req.UserID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetUserPreferences200JSONResponse(preferences(p)), nil
 }
 
 type handlers struct {

@@ -100,6 +100,14 @@ The contract is `services/yc-preference/api/openapi.yaml`. Implemented: `GET`/`P
 - **Seeding.** `identity.user.registered.v1` stores the shop defaults for the new customer, with their email as the email channel and primary channel, and publishes `preference.currency.changed.v1` without a previous value so consumers (yc-cart) learn the display currency. Seeding is idempotent.
 - **Events:** `preference.currency.changed.v1`, `preference.locale.changed.v1`, `preference.channel.changed.v1` (primary), `preference.channel.added.v1` and `preference.channel.removed.v1`, each carrying the previous value where there is one. Verification and facet events come with yc-message and search personalisation.
 
+### Phase 7 Implementation Notes
+
+Channel verification follows ADR-023 rule 5: yc-message sends and checks the codes; yc-preference stores the result. yc-message does not call yc-preference to mark a channel verified, so `POST /internal/preferences/{user_id}/channels/{channel}/verify` and `GET /internal/preferences/{user_id}/channel` are not implemented.
+
+- **Endpoints:** `POST /preferences/me/channels/{channel}/verify` (`{"code"}`; a wrong code is 400, an expired or exhausted one 409) and `POST /preferences/me/channels/{channel}/resend` call yc-message's `/internal/channels/verify-confirm` and `verify-start` with the `internal_calls` client (`YC_PREFERENCE_SERVICE_SECRET`). Only email and SMS can be verified.
+- **Internal:** `GET /internal/preferences/{user_id}` returns a user's stored preferences with each channel's address and `verified` flag, or 404 when none are stored; yc-message reads the recipient and locale from it. Registration stores them, so every customer has some.
+- **Events:** `preference.channel.verified.v1` when a code is confirmed. `message.verification_confirmed.v1` is also applied (idempotently). `message.bounced.v1` unverifies the bounced address, and a bounced primary channel other than email falls back to email, publishing `preference.channel.changed.v1`.
+
 ## Database Schema
 
 Database: **`yc_preference`**

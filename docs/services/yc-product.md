@@ -151,7 +151,7 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 
 ### Phase 3 Implementation Notes
 
-- **Event-fed projection.** `cart.item.added.v1` adds 1 to the SKU's `popularity_score` (consumer dedup makes redelivery safe); `order.placed.v1` takes over as the popularity source in Phase 4. `pricing.base_price.set.v1` sets `base_price` (minor units, store currency) and `pricing.base_price.removed.v1` clears it; `base_price_at` records the event's time so an older event never overwrites a newer one. Stock and rating columns stay empty until yc-inventory and yc-review.
+- **Event-fed projection.** `cart.item.added.v1` adds 1 to the SKU's `popularity_score` (consumer dedup makes redelivery safe); `order.placed.v1` took over as the popularity source in Phase 7. `pricing.base_price.set.v1` sets `base_price` (minor units, store currency) and `pricing.base_price.removed.v1` clears it; `base_price_at` records the event's time so an older event never overwrites a newer one. Stock and rating columns stay empty until yc-inventory and yc-review.
 - **Sort.** `GET /products` takes `sort`: `popular` (sum of the product's active SKUs' popularity), `newest`, `price_asc` or `price_desc` (lowest active SKU base price; unpriced products sort last). Ties fall back to newest. Visitors and customers default to `popular`; admins default to `newest`. The cursor carries its sort, so reusing a cursor with another sort is a 400. The response states the `sort` used.
 - **Facets.** Customers get a `facets.favourites` entry with `product_count` 0: the favourites projection is fed by `order.placed.v1` in Phase 4. Other roles get no favourites facet.
 - **Internal SKU endpoints** are still deferred: yc-cart validates SKUs through yc-pricing's internal evaluate (an unknown SKU is reported as `unknown_sku`) and removes lines on `product.sku.deleted.v1` and `product.deleted.v1`.
@@ -165,6 +165,12 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 ### Phase 6 Implementation Notes
 
 - **Shipping attributes.** A SKU has `weight_grams` (per unit) and `dimensions_mm` (`{length, width, height}`, each 1 to 10 000 mm, all three or none; columns `length_mm`, `width_mm`, `height_mm`). Both are returned by the admin SKU endpoints and `GET /internal/skus/batch`. yc-checkout passes the weight to yc-shipping's quote: weight-tiered rates are offered only when every physical SKU has one (ADR-022 rule 3). Dimensions are stored for future carrier drivers and not used yet.
+
+### Phase 7 Implementation Notes
+
+- **Popularity and favourites** come from `order.placed.v1`, which replaces `cart.item.added.v1` (no longer subscribed): each SKU of an order gains 1 popularity point, and a customer's order (not a guest's) records its products in `customer_favourites` (per customer and product: order count and last order time; resolved from the SKUs). `GET /products?favourites=true` (customers only; 400 otherwise) keeps the customer's ordered products, and `facets.favourites.product_count` counts those still active, regardless of the other filters. Likes are not favourites (ADR-024 rule 5).
+- **Ratings and likes** are per product in `product_review_stats` (`rating_count`, `rating_sum`, `like_count`, `version`), from the `product_stats` carried by `review.submitted/edited/approved/rejected/deleted.v1` and `review.like.added/removed.v1`; a lower or equal version is ignored (ADR-024 rule 4). The unused per-SKU `avg_rating`, `rating_count` and `like_count` columns were dropped. Every product summary has `reviews` (`rating_count`, `rating_average` when rated, `like_count`), and `sort=rating` orders by the average (to three decimals), unrated products last, ties newest first.
+- **Not yet subscribed:** `identity.user.deleted.v1` (deleting a customer's favourites) comes with the GDPR cascade.
 
 ## Database Schema
 
@@ -325,15 +331,14 @@ CREATE POLICY tenant_isolation ON products
 |---|---|
 | `pricing.base_price.set.v1` | Update `sku_search_projection.base_price` |
 | `pricing.base_price.removed.v1` | Clear `sku_search_projection.base_price` |
-| `cart.item.added.v1` | Increment `popularity_score` for the SKU (Phase 3 signal until orders exist) |
+| `cart.item.added.v1` | Phase 3 to 6 only: incremented `popularity_score`; replaced by `order.placed.v1` in Phase 7 |
 | `pricing.promotion.started.v1` | Flag affected SKUs in projection (on sale) |
 | `pricing.promotion.ended.v1` | Unflag |
 | `inventory.stock.depleted.v1` | `in_stock = false` for affected SKU |
 | `inventory.stock.restored.v1` | `in_stock = true` for affected SKU |
-| `review.approved.v1` | Recompute `avg_rating` and `rating_count` |
-| `review.like.added.v1` | Increment `like_count` |
-| `review.like.removed.v1` | Decrement `like_count` |
-| `order.placed.v1` | Increment `popularity_score` per SKU; increment `customer_favourites_projection` |
+| `review.submitted/edited/approved/rejected/deleted.v1` | Store the product's `product_stats` if newer (`product_review_stats`) |
+| `review.like.added.v1`, `review.like.removed.v1` | Same |
+| `order.placed.v1` | Increment `popularity_score` per SKU; record the customer's products in `customer_favourites` |
 | `platform.tenant.deleted.v1` | Delete all tenant catalog |
 | `identity.user.deleted.v1` | Delete rows in `customer_favourites_projection` for that user; publish `platform.gdpr.cascade_completed.v1` |
 | `image.deleted.v1` | Remove references from `product_images`, `sku_images` |

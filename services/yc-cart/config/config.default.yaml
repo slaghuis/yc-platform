@@ -27,10 +27,17 @@ cart_types:
   shopping:
     convertible: true
     merge_on_login: true
+    abandonable: true
     max_items: 100
     max_quantity: 99
   wishlist:
     convertible: false
     merge_on_login: true
+    abandonable: false
     max_items: 500
     max_quantity: 99
+# A customer's abandonable cart with lines that is idle for `after` is
+# announced once (cart.abandoned.v1) until it is used again.
+abandoned:
+  after: ${YC_CART_ABANDONED_AFTER:-24h}
+  sweep_interval: ${YC_CART_ABANDONED_SWEEP_INTERVAL:-1m}

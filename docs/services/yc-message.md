@@ -74,7 +74,7 @@ Resolve channel for user:
 | Message Type | Trigger |
 |---|---|
 | `welcome` | `identity.user.registered.v1` |
-| `password_reset` | `identity.user.password_reset_requested.v1` |
+| `password_reset` | yc-identity calls `POST /internal/send` (the token must not go on the bus, ADR-023 rule 6) |
 | `channel_verification` | New channel added |
 | `order_confirmation` | `order.placed.v1` |
 | `order_shipped` | `order.shipped.v1` |
@@ -151,6 +151,18 @@ queued → sent → delivered → opened (email only, best-effort)
 | Method | Path | Description |
 |---|---|---|
 | POST | `/webhooks/{driver}` | Provider delivery webhook |
+
+### Phase 7 Implementation Notes
+
+The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. Implemented: event-driven messages, recipients from yc-preference or the order's guest contact, templates with embedded platform defaults and shop overrides, the dispatcher with retries, SMTP email, the fake SMS driver, `POST /internal/send`, channel verification, message history and template administration. Per-shop provider credentials (`/admin/providers`), real SMS, WhatsApp and Telegram providers, provider webhooks, `GET /internal/messages/{id}`, admin alerts, marketing messages and the GDPR cascade come later.
+
+- **Message types:** `welcome`, `password_reset`, `channel_verification`, `order_confirmation`, `order_shipped`, `order_delivered`, `order_cancelled`, `order_refunded`, `cart_abandoned` and `review_prompt`, each with an email and an SMS default in `en`. Defaults are embedded in the binary (`internal/domain/defaults.go`), not seeded into the database.
+- **Templates:** `GET /admin/templates` lists the shop's templates and the defaults; `GET`, `PUT` and `DELETE /admin/templates/{type}/{channel}/{locale}` read, override and remove one (removing restores the default); `POST .../test` sends it with sample values to an address the admin gives. A template must render against the type's sample context. Lookup order: the shop's template for the locale, its language, the shop's `en`, the default.
+- **Links** in messages use `messages.shop_url` with `{tenant}` replaced (`http://{tenant}.localhost:8090` in the dev stack).
+- **Delivery:** the dispatcher runs every `messages.dispatch_interval` (2 s) and when a message is queued; `messages.max_attempts` (5) with `messages.retry_backoff` (30 s, doubling, capped at an hour). Statuses: `queued`, `sent`, `delivered`, `failed`, `bounced`. Sent and failed password reset and verification messages have their body replaced with `[redacted]`.
+- **Fake SMS** (`sms.driver: fake`, development only) mails each SMS to `<digits>@sms.test` through SMTP; `POST /webhooks/fake-sms` with the provider message ID marks it `delivered` or `bounced` when `sms.fake_webhook` is on.
+- **Verification:** `POST /internal/channels/verify-start` and `verify-confirm` are called by yc-preference; codes are 6 digits, hashed, 15 minutes, 5 tries, one resend a minute. `preference.channel.added.v1` starts a verification for email and SMS channels.
+- **Events published:** `message.sent.v1`, `message.failed.v1`, `message.delivered.v1`, `message.bounced.v1`, `message.verification_sent.v1`, `message.verification_confirmed.v1`.
 
 ## Database Schema
 
@@ -248,7 +260,6 @@ Driven by nearly every service. Each subscription maps event → message type.
 | Event | Message Type |
 |---|---|
 | `identity.user.registered.v1` | `welcome` |
-| `identity.user.password_reset_requested.v1` | `password_reset` |
 | `order.placed.v1` | `order_confirmation` |
 | `order.shipped.v1` | `order_shipped` |
 | `order.delivered.v1` | `order_delivered` |

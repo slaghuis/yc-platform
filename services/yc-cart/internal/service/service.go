@@ -37,17 +37,21 @@ type Prices interface {
 
 // Service implements the cart use cases.
 type Service struct {
-	db     *pgxpool.Pool
-	bus    Publisher
-	prices Prices
-	repo   repository.Carts
-	types  domain.Types
-	now    func() time.Time
+	db      *pgxpool.Pool
+	bus     Publisher
+	prices  Prices
+	repo    repository.Carts
+	types   domain.Types
+	abandon Abandonment
+	now     func() time.Time
 }
 
 // New returns a Service for the configured cart types.
-func New(db *pgxpool.Pool, bus Publisher, prices Prices, types domain.Types) *Service {
-	return &Service{db: db, bus: bus, prices: prices, types: types, now: time.Now}
+func New(db *pgxpool.Pool, bus Publisher, prices Prices, types domain.Types, abandon Abandonment) *Service {
+	if abandon.BatchSize <= 0 {
+		abandon.BatchSize = 100
+	}
+	return &Service{db: db, bus: bus, prices: prices, types: types, abandon: abandon, now: time.Now}
 }
 
 // caller is the cart owner behind a request.
@@ -251,7 +255,7 @@ func (s *Service) removeLine(ctx context.Context, tx pgx.Tx, tenantID string, ca
 	if err := s.repo.DeleteItem(ctx, tx, cart.ID, it.SKUID); err != nil {
 		return err
 	}
-	if err := s.repo.Touch(ctx, tx, cart.ID, now); err != nil {
+	if err := s.touch(ctx, tx, cart.ID, now); err != nil {
 		return err
 	}
 	return s.publish(ctx, tx, tenantID, events.TypeCartItemRemovedV1, events.CartItemRemovedV1{
@@ -315,7 +319,7 @@ func (s *Service) MoveItem(ctx context.Context, from, skuID, to string, quantity
 		if err != nil {
 			return err
 		}
-		if err := s.repo.Touch(ctx, tx, src.ID, now); err != nil {
+		if err := s.touch(ctx, tx, src.ID, now); err != nil {
 			return err
 		}
 		return s.publish(ctx, tx, c.tenantID, events.TypeCartItemMovedV1, events.CartItemMovedV1{
@@ -347,7 +351,7 @@ func (s *Service) Clear(ctx context.Context, cartType string) error {
 		if err := s.repo.Clear(ctx, tx, cart.ID); err != nil {
 			return err
 		}
-		if err := s.repo.Touch(ctx, tx, cart.ID, now); err != nil {
+		if err := s.touch(ctx, tx, cart.ID, now); err != nil {
 			return err
 		}
 		return s.publish(ctx, tx, c.tenantID, events.TypeCartClearedV1, events.CartClearedV1{
@@ -401,7 +405,7 @@ func (s *Service) mergeCart(ctx context.Context, tx pgx.Tx, c caller, visitorID 
 			return err
 		}
 	}
-	if err := s.repo.Touch(ctx, tx, into.ID, now); err != nil {
+	if err := s.repo.Touch(ctx, tx, into.ID, true, now); err != nil {
 		return err
 	}
 	if err := s.repo.Delete(ctx, tx, from.ID); err != nil {
@@ -479,7 +483,7 @@ func (s *Service) ConvertCart(ctx context.Context, tenantID, userID, cartType, s
 				return err
 			}
 		}
-		if err := s.repo.Touch(ctx, tx, cart.ID, now); err != nil {
+		if err := s.touch(ctx, tx, cart.ID, now); err != nil {
 			return err
 		}
 		items := make([]events.CartConvertedV1ItemsItem, 0, len(removed))
@@ -534,7 +538,7 @@ func (s *Service) withLine(ctx context.Context, c caller, cartType, skuID string
 // (and announcing it) if needed.
 func (s *Service) ensureCart(ctx context.Context, tx pgx.Tx, c caller, cartType string) (domain.Cart, error) {
 	now := s.now()
-	created, err := s.repo.Create(ctx, tx, c.tenantID, c.userID, cartType, now)
+	created, err := s.repo.Create(ctx, tx, c.tenantID, c.userID, cartType, c.actorType == authctx.ActorCustomer, now)
 	if err != nil {
 		return domain.Cart{}, err
 	}
@@ -555,7 +559,13 @@ func (s *Service) writeLine(ctx context.Context, tx pgx.Tx, tenantID, cartID str
 	if err := s.repo.PutItem(ctx, tx, tenantID, cartID, it, now); err != nil {
 		return err
 	}
-	return s.repo.Touch(ctx, tx, cartID, now)
+	return s.touch(ctx, tx, cartID, now)
+}
+
+// touch records activity on a cart by the caller, if any.
+func (s *Service) touch(ctx context.Context, tx pgx.Tx, cartID string, now time.Time) error {
+	a, _ := authctx.FromContext(ctx)
+	return s.repo.Touch(ctx, tx, cartID, a.ActorType == authctx.ActorCustomer, now)
 }
 
 // caller returns the cart owner: a visitor or customer in a shop.

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.deleted.v1.json",
+  "title": "review.deleted.v1",
+  "description": "The author deleted a review.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "deleted_at",
+    "product_stats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_stats": {
+      "$ref": "../common/product_review_stats.v1.json"
+    }
+  }
+}

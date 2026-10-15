@@ -299,6 +299,31 @@ paths:
               schema: { $ref: '#/components/schemas/Order' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /internal/purchases:
+    get:
+      summary: Find a customer's purchase of a product
+      description: |
+        The customer's latest placed order with a line of the product,
+        unless it was cancelled; for yc-review's verified purchase check
+        (ADR-024). Guest orders do not count.
+      operationId: findPurchase
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: product_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Whether the customer bought the product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Purchase' }
+        '400': { $ref: '#/components/responses/Problem' }
+
   /internal/orders/{id}/confirm:
     parameters:
       - $ref: '#/components/parameters/OrderID'
@@ -375,6 +400,14 @@ components:
       schema: { type: string }
 
   schemas:
+    Purchase:
+      type: object
+      required: [purchased]
+      properties:
+        purchased: { type: boolean }
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        placed_at: { type: string, format: date-time }
     Money:
       type: object
       required: [amount_minor, currency]

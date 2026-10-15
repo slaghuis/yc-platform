@@ -1,0 +1,435 @@
+openapi: 3.1.0
+info:
+  title: yc-message
+  version: 0.1.0
+  description: |
+    Customer messaging (docs/services/yc-message.md, ADR-023). Phase 7
+    subset: messages queued from events and from other services, sent by
+    platform SMTP (email) and a fake SMS driver with retries; per-shop
+    templates over platform defaults; message history; channel
+    verification codes for yc-preference.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /internal routes are for service callers
+    (ADR-021). Password reset links and verification codes are never shown
+    to shop admins. Errors are application/problem+json (error-handling.md).
+
+paths:
+  /admin/messages:
+    get:
+      summary: List messages
+      description: The shop's messages, newest first.
+      operationId: listMessages
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/MessageStatus' }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/MessageType' }
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of messages.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/messages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get a message
+      operationId: getMessage
+      responses:
+        '200':
+          description: The message.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/templates:
+    get:
+      summary: List templates
+      description: The platform defaults (platform true) and the shop's own templates, which override them.
+      operationId: listTemplates
+      responses:
+        '200':
+          description: The templates.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateList' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/templates/{type}/{channel}/{locale}:
+    parameters:
+      - $ref: '#/components/parameters/TemplateTypeParam'
+      - $ref: '#/components/parameters/TemplateChannelParam'
+      - $ref: '#/components/parameters/Locale'
+    get:
+      summary: Get the template used for a type, channel and locale
+      description: The shop's template, or the one it falls back to (en-ZA, then en, then the platform default).
+      operationId: getTemplate
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Create or replace the shop's template
+      description: |
+        Templates use Go text/template syntax ({{.order_number}}); html
+        bodies are escaped as HTML. The template must render against a
+        sample message of its type, so unknown fields are 400.
+      operationId: putTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete the shop's template, reverting to the default
+      operationId: deleteTemplate
+      responses:
+        '204': { description: Deleted. }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/templates/{type}/{channel}/{locale}/test:
+    parameters:
+      - $ref: '#/components/parameters/TemplateTypeParam'
+      - $ref: '#/components/parameters/TemplateChannelParam'
+      - $ref: '#/components/parameters/Locale'
+    post:
+      summary: Send a test message
+      description: Sends the template used for the key, filled with sample values, to an address.
+      operationId: testTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              additionalProperties: false
+              properties:
+                address: { type: string, maxLength: 320 }
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /internal/send:
+    post:
+      summary: Send a message
+      description: |
+        For services whose message content must not travel on the event bus,
+        such as yc-identity's password reset link. A repeated reference
+        returns the message already queued for it.
+      operationId: sendMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRequest' }
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageReceipt' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/channels/verify-start:
+    post:
+      summary: Send a verification code
+      description: Sends a new code to the address; earlier codes stop working. 429 within a minute of the last code to the same address.
+      operationId: startVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelAddress' }
+      responses:
+        '202':
+          description: The code was queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Verification' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
+  /internal/channels/verify-confirm:
+    post:
+      summary: Check a verification code
+      description: |
+        A wrong code is 400 and uses an attempt; an expired code, one tried
+        five times, or no code for the address is 409. Confirming a confirmed
+        address again succeeds.
+      operationId: confirmVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ChannelAddress'
+                - type: object
+                  required: [code]
+                  properties:
+                    code: { type: string, maxLength: 16 }
+      responses:
+        '200':
+          description: The address is verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Verification' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /webhooks/fake-sms:
+    post:
+      summary: Report delivery of a fake SMS (development)
+      description: Marks a sent message delivered or bounced, as a real provider's webhook would. 404 unless enabled.
+      operationId: fakeDeliveryReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_message_id, status]
+              additionalProperties: false
+              properties:
+                provider_message_id: { type: string }
+                status: { type: string, enum: [delivered, bounced] }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: Recorded. }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateTypeParam:
+      name: type
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/MessageType' }
+    TemplateChannelParam:
+      name: channel
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/TemplateChannel' }
+    Locale:
+      name: locale
+      in: path
+      required: true
+      schema: { type: string, maxLength: 35 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    MessageType:
+      type: string
+      enum:
+        - welcome
+        - password_reset
+        - channel_verification
+        - order_confirmation
+        - order_shipped
+        - order_delivered
+        - order_cancelled
+        - refund_issued
+        - cart_abandoned
+        - review_prompt
+    Channel:
+      type: string
+      enum: [email, sms, whatsapp, telegram]
+    MessageStatus:
+      type: string
+      enum: [queued, sent, delivered, bounced, failed]
+    Format:
+      type: string
+      enum: [text, html]
+    TemplateChannel:
+      type: string
+      enum: [email, sms]
+    Message:
+      type: object
+      required: [message_id, type, channel, address, locale, body, format, status, driver, attempts, reference, created_at, updated_at]
+      properties:
+        message_id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/MessageType' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        user_id: { type: string, format: uuid }
+        address: { type: string }
+        locale: { type: string }
+        subject: { type: string }
+        body: { type: string, description: '"[redacted]" for password resets and verification codes.' }
+        format: { $ref: '#/components/schemas/Format' }
+        status: { $ref: '#/components/schemas/MessageStatus' }
+        driver: { type: string }
+        provider_message_id: { type: string }
+        attempts: { type: integer }
+        last_error: { type: string }
+        next_attempt_at: { type: string, format: date-time }
+        reference: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        sent_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time }
+    MessageList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    MessageReceipt:
+      type: object
+      required: [message_id, type, channel, status]
+      properties:
+        message_id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/MessageType' }
+        channel: { $ref: '#/components/schemas/Channel' }
+        status: { $ref: '#/components/schemas/MessageStatus' }
+    TemplateInput:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        subject: { type: string, maxLength: 200, description: Required for email; not allowed for sms. }
+        body: { type: string, maxLength: 20000 }
+        format: { $ref: '#/components/schemas/Format' }
+    Template:
+      type: object
+      required: [type, channel, locale, body, format, platform, version]
+      properties:
+        type: { $ref: '#/components/schemas/MessageType' }
+        channel: { $ref: '#/components/schemas/TemplateChannel' }
+        locale: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        format: { $ref: '#/components/schemas/Format' }
+        platform: { type: boolean, description: True for a platform default. }
+        version: { type: integer }
+        updated_at: { type: string, format: date-time }
+    TemplateList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Template' }
+    SendRequest:
+      type: object
+      required: [type, reference]
+      additionalProperties: false
+      properties:
+        type: { $ref: '#/components/schemas/MessageType' }
+        reference: { type: string, minLength: 1, maxLength: 200, description: Unique per message; repeats return the same message. }
+        user_id: { type: string, format: uuid, description: Sent to the user's preferred channel unless address is given. }
+        channel: { $ref: '#/components/schemas/Channel' }
+        address: { type: string, maxLength: 320 }
+        locale: { type: string, maxLength: 35 }
+        context:
+          type: object
+          additionalProperties: true
+          description: The values the type's template uses.
+    ChannelAddress:
+      type: object
+      required: [user_id, channel, address]
+      properties:
+        user_id: { type: string, format: uuid }
+        channel: { $ref: '#/components/schemas/TemplateChannel' }
+        address: { type: string, maxLength: 320 }
+    Verification:
+      type: object
+      required: [verification_id, channel, address, expires_at]
+      properties:
+        verification_id: { type: string, format: uuid }
+        channel: { type: string }
+        address: { type: string }
+        expires_at: { type: string, format: date-time }
+        confirmed_at: { type: string, format: date-time }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

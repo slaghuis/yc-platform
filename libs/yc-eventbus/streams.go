@@ -63,7 +63,8 @@ func IdentityStream() StreamConfig {
 
 // CartStream is the cart domain (90-day retention, ADR-004).
 func CartStream() StreamConfig {
-	return DomainStream("cart", retentionOps, "cart.created.v1", "cart.cleared.v1", "cart.merged.v1", "cart.converted.v1")
+	return DomainStream("cart", retentionOps,
+		"cart.created.v1", "cart.cleared.v1", "cart.merged.v1", "cart.converted.v1", "cart.abandoned.v1")
 }
 
 // PreferenceStream is the preference domain (90-day retention, ADR-004).
@@ -131,4 +132,20 @@ func CheckoutStream() StreamConfig {
 		"checkout.started.v1", "checkout.priced.v1", "checkout.shipping_selected.v1",
 		"checkout.confirmed.v1", "checkout.validation_failed.v1", "checkout.compensating.v1",
 		"checkout.completed.v1", "checkout.failed.v1", "checkout.expired.v1")
+}
+
+// MessageStream is the message domain (1-year retention, ADR-004).
+func MessageStream() StreamConfig {
+	return DomainStream("message", retentionYear,
+		"message.queued.v1", "message.sent.v1", "message.delivered.v1", "message.opened.v1",
+		"message.bounced.v1", "message.failed.v1",
+		"message.verification_sent.v1", "message.verification_confirmed.v1")
+}
+
+// ReviewStream is the review domain (2-year retention, ADR-004). The
+// review.like.* events have four segments; the rest are listed.
+func ReviewStream() StreamConfig {
+	return DomainStream("review", retention2Years,
+		"review.submitted.v1", "review.approved.v1", "review.rejected.v1", "review.edited.v1",
+		"review.deleted.v1", "review.responded.v1", "review.prompt_requested.v1")
 }

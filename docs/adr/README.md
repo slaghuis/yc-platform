@@ -24,6 +24,8 @@
 | 020 | Gateway Database | Accepted |
 | 021 | Service Tokens and Internal Calls | Accepted |
 | 022 | Order Fulfilment Flow | Accepted |
+| 023 | Customer Messaging | Accepted |
+| 024 | Product Reviews | Accepted |
 
 Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
 

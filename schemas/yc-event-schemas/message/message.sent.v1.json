@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/message/message.sent.v1.json",
+  "title": "message.sent.v1",
+  "description": "A message was handed to its channel's provider.",
+  "type": "object",
+  "required": [
+    "message_id",
+    "message_type",
+    "channel",
+    "driver",
+    "sent_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Template message type, e.g. order_confirmation."
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "user_id": {
+      "type": "string",
+      "description": "The customer's user ID; absent for a guest."
+    },
+    "driver": {
+      "type": "string"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

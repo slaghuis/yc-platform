@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/message/message.verification_sent.v1.json",
+  "title": "message.verification_sent.v1",
+  "description": "A verification code was sent to a user's new channel address. Carries no code (event-conventions \u00a718).",
+  "type": "object",
+  "required": [
+    "verification_id",
+    "user_id",
+    "channel",
+    "expires_at",
+    "sent_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "verification_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

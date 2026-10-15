@@ -23,7 +23,7 @@ type Identity interface {
 	Login(ctx context.Context, email, password string) (domain.Session, error)
 	Refresh(ctx context.Context, raw string) (domain.Session, error)
 	Logout(ctx context.Context, rawRefresh string) error
-	RequestPasswordReset(ctx context.Context, email string) error
+	RequestPasswordReset(ctx context.Context, email, host string) error
 	ConfirmPasswordReset(ctx context.Context, token, password string) error
 	StartOAuth(ctx context.Context, provider, host, loginHint string) (string, error)
 	CompleteOAuth(ctx context.Context, provider, code, state string) (domain.Session, error)
@@ -131,7 +131,8 @@ func (h handlers) Logout(ctx context.Context, req api.LogoutRequestObject) (api.
 }
 
 func (h handlers) RequestPasswordReset(ctx context.Context, req api.RequestPasswordResetRequestObject) (api.RequestPasswordResetResponseObject, error) {
-	if err := h.svc.RequestPasswordReset(ctx, req.Body.Email); err != nil {
+	host, _ := ctx.Value(hostKey{}).(string)
+	if err := h.svc.RequestPasswordReset(ctx, req.Body.Email, host); err != nil {
 		return nil, err
 	}
 	return api.RequestPasswordReset202Response{}, nil

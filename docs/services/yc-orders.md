@@ -181,6 +181,11 @@ The flow is ADR-022. Implemented: packaging, the shipping subscriptions, `delive
 - **Cancellation** is allowed while `received` or `packaged`; yc-shipping cancels the booked shipment on `order.cancelled.v1`.
 - **Published** now: `order.packaged.v1`, `order.shipped.v1`, `order.delivered.v1`, `order.return_requested.v1`, `order.return_accepted.v1`, `order.return_rejected.v1` and `order.refunded.v1`, besides `order.placed.v1` and `order.cancelled.v1`.
 
+### Phase 7 Implementation Notes
+
+- **Verified purchase** (ADR-024 rule 2) is `GET /internal/purchases?user_id=&product_id=` rather than the path above: the customer's latest placed order with a line of the product (not pending payment, abandoned or cancelled), with its ID, number and `placed_at`; delivery is not required, and guest orders do not count. yc-review calls it when a review is submitted.
+- **`GET /internal/orders/{id}`** is also read by yc-message (order number, items, customer or guest contact for order emails, ADR-023) and yc-review (buyer type and products for review prompts).
+
 ## Database Schema
 
 Database: **`yc_orders`**

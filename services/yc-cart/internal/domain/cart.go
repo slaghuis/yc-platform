@@ -21,6 +21,9 @@ type CartType struct {
 	Convertible bool
 	// MergeOnLogin merges a visitor's cart of this type into the user's.
 	MergeOnLogin bool
+	// Abandonable carts are announced (cart.abandoned.v1) when a
+	// customer leaves them idle.
+	Abandonable bool
 	// MaxItems caps the number of lines; MaxQuantity caps each line.
 	MaxItems    int
 	MaxQuantity int

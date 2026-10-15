@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS verifications;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS templates;

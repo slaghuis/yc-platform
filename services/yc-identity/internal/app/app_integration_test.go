@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,6 +103,49 @@ func facebookStub(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// sent is a send request yc-message received through the gateway.
+type sent struct {
+	Tenant string
+	Body   map[string]any
+}
+
+// messageStub is yc-gateway in front of yc-message: it issues yc-identity's
+// service token and records /internal/send calls.
+func messageStub(t *testing.T) (*httptest.Server, func() []sent) {
+	t.Helper()
+	var (
+		mu    sync.Mutex
+		sends []sent
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/service-token":
+			_, _ = w.Write([]byte(`{"access_token":"svc-yc-identity","expires_at":"2099-01-01T00:00:00Z"}`))
+		case "/internal/send":
+			if r.Header.Get(authctx.HeaderAuthorization) != "Bearer svc-yc-identity" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			sends = append(sends, sent{Tenant: r.Header.Get(authctx.HeaderTenantID), Body: body})
+			mu.Unlock()
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"message_id":"m1","status":"queued"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []sent {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]sent(nil), sends...)
+	}
+}
+
 type validated struct {
 	TenantID  string `json:"tenant_id"`
 	ActorID   string `json:"actor_id"`
@@ -135,6 +180,9 @@ func TestIdentity(t *testing.T) {
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__AUTH_URL", fb.URL+"/auth")
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__TOKEN_URL", fb.URL+"/token")
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__USERINFO_URL", fb.URL+"/me")
+	gateway, sends := messageStub(t)
+	t.Setenv("YC_GATEWAY_INTERNAL_URL", gateway.URL)
+	t.Setenv("YC_IDENTITY_SERVICE_SECRET", "identity-secret-0123456789-0123456789")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -353,6 +401,19 @@ func TestIdentity(t *testing.T) {
 		require.Len(t, m, 2, "log_reset_links logs the token")
 		token := m[1]
 		assert.NotContains(t, string(env.Payload), token, "the event carries no token")
+
+		got := sends()
+		require.Len(t, got, 1, "only the registered email gets a link")
+		assert.Equal(t, "shop-c", got[0].Tenant)
+		assert.Equal(t, "password_reset", got[0].Body["type"])
+		assert.Equal(t, "password-reset:"+req.RequestID, got[0].Body["reference"])
+		assert.Equal(t, bobID, got[0].Body["user_id"])
+		assert.Equal(t, "email", got[0].Body["channel"])
+		assert.Equal(t, "bob@example.com", got[0].Body["address"])
+		host := strings.TrimPrefix(srv.URL, "http://")
+		msgCtx, _ := got[0].Body["context"].(map[string]any)
+		assert.Equal(t, "https://"+host+"/account/reset-password?token="+token, msgCtx["reset_url"])
+		assert.Equal(t, req.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"), msgCtx["expires_at"])
 
 		var sess api.Session
 		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), &sess))

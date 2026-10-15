@@ -14,8 +14,8 @@ import (
 
 // RefreshProjection rewrites the sku_search_projection rows of products
 // from the catalog tables. Columns fed by other services' events (price,
-// stock, popularity, rating) are kept, except that an untracked SKU is
-// always in stock.
+// stock, popularity) are kept, except that an untracked SKU is always in
+// stock.
 func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...string) error {
 	if len(productIDs) == 0 {
 		return nil
@@ -50,14 +50,56 @@ func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...s
 	return nil
 }
 
-// AddPopularity adds n to a SKU's popularity score.
-func (Catalog) AddPopularity(ctx context.Context, tx pgx.Tx, skuID string, n int64) error {
-	_, err := tx.Exec(ctx, `UPDATE sku_search_projection SET popularity_score = popularity_score + $2
-		WHERE sku_id = $1`, skuID, n)
+// RecordOrder counts an order towards its SKUs' popularity and, when
+// userID is set, towards the customer's favourite products.
+func (Catalog) RecordOrder(ctx context.Context, tx pgx.Tx, tenantID, userID string, skuIDs []string, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE sku_search_projection SET popularity_score = popularity_score + 1
+		WHERE sku_id = ANY($1::uuid[])`, skuIDs)
 	if err != nil {
 		return fmt.Errorf("add popularity: %w", err)
 	}
+	if userID == "" {
+		return nil
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO customer_favourites AS f (tenant_id, user_id, product_id, order_count, last_ordered_at)
+		SELECT $1, $2, product_id, 1, $4 FROM (SELECT DISTINCT product_id FROM skus WHERE id = ANY($3::uuid[])) s
+		ON CONFLICT (tenant_id, user_id, product_id) DO UPDATE SET
+			order_count = f.order_count + 1, last_ordered_at = GREATEST(f.last_ordered_at, EXCLUDED.last_ordered_at)`,
+		tenantID, userID, skuIDs, at)
+	if err != nil {
+		return fmt.Errorf("record favourites: %w", err)
+	}
 	return nil
+}
+
+// SetReviewStats records a product's review stats unless a newer version
+// is already recorded.
+func (Catalog) SetReviewStats(ctx context.Context, tx pgx.Tx, tenantID, productID string, s domain.ReviewStats) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO product_review_stats AS r (tenant_id, product_id, rating_count, rating_sum, like_count, version)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (product_id) DO UPDATE SET
+			rating_count = EXCLUDED.rating_count, rating_sum = EXCLUDED.rating_sum,
+			like_count = EXCLUDED.like_count, version = EXCLUDED.version, updated_at = NOW()
+		WHERE r.version < EXCLUDED.version`,
+		tenantID, productID, s.RatingCount, s.RatingSum, s.LikeCount, s.Version)
+	if err != nil {
+		return fmt.Errorf("set review stats: %w", err)
+	}
+	return nil
+}
+
+// FavouriteCount counts the active products userID has ordered.
+func (Catalog) FavouriteCount(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM customer_favourites f JOIN products p ON p.id = f.product_id
+		WHERE f.user_id = $1 AND p.status = 'active' AND EXISTS (
+			SELECT 1 FROM sku_search_projection sp WHERE sp.product_id = p.id AND sp.status = 'active')`, userID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count favourites: %w", err)
+	}
+	return n, nil
 }
 
 // SetBasePrice records a SKU's base price in minor units (nil when
@@ -103,6 +145,8 @@ func SortKey(sort domain.Sort, p domain.ProductSummary) int64 {
 			return unpricedDesc
 		}
 		return *p.MinBasePrice
+	case domain.SortRating:
+		return p.Reviews.RatingKey()
 	case domain.SortNewest:
 	}
 	return 0
@@ -140,6 +184,10 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	if f.SupplierID != "" {
 		where = append(where, `p.supplier_id = `+arg(f.SupplierID)+`::uuid`)
 	}
+	if f.FavouritesOf != "" {
+		where = append(where, `EXISTS (SELECT 1 FROM customer_favourites f WHERE f.product_id = p.id AND f.user_id = `+
+			arg(f.FavouritesOf)+`::uuid)`)
+	}
 
 	var order, cursor string
 	switch f.Sort {
@@ -161,6 +209,14 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 		if after != nil {
 			cursor = fmt.Sprintf(`(%s, b.id) < (%s::bigint, %s::uuid)`, key, arg(after.Key), arg(after.ID))
 		}
+	case domain.SortRating:
+		// Matches domain.ReviewStats.RatingKey.
+		key := `(CASE WHEN b.rating_count > 0 THEN b.rating_sum * 1000 / b.rating_count ELSE -1 END)`
+		order = key + ` DESC, b.created_at DESC, b.id DESC`
+		if after != nil {
+			cursor = fmt.Sprintf(`(%s, b.created_at, b.id) < (%s::bigint, %s, %s::uuid)`,
+				key, arg(after.Key), arg(after.CreatedAt), arg(after.ID))
+		}
 	case domain.SortNewest, "":
 		order = `b.created_at DESC, b.id DESC`
 		if after != nil {
@@ -171,9 +227,11 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 		cursor = ` WHERE ` + cursor
 	}
 	q := `SELECT b.id, b.supplier_id, b.name, b.description, b.is_digital, b.created_at, b.category_ids,
-			b.popularity, b.min_price, b.in_stock
+			b.popularity, b.min_price, b.in_stock, b.rating_count, b.rating_sum, b.like_count
 		FROM (SELECT p.id, COALESCE(p.supplier_id::text, '') AS supplier_id, p.name, p.description, p.is_digital,
 				p.created_at,
+				COALESCE(r.rating_count, 0)::bigint AS rating_count, COALESCE(r.rating_sum, 0)::bigint AS rating_sum,
+				COALESCE(r.like_count, 0)::bigint AS like_count,
 				EXISTS (SELECT 1 FROM sku_search_projection sp WHERE sp.product_id = p.id
 					AND sp.status = 'active' AND COALESCE(sp.in_stock, true)) AS in_stock,
 				COALESCE((SELECT array_agg(pc.category_id::text ORDER BY pc.category_id)
@@ -182,7 +240,8 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 					WHERE sp.product_id = p.id AND sp.status = 'active'), 0)::bigint AS popularity,
 				(SELECT MIN(sp.base_price) FROM sku_search_projection sp
 					WHERE sp.product_id = p.id AND sp.status = 'active') AS min_price
-			FROM products p WHERE ` + strings.Join(where, " AND ") + `) b` + cursor +
+			FROM products p LEFT JOIN product_review_stats r ON r.product_id = p.id
+			WHERE ` + strings.Join(where, " AND ") + `) b` + cursor +
 		fmt.Sprintf(` ORDER BY %s LIMIT %d`, order, limit)
 
 	rows, err := tx.Query(ctx, q, args...)
@@ -192,7 +251,7 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ProductSummary, error) {
 		var p domain.ProductSummary
 		err := r.Scan(&p.ID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.CreatedAt, &p.CategoryIDs,
-			&p.Popularity, &p.MinBasePrice, &p.InStock)
+			&p.Popularity, &p.MinBasePrice, &p.InStock, &p.Reviews.RatingCount, &p.Reviews.RatingSum, &p.Reviews.LikeCount)
 		return p, err
 	})
 	if err != nil {

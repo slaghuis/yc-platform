@@ -8,6 +8,7 @@ import (
 
 // Event types with a schema.
 const (
+	TypeCartAbandonedV1                      = "cart.abandoned.v1"
 	TypeCartClearedV1                        = "cart.cleared.v1"
 	TypeCartConvertedV1                      = "cart.converted.v1"
 	TypeCartCreatedV1                        = "cart.created.v1"
@@ -46,6 +47,12 @@ const (
 	TypeInventoryStockReservationReleasedV1  = "inventory.stock.reservation_released.v1"
 	TypeInventoryStockReservedV1             = "inventory.stock.reserved.v1"
 	TypeInventoryStockRestoredV1             = "inventory.stock.restored.v1"
+	TypeMessageBouncedV1                     = "message.bounced.v1"
+	TypeMessageDeliveredV1                   = "message.delivered.v1"
+	TypeMessageFailedV1                      = "message.failed.v1"
+	TypeMessageSentV1                        = "message.sent.v1"
+	TypeMessageVerificationConfirmedV1       = "message.verification_confirmed.v1"
+	TypeMessageVerificationSentV1            = "message.verification_sent.v1"
 	TypeOrderCancelledV1                     = "order.cancelled.v1"
 	TypeOrderDeliveredV1                     = "order.delivered.v1"
 	TypeOrderPackagedV1                      = "order.packaged.v1"
@@ -74,6 +81,7 @@ const (
 	TypePreferenceChannelAddedV1             = "preference.channel.added.v1"
 	TypePreferenceChannelChangedV1           = "preference.channel.changed.v1"
 	TypePreferenceChannelRemovedV1           = "preference.channel.removed.v1"
+	TypePreferenceChannelVerifiedV1          = "preference.channel.verified.v1"
 	TypePreferenceCurrencyChangedV1          = "preference.currency.changed.v1"
 	TypePreferenceLocaleChangedV1            = "preference.locale.changed.v1"
 	TypePricingBasePriceRemovedV1            = "pricing.base_price.removed.v1"
@@ -99,6 +107,15 @@ const (
 	TypeProductSupplierUpdatedV1             = "product.supplier.updated.v1"
 	TypeProductUpdatedV1                     = "product.updated.v1"
 	TypeProductVariantAddedV1                = "product.variant.added.v1"
+	TypeReviewApprovedV1                     = "review.approved.v1"
+	TypeReviewDeletedV1                      = "review.deleted.v1"
+	TypeReviewEditedV1                       = "review.edited.v1"
+	TypeReviewLikeAddedV1                    = "review.like.added.v1"
+	TypeReviewLikeRemovedV1                  = "review.like.removed.v1"
+	TypeReviewPromptRequestedV1              = "review.prompt_requested.v1"
+	TypeReviewRejectedV1                     = "review.rejected.v1"
+	TypeReviewRespondedV1                    = "review.responded.v1"
+	TypeReviewSubmittedV1                    = "review.submitted.v1"
 	TypeShippingCancelledV1                  = "shipping.cancelled.v1"
 	TypeShippingDeliveredV1                  = "shipping.delivered.v1"
 	TypeShippingDeliveryExceptionV1          = "shipping.delivery_exception.v1"
@@ -108,6 +125,7 @@ const (
 
 // EventTypes lists every event type with a schema, sorted.
 var EventTypes = []string{
+	TypeCartAbandonedV1,
 	TypeCartClearedV1,
 	TypeCartConvertedV1,
 	TypeCartCreatedV1,
@@ -146,6 +164,12 @@ var EventTypes = []string{
 	TypeInventoryStockReservationReleasedV1,
 	TypeInventoryStockReservedV1,
 	TypeInventoryStockRestoredV1,
+	TypeMessageBouncedV1,
+	TypeMessageDeliveredV1,
+	TypeMessageFailedV1,
+	TypeMessageSentV1,
+	TypeMessageVerificationConfirmedV1,
+	TypeMessageVerificationSentV1,
 	TypeOrderCancelledV1,
 	TypeOrderDeliveredV1,
 	TypeOrderPackagedV1,
@@ -174,6 +198,7 @@ var EventTypes = []string{
 	TypePreferenceChannelAddedV1,
 	TypePreferenceChannelChangedV1,
 	TypePreferenceChannelRemovedV1,
+	TypePreferenceChannelVerifiedV1,
 	TypePreferenceCurrencyChangedV1,
 	TypePreferenceLocaleChangedV1,
 	TypePricingBasePriceRemovedV1,
@@ -199,6 +224,15 @@ var EventTypes = []string{
 	TypeProductSupplierUpdatedV1,
 	TypeProductUpdatedV1,
 	TypeProductVariantAddedV1,
+	TypeReviewApprovedV1,
+	TypeReviewDeletedV1,
+	TypeReviewEditedV1,
+	TypeReviewLikeAddedV1,
+	TypeReviewLikeRemovedV1,
+	TypeReviewPromptRequestedV1,
+	TypeReviewRejectedV1,
+	TypeReviewRespondedV1,
+	TypeReviewSubmittedV1,
 	TypeShippingCancelledV1,
 	TypeShippingDeliveredV1,
 	TypeShippingDeliveryExceptionV1,
@@ -298,6 +332,30 @@ const (
 	InventoryStockReservationReleasedV1ReasonCompensation    = "compensation"
 	InventoryStockReservationReleasedV1ReasonAdmin           = "admin"
 	InventoryStockReservationReleasedV1ReasonSKUDeleted      = "sku_deleted"
+	MessageBouncedV1ChannelEmail                             = "email"
+	MessageBouncedV1ChannelSms                               = "sms"
+	MessageBouncedV1ChannelWhatsapp                          = "whatsapp"
+	MessageBouncedV1ChannelTelegram                          = "telegram"
+	MessageDeliveredV1ChannelEmail                           = "email"
+	MessageDeliveredV1ChannelSms                             = "sms"
+	MessageDeliveredV1ChannelWhatsapp                        = "whatsapp"
+	MessageDeliveredV1ChannelTelegram                        = "telegram"
+	MessageFailedV1ChannelEmail                              = "email"
+	MessageFailedV1ChannelSms                                = "sms"
+	MessageFailedV1ChannelWhatsapp                           = "whatsapp"
+	MessageFailedV1ChannelTelegram                           = "telegram"
+	MessageSentV1ChannelEmail                                = "email"
+	MessageSentV1ChannelSms                                  = "sms"
+	MessageSentV1ChannelWhatsapp                             = "whatsapp"
+	MessageSentV1ChannelTelegram                             = "telegram"
+	MessageVerificationConfirmedV1ChannelEmail               = "email"
+	MessageVerificationConfirmedV1ChannelSms                 = "sms"
+	MessageVerificationConfirmedV1ChannelWhatsapp            = "whatsapp"
+	MessageVerificationConfirmedV1ChannelTelegram            = "telegram"
+	MessageVerificationSentV1ChannelEmail                    = "email"
+	MessageVerificationSentV1ChannelSms                      = "sms"
+	MessageVerificationSentV1ChannelWhatsapp                 = "whatsapp"
+	MessageVerificationSentV1ChannelTelegram                 = "telegram"
 	OrderPlacedV1UserTypeCustomer                            = "customer"
 	OrderPlacedV1UserTypeVisitor                             = "visitor"
 	PaymentAuthorizationFailedV1GatewayStripe                = "stripe"
@@ -339,6 +397,10 @@ const (
 	PreferenceChannelRemovedV1ChannelSms                     = "sms"
 	PreferenceChannelRemovedV1ChannelWhatsapp                = "whatsapp"
 	PreferenceChannelRemovedV1ChannelTelegram                = "telegram"
+	PreferenceChannelVerifiedV1ChannelEmail                  = "email"
+	PreferenceChannelVerifiedV1ChannelSms                    = "sms"
+	PreferenceChannelVerifiedV1ChannelWhatsapp               = "whatsapp"
+	PreferenceChannelVerifiedV1ChannelTelegram               = "telegram"
 	PricingExchangeRatesStaleV1ProviderFrankfurter           = "frankfurter"
 	PricingExchangeRatesStaleV1ProviderExchangerateHost      = "exchangerate_host"
 	PricingExchangeRatesUpdatedV1ProviderFrankfurter         = "frankfurter"
@@ -355,7 +417,32 @@ const (
 	ProductSupplierUpdatedV1StatusInactive                   = "inactive"
 	ProductUpdatedV1StatusActive                             = "active"
 	ProductUpdatedV1StatusInactive                           = "inactive"
+	ReviewEditedV1StatusPending                              = "pending"
+	ReviewEditedV1StatusApproved                             = "approved"
+	ReviewEditedV1StatusRejected                             = "rejected"
+	ReviewSubmittedV1StatusPending                           = "pending"
+	ReviewSubmittedV1StatusApproved                          = "approved"
+	ReviewSubmittedV1StatusRejected                          = "rejected"
 )
+
+// CartAbandonedV1 is the payload of cart.abandoned.v1.
+//
+// A customer's cart with items has been idle past the shop's threshold. Published once until the cart is used again.
+type CartAbandonedV1 struct {
+	CartID string `json:"cart_id"`
+	UserID string `json:"user_id"`
+	// The cart type, e.g. shopping.
+	CartType string `json:"cart_type"`
+	// Lines in the cart.
+	ItemCount int64 `json:"item_count"`
+	// Units across all lines.
+	Quantity       int64     `json:"quantity"`
+	LastActivityAt time.Time `json:"last_activity_at"`
+	AbandonedAt    time.Time `json:"abandoned_at"`
+}
+
+// EventType returns cart.abandoned.v1.
+func (CartAbandonedV1) EventType() string { return TypeCartAbandonedV1 }
 
 // CartClearedV1 is the payload of cart.cleared.v1.
 //
@@ -695,6 +782,18 @@ type Money struct {
 	AmountMinor int64 `json:"amount_minor"`
 	// ISO 4217 currency code.
 	Currency string `json:"currency"`
+}
+
+// ProductReviewStats is the common/product_review_stats.v1.json fragment.
+//
+// A product's review aggregates after a change. version increases with every change to the product's reviews or likes, so a consumer keeps the highest.
+type ProductReviewStats struct {
+	// Approved reviews.
+	RatingCount int64 `json:"rating_count"`
+	// Sum of the approved reviews' ratings; the average is rating_sum / rating_count.
+	RatingSum int64 `json:"rating_sum"`
+	LikeCount int64 `json:"like_count"`
+	Version   int64 `json:"version"`
 }
 
 // IdentityOauthLinkedV1 is the payload of identity.oauth_linked.v1.
@@ -1058,6 +1157,105 @@ type InventoryStockRestoredV1 struct {
 
 // EventType returns inventory.stock.restored.v1.
 func (InventoryStockRestoredV1) EventType() string { return TypeInventoryStockRestoredV1 }
+
+// MessageBouncedV1 is the payload of message.bounced.v1.
+//
+// A message hard-bounced. yc-preference marks the user's channel unverified if it still has this address.
+type MessageBouncedV1 struct {
+	MessageID string `json:"message_id"`
+	// Template message type, e.g. order_confirmation.
+	MessageType string `json:"message_type"`
+	Channel     string `json:"channel"`
+	// The customer's user ID; absent for a guest.
+	UserID *string `json:"user_id,omitempty"`
+	// The address that bounced. PII (event-conventions §18).
+	Address   string    `json:"address"`
+	Reason    string    `json:"reason"`
+	BouncedAt time.Time `json:"bounced_at"`
+}
+
+// EventType returns message.bounced.v1.
+func (MessageBouncedV1) EventType() string { return TypeMessageBouncedV1 }
+
+// MessageDeliveredV1 is the payload of message.delivered.v1.
+//
+// The provider confirmed delivery of a message.
+type MessageDeliveredV1 struct {
+	MessageID string `json:"message_id"`
+	// Template message type, e.g. order_confirmation.
+	MessageType string `json:"message_type"`
+	Channel     string `json:"channel"`
+	// The customer's user ID; absent for a guest.
+	UserID      *string   `json:"user_id,omitempty"`
+	DeliveredAt time.Time `json:"delivered_at"`
+}
+
+// EventType returns message.delivered.v1.
+func (MessageDeliveredV1) EventType() string { return TypeMessageDeliveredV1 }
+
+// MessageFailedV1 is the payload of message.failed.v1.
+//
+// A message could not be sent after its last attempt.
+type MessageFailedV1 struct {
+	MessageID string `json:"message_id"`
+	// Template message type, e.g. order_confirmation.
+	MessageType string `json:"message_type"`
+	Channel     string `json:"channel"`
+	// The customer's user ID; absent for a guest.
+	UserID    *string   `json:"user_id,omitempty"`
+	Attempts  int64     `json:"attempts"`
+	LastError string    `json:"last_error"`
+	FailedAt  time.Time `json:"failed_at"`
+}
+
+// EventType returns message.failed.v1.
+func (MessageFailedV1) EventType() string { return TypeMessageFailedV1 }
+
+// MessageSentV1 is the payload of message.sent.v1.
+//
+// A message was handed to its channel's provider.
+type MessageSentV1 struct {
+	MessageID string `json:"message_id"`
+	// Template message type, e.g. order_confirmation.
+	MessageType string `json:"message_type"`
+	Channel     string `json:"channel"`
+	// The customer's user ID; absent for a guest.
+	UserID *string   `json:"user_id,omitempty"`
+	Driver string    `json:"driver"`
+	SentAt time.Time `json:"sent_at"`
+}
+
+// EventType returns message.sent.v1.
+func (MessageSentV1) EventType() string { return TypeMessageSentV1 }
+
+// MessageVerificationConfirmedV1 is the payload of message.verification_confirmed.v1.
+//
+// A user entered the right verification code. yc-preference marks the channel verified if it still has this address.
+type MessageVerificationConfirmedV1 struct {
+	VerificationID string `json:"verification_id"`
+	UserID         string `json:"user_id"`
+	Channel        string `json:"channel"`
+	// The verified address. PII (event-conventions §18).
+	Address     string    `json:"address"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+}
+
+// EventType returns message.verification_confirmed.v1.
+func (MessageVerificationConfirmedV1) EventType() string { return TypeMessageVerificationConfirmedV1 }
+
+// MessageVerificationSentV1 is the payload of message.verification_sent.v1.
+//
+// A verification code was sent to a user's new channel address. Carries no code (event-conventions §18).
+type MessageVerificationSentV1 struct {
+	VerificationID string    `json:"verification_id"`
+	UserID         string    `json:"user_id"`
+	Channel        string    `json:"channel"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	SentAt         time.Time `json:"sent_at"`
+}
+
+// EventType returns message.verification_sent.v1.
+func (MessageVerificationSentV1) EventType() string { return TypeMessageVerificationSentV1 }
 
 // OrderCancelledV1 is the payload of order.cancelled.v1.
 //
@@ -1533,6 +1731,20 @@ type PreferenceChannelRemovedV1 struct {
 // EventType returns preference.channel.removed.v1.
 func (PreferenceChannelRemovedV1) EventType() string { return TypePreferenceChannelRemovedV1 }
 
+// PreferenceChannelVerifiedV1 is the payload of preference.channel.verified.v1.
+//
+// A user's messaging channel was verified.
+type PreferenceChannelVerifiedV1 struct {
+	UserID  string `json:"user_id"`
+	Channel string `json:"channel"`
+	// PII (event-conventions §18).
+	Address    string    `json:"address"`
+	VerifiedAt time.Time `json:"verified_at"`
+}
+
+// EventType returns preference.channel.verified.v1.
+func (PreferenceChannelVerifiedV1) EventType() string { return TypePreferenceChannelVerifiedV1 }
+
 // PreferenceCurrencyChangedV1 is the payload of preference.currency.changed.v1.
 //
 // A user's display currency changed, including when it was first seeded. yc-cart keeps a copy to render cart totals (ADR-014: display only).
@@ -1896,6 +2108,142 @@ type ProductVariantAddedV1 struct {
 
 // EventType returns product.variant.added.v1.
 func (ProductVariantAddedV1) EventType() string { return TypeProductVariantAddedV1 }
+
+// ReviewApprovedV1 is the payload of review.approved.v1.
+//
+// A review was approved and is shown on the product.
+type ReviewApprovedV1 struct {
+	ReviewID     string             `json:"review_id"`
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	Rating       int64              `json:"rating"`
+	ApprovedAt   time.Time          `json:"approved_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.approved.v1.
+func (ReviewApprovedV1) EventType() string { return TypeReviewApprovedV1 }
+
+// ReviewDeletedV1 is the payload of review.deleted.v1.
+//
+// The author deleted a review.
+type ReviewDeletedV1 struct {
+	ReviewID     string             `json:"review_id"`
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	DeletedAt    time.Time          `json:"deleted_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.deleted.v1.
+func (ReviewDeletedV1) EventType() string { return TypeReviewDeletedV1 }
+
+// ReviewEditedV1 is the payload of review.edited.v1.
+//
+// The author edited a review. It is pending again unless the shop auto-approves.
+type ReviewEditedV1 struct {
+	ReviewID     string             `json:"review_id"`
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	Rating       int64              `json:"rating"`
+	Status       string             `json:"status"`
+	EditedAt     time.Time          `json:"edited_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.edited.v1.
+func (ReviewEditedV1) EventType() string { return TypeReviewEditedV1 }
+
+// ReviewLikeAddedV1 is the payload of review.like.added.v1.
+//
+// A customer liked a product.
+type ReviewLikeAddedV1 struct {
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	LikedAt      time.Time          `json:"liked_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.like.added.v1.
+func (ReviewLikeAddedV1) EventType() string { return TypeReviewLikeAddedV1 }
+
+// ReviewLikeRemovedV1 is the payload of review.like.removed.v1.
+//
+// A customer unliked a product.
+type ReviewLikeRemovedV1 struct {
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	UnlikedAt    time.Time          `json:"unliked_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.like.removed.v1.
+func (ReviewLikeRemovedV1) EventType() string { return TypeReviewLikeRemovedV1 }
+
+// ReviewPromptRequestedV1ProductsItem is a nested object.
+type ReviewPromptRequestedV1ProductsItem struct {
+	ProductID string `json:"product_id"`
+	Name      string `json:"name"`
+}
+
+// ReviewPromptRequestedV1 is the payload of review.prompt_requested.v1.
+//
+// A delivered order's review prompt is due: yc-message asks the customer to review the products they have not reviewed yet.
+type ReviewPromptRequestedV1 struct {
+	OrderID     string                                `json:"order_id"`
+	OrderNumber string                                `json:"order_number"`
+	UserID      string                                `json:"user_id"`
+	Products    []ReviewPromptRequestedV1ProductsItem `json:"products"`
+	RequestedAt time.Time                             `json:"requested_at"`
+}
+
+// EventType returns review.prompt_requested.v1.
+func (ReviewPromptRequestedV1) EventType() string { return TypeReviewPromptRequestedV1 }
+
+// ReviewRejectedV1 is the payload of review.rejected.v1.
+//
+// A review was rejected, or an approved one taken down. It is hidden from the product.
+type ReviewRejectedV1 struct {
+	ReviewID     string             `json:"review_id"`
+	ProductID    string             `json:"product_id"`
+	UserID       string             `json:"user_id"`
+	Reason       string             `json:"reason"`
+	RejectedAt   time.Time          `json:"rejected_at"`
+	ProductStats ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.rejected.v1.
+func (ReviewRejectedV1) EventType() string { return TypeReviewRejectedV1 }
+
+// ReviewRespondedV1 is the payload of review.responded.v1.
+//
+// The shop responded to a review.
+type ReviewRespondedV1 struct {
+	ReviewID    string    `json:"review_id"`
+	ProductID   string    `json:"product_id"`
+	UserID      string    `json:"user_id"`
+	RespondedAt time.Time `json:"responded_at"`
+}
+
+// EventType returns review.responded.v1.
+func (ReviewRespondedV1) EventType() string { return TypeReviewRespondedV1 }
+
+// ReviewSubmittedV1 is the payload of review.submitted.v1.
+//
+// A customer submitted a review. It is pending moderation, or approved at once when the shop auto-approves.
+type ReviewSubmittedV1 struct {
+	ReviewID         string             `json:"review_id"`
+	ProductID        string             `json:"product_id"`
+	UserID           string             `json:"user_id"`
+	Rating           int64              `json:"rating"`
+	Status           string             `json:"status"`
+	VerifiedPurchase bool               `json:"verified_purchase"`
+	SubmittedAt      time.Time          `json:"submitted_at"`
+	ProductStats     ProductReviewStats `json:"product_stats"`
+}
+
+// EventType returns review.submitted.v1.
+func (ReviewSubmittedV1) EventType() string { return TypeReviewSubmittedV1 }
 
 // ShippingCancelledV1 is the payload of shipping.cancelled.v1.
 //

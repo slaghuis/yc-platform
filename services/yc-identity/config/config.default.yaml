@@ -26,9 +26,19 @@ password:
     memory_kb: 65536
     threads: 2
   reset_ttl: 1h
-  # Logs reset tokens until yc-message delivers reset links (Phase 7).
-  # Refused in production.
+  # The reset page emailed through yc-message: "{host}" is the shop host
+  # the request came in on, "{token}" the reset token. Override with
+  # YC_IDENTITY__PASSWORD__RESET_URL.
+  reset_url: "https://{host}/account/reset-password?token={token}"
+  # Logs reset tokens. Development only; refused in production.
   log_reset_links: ${YC_IDENTITY_LOG_RESET_LINKS:-false}
+
+# Internal calls through yc-gateway (ADR-021): yc-message sends reset
+# links. With no gateway URL, reset links are not sent.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_IDENTITY_SERVICE_SECRET}
+  timeout: 5s
 
 # Service clients for internal calls (ADR-021): name → secret of at least
 # 32 characters. A client with no secret is disabled.
@@ -36,6 +46,10 @@ service_clients:
   yc-cart: ${YC_CART_SERVICE_SECRET}
   yc-orders: ${YC_ORDERS_SERVICE_SECRET}
   yc-checkout: ${YC_CHECKOUT_SERVICE_SECRET}
+  yc-identity: ${YC_IDENTITY_SERVICE_SECRET}
+  yc-message: ${YC_MESSAGE_SERVICE_SECRET}
+  yc-preference: ${YC_PREFERENCE_SERVICE_SECRET}
+  yc-review: ${YC_REVIEW_SERVICE_SECRET}
 
 # OAuth providers. A provider is enabled by a client ID and secret, or by
 # fake (development only: signs in whatever email the client passes as

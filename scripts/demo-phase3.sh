@@ -274,14 +274,17 @@ price_change() {
 
 search() {
     step "6. Search sorts by popularity"
-    local expected="Kettle,Toaster,Blender"
+    # Popularity counts orders (order.placed.v1) since Phase 7; nothing is
+    # ordered here, so popular ties and falls back to the newest first.
+    local expected="Blender,Toaster,Kettle"
     ranked() {
         call "$SHOP_HOST" "jar:$TMP/browser.jar" GET "/products?q=$RUN"
         [ "$(jq -r '[.items[].name | split(" ")[0]] | join(",")' <<<"$BODY")" = "$expected" ]
     }
     poll 15 ranked || { echo "$BODY" | head -c 600; fail "visitor order is not $expected"; }
     info "visitor (sort $(jq -r .sort <<<"$BODY")): $(jq -r '[.items[].name] | join(", ")' <<<"$BODY")"
-    ok "visitors see the most added-to-cart first (cart.item.added.v1 → popularity_score)"
+    [ "$(jq -r .sort <<<"$BODY")" = popular ] || fail "visitors should get the popular sort"
+    ok "visitors get the popular sort (orders, see demo-phase7.sh); with no orders yet, newest first"
     call "$SHOP_HOST" "$ADMIN" GET "/products?q=$RUN"
     info "shop admin (sort $(jq -r .sort <<<"$BODY")): $(jq -r '[.items[].name] | join(", ")' <<<"$BODY")"
     [ "$(jq -r '[.items[].name | split(" ")[0]] | join(",")' <<<"$BODY")" = "Blender,Toaster,Kettle" ] ||

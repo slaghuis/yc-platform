@@ -169,6 +169,30 @@ paths:
               schema: { $ref: '#/components/schemas/InternalCart' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /admin/abandoned-carts:
+    get:
+      summary: List abandoned carts
+      description: |
+        Customers' carts announced as abandoned (cart.abandoned.v1) after
+        sitting idle with lines, and not used since; most recently
+        abandoned first.
+      operationId: listAbandonedCarts
+      parameters:
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: A page of abandoned carts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AbandonedCartList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     CartType:
@@ -191,6 +215,38 @@ components:
       schema: { type: string }
 
   schemas:
+    AbandonedCart:
+      type: object
+      required: [cart_id, user_id, cart_type, item_count, quantity, last_activity_at, abandoned_at]
+      properties:
+        cart_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        cart_type: { type: string }
+        item_count: { type: integer, description: Lines in the cart. }
+        quantity: { type: integer, description: Units across all lines. }
+        last_activity_at: { type: string, format: date-time }
+        abandoned_at: { type: string, format: date-time }
+    AbandonedCartList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AbandonedCart' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
     Money:
       type: object
       description: An amount in integer minor units of an ISO 4217 currency.

@@ -82,7 +82,7 @@ func (f *fakeIdentity) Logout(_ context.Context, raw string) error {
 	return nil
 }
 
-func (f *fakeIdentity) RequestPasswordReset(_ context.Context, email string) error {
+func (f *fakeIdentity) RequestPasswordReset(_ context.Context, email, _ string) error {
 	f.email = email
 	return nil
 }

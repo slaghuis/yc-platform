@@ -14,15 +14,16 @@ import (
 
 // Config is the service configuration (config/config.default.yaml).
 type Config struct {
-	Service     string                `koanf:"service"`
-	Environment string                `koanf:"environment"`
-	HTTP        httpkit.ServerConfig  `koanf:"http"`
-	Log         LogConfig             `koanf:"log"`
-	Database    dbkit.Config          `koanf:"database"`
-	NATS        NATSConfig            `koanf:"nats"`
-	Telemetry   TelemetryConfig       `koanf:"telemetry"`
-	Gateway     httpkit.GatewayConfig `koanf:"gateway"`
-	Defaults    DefaultsConfig        `koanf:"defaults"`
+	Service       string                 `koanf:"service"`
+	Environment   string                 `koanf:"environment"`
+	HTTP          httpkit.ServerConfig   `koanf:"http"`
+	Log           LogConfig              `koanf:"log"`
+	Database      dbkit.Config           `koanf:"database"`
+	NATS          NATSConfig             `koanf:"nats"`
+	Telemetry     TelemetryConfig        `koanf:"telemetry"`
+	Gateway       httpkit.GatewayConfig  `koanf:"gateway"`
+	InternalCalls httpkit.InternalConfig `koanf:"internal_calls"`
+	Defaults      DefaultsConfig         `koanf:"defaults"`
 }
 
 // LogConfig is the `log:` block.
@@ -74,6 +75,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.InternalURL != "" && c.Gateway.AdvertiseURL == "" {
 		errs = append(errs, errors.New("gateway.advertise_url is required with gateway.internal_url"))
+	}
+	if c.InternalCalls.GatewayURL == "" {
+		errs = append(errs, errors.New("internal_calls.gateway_url is required (YC_GATEWAY_INTERNAL_URL)"))
+	}
+	if c.InternalCalls.ClientSecret == "" {
+		errs = append(errs, errors.New("internal_calls.client_secret is required (YC_PREFERENCE_SERVICE_SECRET)"))
 	}
 	if err := c.Defaults.domain().Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("defaults: %w", err))

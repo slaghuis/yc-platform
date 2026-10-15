@@ -7,16 +7,35 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
+	"github.com/slaghuis/yc-platform/services/yc-product/internal/domain"
 )
 
-// RecordCartAdd counts an add to cart (cart.item.added.v1) towards the
-// SKU's popularity.
-func (s *Service) RecordCartAdd(ctx context.Context, tenantID, skuID string) error {
+// RecordOrder counts a placed order (order.placed.v1) towards its SKUs'
+// popularity and, for a customer's order, the customer's favourites.
+// Visitors' orders count towards popularity only.
+func (s *Service) RecordOrder(ctx context.Context, tenantID, userID string, customer bool, skuIDs []string, at time.Time) error {
 	if err := validateShopTenant(tenantID); err != nil {
 		return err
 	}
+	if !customer {
+		userID = ""
+	}
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
-		return s.cat.AddPopularity(ctx, tx, skuID, 1)
+		return s.cat.RecordOrder(ctx, tx, tenantID, userID, skuIDs, at)
+	})
+}
+
+// SetReviewStats records a product's review stats as carried by review.*
+// events, ignoring ones older than those recorded.
+func (s *Service) SetReviewStats(ctx context.Context, tenantID, productID string, stats domain.ReviewStats) error {
+	if err := validateShopTenant(tenantID); err != nil {
+		return err
+	}
+	if err := stats.Validate(); err != nil {
+		return err
+	}
+	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
+		return s.cat.SetReviewStats(ctx, tx, tenantID, productID, stats)
 	})
 }
 

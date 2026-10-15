@@ -1,11 +1,43 @@
 service: yc-review
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_REVIEW_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_REVIEW_ADVERTISE_URL:-http://yc-review:8080}
+  interval: 30s
+# Internal calls through yc-gateway (ADR-021): yc-orders for verified
+# purchases and delivered orders' products.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_REVIEW_SERVICE_SECRET}
+  timeout: 5s
+# Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
+idempotency:
+  retention: 24h
+  purge_interval: 1h
+# Settings for shops that have not set their own (ADR-024).
+defaults:
+  moderation_mode: manual
+  require_purchase: true
+  allow_edit: true
+# A review whose purchase yc-orders could not confirm stays pending and is
+# checked again every retry_interval for window, then rejected.
+purchase_check:
+  window: 24h
+  retry_interval: 15m
+# A customer is asked to review a delivered order's products after delay.
+prompts:
+  delay: ${YC_REVIEW_PROMPT_DELAY:-72h}
+# How often the purchase checks and review prompts that are due run.
+sweep_interval: ${YC_REVIEW_SWEEP_INTERVAL:-1m}

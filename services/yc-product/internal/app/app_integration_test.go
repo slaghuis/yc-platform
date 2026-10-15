@@ -298,12 +298,14 @@ func TestProduct(t *testing.T) {
 		assert.Equal(t, "TS-RED", sku.SkuCode)
 	})
 
-	t.Run("search ranks by cart adds and base prices per role", func(t *testing.T) {
+	t.Run("search ranks by orders, base prices and ratings per role", func(t *testing.T) {
 		validator, err := events.NewValidator()
 		require.NoError(t, err)
 		upstream, err := eventbus.NewClient(ctx, eventbus.Config{
 			NATSURL: natsURL, ServiceName: "yc-upstream", Validator: validator,
-			Streams: []eventbus.StreamConfig{eventbus.CartStream(), eventbus.PricingStream(), eventbus.InventoryStream()},
+			Streams: []eventbus.StreamConfig{
+				eventbus.OrderStream(), eventbus.ReviewStream(), eventbus.PricingStream(), eventbus.InventoryStream(),
+			},
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = upstream.Close(context.Background()) })
@@ -328,21 +330,36 @@ func TestProduct(t *testing.T) {
 		list, byNewest := names(admin, "")
 		assert.Equal(t, api.Sort("newest"), list.Sort, "shop admins see the newest first")
 		require.Equal(t, []string{"Cap", "Mug", "Acme Organic T-Shirt"}, byNewest)
-		sku := map[string]string{}
+		sku, productOf := map[string]string{}, map[string]string{}
 		for _, it := range list.Items {
 			sku[it.Name] = it.Skus[0].SkuID.String()
+			productOf[it.Name] = it.ProductID.String()
 		}
 
-		added := func(name string) {
-			publish(events.TypeCartItemAddedV1, events.CartItemAddedV1{
-				CartID: uuid.NewString(), UserID: uuid.NewString(), CartType: "shopping", SKUID: sku[name],
-				QuantityAdded: 5, Quantity: 5, UnitPrice: events.Money{AmountMinor: 100, Currency: "ZAR"},
-				AddedAt: time.Now().UTC(),
-			})
+		customer := as(t, srv, "shop-a", "customer")
+		list, _ = names(customer, "")
+		require.NotNil(t, list.Facets.Favourites, "customers get the favourites facet")
+		assert.Equal(t, 0, list.Facets.Favourites.ProductCount)
+
+		zar := events.Money{AmountMinor: 100, Currency: "ZAR"}
+		placed := func(userID, userType string, products ...string) {
+			o := events.OrderPlacedV1{
+				OrderID: uuid.NewString(), OrderNumber: "SHOP-A-1", UserID: userID, UserType: userType,
+				CheckoutSessionID: uuid.NewString(), ItemsTotal: zar, Shipping: zar, TaxTotal: zar, Total: zar,
+				PlacedAt: time.Now().UTC(),
+			}
+			if userType == "visitor" {
+				o.GuestContact = &events.GuestContact{Email: "guest@example.com", PhoneE164: "+27820000000"}
+			}
+			for _, name := range products {
+				o.Items = append(o.Items, events.OrderPlacedV1ItemsItem{
+					SKUID: sku[name], SKUCode: name, NameSnapshot: name, Quantity: 5, UnitPrice: zar, LineTotal: zar,
+				})
+			}
+			publish(events.TypeOrderPlacedV1, o)
 		}
-		added("Mug")
-		added("Mug")
-		added("Acme Organic T-Shirt")
+		placed("00000000-0000-0000-0000-0000000000a1", "customer", "Mug")
+		placed(uuid.NewString(), "visitor", "Mug", "Acme Organic T-Shirt")
 		require.Eventually(t, func() bool {
 			_, got := names(visitor, "")
 			return assert.ObjectsAreEqual([]string{"Mug", "Acme Organic T-Shirt", "Cap"}, got)
@@ -350,9 +367,60 @@ func TestProduct(t *testing.T) {
 		list, _ = names(visitor, "")
 		assert.Equal(t, api.Sort("popular"), list.Sort)
 		assert.Nil(t, list.Facets.Favourites)
-		list, _ = names(as(t, srv, "shop-a", "customer"), "")
-		require.NotNil(t, list.Facets.Favourites, "customers get the favourites facet")
-		assert.Equal(t, 0, list.Facets.Favourites.ProductCount)
+		list, favourites := names(customer, "?favourites=true")
+		assert.Equal(t, []string{"Mug"}, favourites, "a customer's favourites are the products they ordered")
+		require.NotNil(t, list.Facets.Favourites)
+		assert.Equal(t, 1, list.Facets.Favourites.ProductCount, "visitors' orders are not anyone's favourites")
+		assert.Equal(t, http.StatusBadRequest, visitor.do("GET", "/products?favourites=true", nil, nil))
+
+		stats := func(name string) api.ReviewStats {
+			t.Helper()
+			var l api.ProductList
+			require.Equal(t, http.StatusOK, visitor.do("GET", "/products", nil, &l))
+			for _, it := range l.Items {
+				if it.Name == name {
+					return it.Reviews
+				}
+			}
+			t.Fatalf("no product %s", name)
+			return api.ReviewStats{}
+		}
+		assert.Equal(t, api.ReviewStats{}, stats("Cap"), "no reviews yet")
+		reviewed := func(eventType, name string, count, sum, likes, version int64) {
+			s := events.ProductReviewStats{RatingCount: count, RatingSum: sum, LikeCount: likes, Version: version}
+			at := time.Now().UTC()
+			switch eventType {
+			case events.TypeReviewApprovedV1:
+				publish(eventType, events.ReviewApprovedV1{
+					ReviewID: uuid.NewString(), ProductID: productOf[name], UserID: uuid.NewString(), Rating: 5,
+					ApprovedAt: at, ProductStats: s,
+				})
+			case events.TypeReviewLikeAddedV1:
+				publish(eventType, events.ReviewLikeAddedV1{
+					ProductID: productOf[name], UserID: uuid.NewString(), LikedAt: at, ProductStats: s,
+				})
+			}
+		}
+		reviewed(events.TypeReviewApprovedV1, "Cap", 2, 9, 1, 3)
+		reviewed(events.TypeReviewApprovedV1, "Acme Organic T-Shirt", 1, 5, 0, 1)
+		reviewed(events.TypeReviewLikeAddedV1, "Mug", 0, 0, 2, 1)
+		require.Eventually(t, func() bool {
+			_, got := names(visitor, "?sort=rating")
+			return assert.ObjectsAreEqual([]string{"Acme Organic T-Shirt", "Cap", "Mug"}, got)
+		}, 10*time.Second, 50*time.Millisecond, "best rated first; unrated last")
+		avg := 4.5
+		assert.Equal(t, api.ReviewStats{RatingCount: 2, RatingAverage: &avg, LikeCount: 1}, stats("Cap"))
+		assert.Equal(t, api.ReviewStats{LikeCount: 2}, stats("Mug"))
+
+		reviewed(events.TypeReviewLikeAddedV1, "Cap", 1, 1, 0, 2)
+		time.Sleep(500 * time.Millisecond)
+		assert.Equal(t, 2, stats("Cap").RatingCount, "older stats versions are ignored")
+
+		var rated1, rated2 api.ProductList
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?sort=rating&page_size=2", nil, &rated1))
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?sort=rating&page_size=2&cursor="+rated1.Page.NextCursor, nil, &rated2))
+		require.Len(t, rated2.Items, 1)
+		assert.Equal(t, "Mug", rated2.Items[0].Name)
 
 		var page1, page2 api.ProductList
 		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?page_size=2", nil, &page1))

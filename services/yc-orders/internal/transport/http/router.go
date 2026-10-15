@@ -28,6 +28,7 @@ type Orders interface {
 	Package(ctx context.Context, id string) (domain.Order, error)
 	Refund(ctx context.Context, id string, amountMinor int64, reason, key string) (domain.Order, error)
 	Order(ctx context.Context, id string) (service.Detail, error)
+	LatestPurchase(ctx context.Context, userID, productID string) (repository.Purchase, bool, error)
 	AdminOrder(ctx context.Context, id string) (service.Detail, error)
 	CustomerOrder(ctx context.Context, id string) (service.Detail, error)
 	Mine(ctx context.Context, after *repository.OrderCursor, limit int) ([]domain.Order, error)
@@ -68,7 +69,21 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/admin/orders", Roles: admin},
 		{Prefix: "/admin/returns", Roles: admin},
 		{Prefix: "/internal/orders"},
+		{Prefix: "/internal/purchases", Methods: []string{http.MethodGet}},
 	}
+}
+
+func (h handlers) FindPurchase(ctx context.Context, req api.FindPurchaseRequestObject) (api.FindPurchaseResponseObject, error) {
+	p, ok, err := h.svc.LatestPurchase(ctx, req.Params.UserID.String(), req.Params.ProductID.String())
+	if err != nil {
+		return nil, err
+	}
+	out := api.FindPurchase200JSONResponse{Purchased: ok}
+	if ok {
+		id, at := uuid.MustParse(p.OrderID), p.PlacedAt.UTC()
+		out.OrderID, out.OrderNumber, out.PlacedAt = &id, &p.OrderNumber, &at
+	}
+	return out, nil
 }
 
 type handlers struct {

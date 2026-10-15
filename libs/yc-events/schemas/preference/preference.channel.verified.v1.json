@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.channel.verified.v1.json",
+  "title": "preference.channel.verified.v1",
+  "description": "A user's messaging channel was verified.",
+  "type": "object",
+  "required": [
+    "user_id",
+    "channel",
+    "address",
+    "verified_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "address": {
+      "type": "string",
+      "description": "PII (event-conventions \u00a718)."
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -124,6 +124,11 @@ The contract is `services/yc-cart/api/openapi.yaml`. Implemented: the public end
 - **`GET /internal/carts/{user_id}/{type}`** (service callers, ADR-021) returns the cart's lines unpriced, with whether the type is convertible; yc-checkout snapshots them when a session starts. A cart not created yet has no lines. The clear and merge internal endpoints are not built: merging runs on the login event (Phase 3) and clearing on the checkout event below.
 - **Checkout completion.** On `checkout.completed.v1` yc-cart takes the checked-out quantities off the cart's lines, rather than emptying it, so items added during checkout stay. It records each session in `cart_conversions`, so a redelivered event changes nothing, and publishes `cart.converted.v1`.
 
+### Phase 7 Implementation Notes
+
+- **Abandoned carts.** A cart records whether it belongs to a `visitor` or a `customer` (`user_type`, promoted to customer when a customer uses it) and when it was announced (`abandoned_at`). A sweeper runs every `abandoned.sweep_interval` (1m) and announces each **customer's** cart of an `abandonable` type (`shopping`; not `wishlist`) that has lines and has been idle for `abandoned.after` (24h; `YC_CART_ABANDONED_AFTER`), publishing `cart.abandoned.v1` with the line count, quantity and last activity. Visitors' carts are not announced: there is no one to email. A cart is announced once per idle spell: any change clears `abandoned_at`, and it may be announced again after another idle period. The threshold is platform-wide for now, not per shop. yc-message sends the reminder (ADR-023); consent for marketing comes with notification settings.
+- **`GET /admin/abandoned-carts`** (shop admins, cursor-paginated) lists the shop's announced carts that have not been used since, most recently abandoned first.
+
 ## Database Schema
 
 Database: **`yc_cart`**

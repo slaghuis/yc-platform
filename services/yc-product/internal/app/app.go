@@ -63,8 +63,8 @@ type App struct {
 }
 
 // New migrates the database (when configured), connects to Postgres and
-// NATS, subscribes the search projection to cart and pricing events and
-// builds the HTTP handler.
+// NATS, subscribes the search projection to order, review, pricing and
+// inventory events and builds the HTTP handler.
 func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err error) {
 	a := &App{}
 	defer func() {
@@ -94,8 +94,8 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		DB:          db,
 		Validator:   validator,
 		Streams: []eventbus.StreamConfig{
-			eventbus.ProductStream(), eventbus.CartStream(), eventbus.PricingStream(), eventbus.InventoryStream(),
-			eventbus.DLQStream(),
+			eventbus.ProductStream(), eventbus.PricingStream(), eventbus.InventoryStream(),
+			eventbus.OrderStream(), eventbus.ReviewStream(), eventbus.DLQStream(),
 		},
 	})
 	if err != nil {

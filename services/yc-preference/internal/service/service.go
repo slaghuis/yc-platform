@@ -32,14 +32,15 @@ type Service struct {
 	db       *pgxpool.Pool
 	bus      Publisher
 	repo     repository.Preferences
+	messages Messages
 	fallback domain.Defaults
 	now      func() time.Time
 }
 
 // New returns a Service. fallback applies to shops with no defaults of
 // their own.
-func New(db *pgxpool.Pool, bus Publisher, fallback domain.Defaults) *Service {
-	return &Service{db: db, bus: bus, fallback: fallback, now: time.Now}
+func New(db *pgxpool.Pool, bus Publisher, messages Messages, fallback domain.Defaults) *Service {
+	return &Service{db: db, bus: bus, messages: messages, fallback: fallback, now: time.Now}
 }
 
 // Get returns the caller's preferences, or the shop's defaults when they

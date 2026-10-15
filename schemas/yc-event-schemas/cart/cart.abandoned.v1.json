@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.abandoned.v1.json",
+  "title": "cart.abandoned.v1",
+  "description": "A customer's cart with items has been idle past the shop's threshold. Published once until the cart is used again.",
+  "type": "object",
+  "required": [
+    "cart_id",
+    "user_id",
+    "cart_type",
+    "item_count",
+    "quantity",
+    "last_activity_at",
+    "abandoned_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string",
+      "description": "The cart type, e.g. shopping."
+    },
+    "item_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Lines in the cart."
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Units across all lines."
+    },
+    "last_activity_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "abandoned_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

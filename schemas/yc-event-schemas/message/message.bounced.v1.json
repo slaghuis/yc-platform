@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/message/message.bounced.v1.json",
+  "title": "message.bounced.v1",
+  "description": "A message hard-bounced. yc-preference marks the user's channel unverified if it still has this address.",
+  "type": "object",
+  "required": [
+    "message_id",
+    "message_type",
+    "channel",
+    "address",
+    "reason",
+    "bounced_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Template message type, e.g. order_confirmation."
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "user_id": {
+      "type": "string",
+      "description": "The customer's user ID; absent for a guest."
+    },
+    "address": {
+      "type": "string",
+      "description": "The address that bounced. PII (event-conventions \u00a718)."
+    },
+    "reason": {
+      "type": "string"
+    },
+    "bounced_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

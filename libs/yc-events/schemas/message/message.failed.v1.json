@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/message/message.failed.v1.json",
+  "title": "message.failed.v1",
+  "description": "A message could not be sent after its last attempt.",
+  "type": "object",
+  "required": [
+    "message_id",
+    "message_type",
+    "channel",
+    "attempts",
+    "last_error",
+    "failed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Template message type, e.g. order_confirmation."
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "user_id": {
+      "type": "string",
+      "description": "The customer's user ID; absent for a guest."
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_error": {
+      "type": "string"
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

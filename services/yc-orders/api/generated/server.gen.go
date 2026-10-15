@@ -367,6 +367,14 @@ type Problem struct {
 	Type   string `json:"type"`
 }
 
+// Purchase defines model for Purchase.
+type Purchase struct {
+	OrderID     *openapi_types.UUID `json:"order_id,omitempty"`
+	OrderNumber *string             `json:"order_number,omitempty"`
+	PlacedAt    *time.Time          `json:"placed_at,omitempty"`
+	Purchased   bool                `json:"purchased"`
+}
+
 // ReasonInput defines model for ReasonInput.
 type ReasonInput struct {
 	Reason *string `json:"reason,omitempty"`
@@ -486,6 +494,12 @@ type ConfirmOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// FindPurchaseParams defines parameters for FindPurchase.
+type FindPurchaseParams struct {
+	UserID    openapi_types.UUID `form:"user_id" json:"user_id"`
+	ProductID openapi_types.UUID `form:"product_id" json:"product_id"`
+}
+
 // ListMyOrdersParams defines parameters for ListMyOrders.
 type ListMyOrdersParams struct {
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
@@ -554,6 +568,9 @@ type ServerInterface interface {
 	// ConfirmOrder Confirm a paid order
 	// (POST /internal/orders/{id}/confirm)
 	ConfirmOrder(w http.ResponseWriter, r *http.Request, id OrderID, params ConfirmOrderParams)
+	// FindPurchase Find a customer's purchase of a product
+	// (GET /internal/purchases)
+	FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams)
 	// ListMyOrders List my orders, newest first
 	// (GET /orders/mine)
 	ListMyOrders(w http.ResponseWriter, r *http.Request, params ListMyOrdersParams)
@@ -638,6 +655,12 @@ func (_ Unimplemented) AbandonOrder(w http.ResponseWriter, r *http.Request, id O
 // ConfirmOrder Confirm a paid order
 // (POST /internal/orders/{id}/confirm)
 func (_ Unimplemented) ConfirmOrder(w http.ResponseWriter, r *http.Request, id OrderID, params ConfirmOrderParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// FindPurchase Find a customer's purchase of a product
+// (GET /internal/purchases)
+func (_ Unimplemented) FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1149,6 +1172,52 @@ func (siw *ServerInterfaceWrapper) ConfirmOrder(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// FindPurchase operation middleware
+func (siw *ServerInterfaceWrapper) FindPurchase(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FindPurchaseParams
+
+	// ------------- Required query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "user_id", r.URL.Query(), &params.UserID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "product_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "product_id", r.URL.Query(), &params.ProductID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "product_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "product_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FindPurchase(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListMyOrders operation middleware
 func (siw *ServerInterfaceWrapper) ListMyOrders(w http.ResponseWriter, r *http.Request) {
 
@@ -1398,6 +1467,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/orders/{id}", wrapper.GetInternalOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/purchases", wrapper.FindPurchase)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/orders/{id}/confirm", wrapper.ConfirmOrder)
@@ -2115,6 +2187,44 @@ func (response ConfirmOrder409ApplicationProblemPlusJSONResponse) VisitConfirmOr
 	return err
 }
 
+type FindPurchaseRequestObject struct {
+	Params FindPurchaseParams
+}
+
+type FindPurchaseResponseObject interface {
+	VisitFindPurchaseResponse(w http.ResponseWriter) error
+}
+
+type FindPurchase200JSONResponse Purchase
+
+func (response FindPurchase200JSONResponse) VisitFindPurchaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type FindPurchase400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response FindPurchase400ApplicationProblemPlusJSONResponse) VisitFindPurchaseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListMyOrdersRequestObject struct {
 	Params ListMyOrdersParams
 }
@@ -2338,6 +2448,9 @@ type StrictServerInterface interface {
 	// ConfirmOrder Confirm a paid order
 	// (POST /internal/orders/{id}/confirm)
 	ConfirmOrder(ctx context.Context, request ConfirmOrderRequestObject) (ConfirmOrderResponseObject, error)
+	// FindPurchase Find a customer's purchase of a product
+	// (GET /internal/purchases)
+	FindPurchase(ctx context.Context, request FindPurchaseRequestObject) (FindPurchaseResponseObject, error)
 	// ListMyOrders List my orders, newest first
 	// (GET /orders/mine)
 	ListMyOrders(ctx context.Context, request ListMyOrdersRequestObject) (ListMyOrdersResponseObject, error)
@@ -2757,6 +2870,32 @@ func (sh *strictHandler) ConfirmOrder(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ConfirmOrderResponseObject); ok {
 		if err := validResponse.VisitConfirmOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FindPurchase operation middleware
+func (sh *strictHandler) FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams) {
+	var request FindPurchaseRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FindPurchase(ctx, request.(FindPurchaseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FindPurchase")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FindPurchaseResponseObject); ok {
+		if err := validResponse.VisitFindPurchaseResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

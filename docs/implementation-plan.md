@@ -494,9 +494,10 @@ Customer-facing polish: reviews, notifications, abandoned cart.
 **yc-message**
 - Email driver (SMTP via MailHog in dev)
 - SMS driver stub (interface + fake sender; real provider later)
-- Template system per `(tenant, message_type, channel, locale)`
-- Platform-default templates for v1 message types
-- Subscribes to triggering events: `identity.user.registered.v1`, `identity.user.password_reset_requested.v1`, `order.placed.v1`, `order.shipped.v1`, `order.delivered.v1`, `order.cancelled.v1`, `order.refunded.v1`, `cart.abandoned.v1`, `review.prompt_requested.v1`
+- Template system per `(tenant, message_type, channel, locale)`: shop overrides in the database, platform defaults embedded in the service (not seeded)
+- Platform-default templates for the v1 message types that have a trigger so far (welcome, password reset, channel verification, the five order emails, abandoned cart, review prompt); back-in-stock and admin alerts come with their producers
+- Subscribes to triggering events: `identity.user.registered.v1`, `order.placed.v1`, `order.shipped.v1`, `order.delivered.v1`, `order.cancelled.v1`, `order.refunded.v1`, `cart.abandoned.v1`, `review.prompt_requested.v1`, `preference.channel.added.v1`
+- Password reset is sent through `POST /internal/send` by yc-identity, so the token never goes on the bus
 - Message history storage
 - Channel verification flow
 
@@ -504,30 +505,36 @@ Customer-facing polish: reviews, notifications, abandoned cart.
 - Review CRUD per `(tenant, product, user)`
 - Moderation workflow (manual by default)
 - Likes
-- Verified purchase check against yc-orders
-- Google reviews cache (optional; stub if no Google key)
+- Verified purchase check against yc-orders (`GET /internal/purchases`)
+- Review prompts after delivery (`review.prompt_requested.v1`)
 - Published events: `review.*.v1`
+- Google reviews and review images are deferred
 
 **yc-cart extensions**
 - Abandoned cart detection (24h idle; emits `cart.abandoned.v1`)
-- Subscribes to `preference.currency.changed.v1` (refresh on next read)
+- Subscribes to `preference.currency.changed.v1` (done in Phase 3)
 
 **yc-preference extensions**
 - Channel verification endpoints
 - Subscribes to `message.bounced.v1` (unverify channel)
 - Subscribes to `message.verification_confirmed.v1` (mark verified)
 
+**yc-identity extensions**
+- Password reset link sent through yc-message
+
 **yc-product extensions**
-- Subscribes to `review.approved.v1`, `review.like.*.v1` for projection
-- Subscribes to `order.placed.v1` for favourites projection
+- Subscribes to `review.*.v1` (submitted, edited, approved, rejected, deleted, like added and removed) for rating and like stats; `sort=rating`
+- Subscribes to `order.placed.v1` for popularity and the favourites projection (replacing `cart.item.added.v1`)
 
 ### Milestone
+
+`task demo:phase7` runs it against the fake Stripe and MailHog (`scripts/demo-phase7.sh`). The decisions are in ADR-023 (messaging) and ADR-024 (reviews).
 
 1. Customer registers → welcome email in MailHog
 2. Customer completes order → confirmation email with order details
 3. Shop admin marks shipped → shipping notification email
 4. Customer leaves product review; shop admin moderates; approved review visible on product
-5. Customer likes products; appears in "favourites" facet after an order
+5. Customer likes products (like count on the product); ordered products appear in the "favourites" facet
 6. Abandoned cart email fires 24h after idle cart (test by setting threshold to 1 minute)
 7. Customer requests password reset → reset email delivered
 

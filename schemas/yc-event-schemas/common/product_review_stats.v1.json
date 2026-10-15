@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/common/product_review_stats.v1.json",
+  "title": "Product review stats v1",
+  "description": "A product's review aggregates after a change. version increases with every change to the product's reviews or likes, so a consumer keeps the highest.",
+  "type": "object",
+  "required": [
+    "rating_count",
+    "rating_sum",
+    "like_count",
+    "version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rating_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Approved reviews."
+    },
+    "rating_sum": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Sum of the approved reviews' ratings; the average is rating_sum / rating_count."
+    },
+    "like_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
