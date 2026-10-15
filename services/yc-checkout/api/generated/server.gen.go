@@ -167,7 +167,7 @@ type AdminSession struct {
 	ShippingOptions          []ShippingOption        `json:"shipping_options"`
 	State                    State                   `json:"state"`
 
-	// TaxInclusive Show gross prices when true
+	// TaxInclusive Show gross prices when true, net otherwise.
 	TaxInclusive bool                 `json:"tax_inclusive"`
 	Totals       Totals               `json:"totals"`
 	UpdatedAt    time.Time            `json:"updated_at"`
@@ -260,7 +260,7 @@ type PaymentState struct {
 	// NextAction While the payment waits on the customer, what to do, as the gateway describes it.
 	NextAction *map[string]interface{} `json:"next_action,omitempty"`
 
-	// PublicKey The gateway's publishable key
+	// PublicKey The gateway's publishable key, for its client SDK.
 	PublicKey     *string             `json:"public_key,omitempty"`
 	Status        *string             `json:"status,omitempty"`
 	TransactionID *openapi_types.UUID `json:"transaction_id,omitempty"`
@@ -308,7 +308,7 @@ type Session struct {
 	ShippingOptions          []ShippingOption   `json:"shipping_options"`
 	State                    State              `json:"state"`
 
-	// TaxInclusive Show gross prices when true
+	// TaxInclusive Show gross prices when true, net otherwise.
 	TaxInclusive bool            `json:"tax_inclusive"`
 	Totals       Totals          `json:"totals"`
 	UpdatedAt    time.Time       `json:"updated_at"`

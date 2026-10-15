@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_SHIPPING_ADVERTISE_URL:-http://yc-shipping:8080}
-  interval: 30s
+  interval: 5s
 # Calls to other services through yc-gateway (ADR-021): yc-orders finds a
 # deleted customer's orders (ADR-005). The secret is yc-shipping's client
 # secret registered with yc-identity.

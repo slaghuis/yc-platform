@@ -103,6 +103,7 @@ func TestAudit(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	outbox := func(eventType string) []map[string]any {
 		t.Helper()
 		rows, err := db.Query(ctx, `SELECT envelope->'payload' FROM outbox

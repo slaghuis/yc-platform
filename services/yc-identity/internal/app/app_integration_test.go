@@ -206,6 +206,7 @@ func TestIdentity(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 
 	nc, err := nats.Connect(natsURL)
 	require.NoError(t, err)
@@ -346,6 +347,41 @@ func TestIdentity(t *testing.T) {
 			"emails are scoped to a tenant")
 	})
 
+	t.Run("repeated failed logins refuse the email for the window", func(t *testing.T) {
+		limit := cfg.Password.LoginMaxFailures
+		require.Positive(t, limit)
+		cara := map[string]string{"email": "cara@example.com", "password": "caras real password"}
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", cara, as("shop-a", "", ""), nil))
+		wrong := map[string]string{"email": "cara@example.com", "password": "not her password"}
+		login := func(tenant string, body map[string]string) int {
+			return call(t, srv, http.MethodPost, "/login", body, as(tenant, "", ""), nil)
+		}
+
+		for range limit - 1 {
+			require.Equal(t, http.StatusUnauthorized, login("shop-a", wrong))
+		}
+		require.Equal(t, http.StatusOK, login("shop-a", cara), "under the limit")
+		for range limit {
+			require.Equal(t, http.StatusUnauthorized, login("shop-a", wrong), "a success cleared the count")
+		}
+		assert.Equal(t, http.StatusTooManyRequests, login("shop-a", wrong))
+		assert.Equal(t, http.StatusTooManyRequests, login("shop-a", cara), "even with the right password")
+		assert.Equal(t, http.StatusUnauthorized, login("shop-b", cara), "counted per tenant")
+
+		nobody := map[string]string{"email": "nobody-else@example.com", "password": "any password"}
+		for range limit {
+			require.Equal(t, http.StatusUnauthorized, login("shop-a", nobody))
+		}
+		assert.Equal(t, http.StatusTooManyRequests, login("shop-a", nobody), "unknown emails look the same")
+
+		require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE login_failures SET window_start = window_start - $1::interval`,
+				cfg.Password.LoginFailureWindow.String())
+			return err
+		}))
+		assert.Equal(t, http.StatusOK, login("shop-a", cara), "the window passed")
+	})
+
 	t.Run("service tokens", func(t *testing.T) {
 		var tok api.ServiceToken
 		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/internal/service-token",
@@ -431,6 +467,11 @@ func TestIdentity(t *testing.T) {
 
 		var sess api.Session
 		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), &sess))
+		guess := map[string]string{"email": bob["email"], "password": "an attacker's guess"}
+		for range cfg.Password.LoginMaxFailures {
+			require.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", guess, as("shop-c", "", ""), nil))
+		}
+		require.Equal(t, http.StatusTooManyRequests, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil))
 
 		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/password/reset-confirm",
 			map[string]string{"token": token, "password": "a brand new password"}, as("shop-a", "", ""), nil), "other tenant")
@@ -439,7 +480,8 @@ func TestIdentity(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/password/reset-confirm",
 			map[string]string{"token": token, "password": "yet another password"}, as("shop-c", "", ""), nil), "single use")
 
-		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil))
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil),
+			"the reset lifted the lockout")
 		bob["password"] = "a brand new password"
 		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login", bob, as("shop-c", "", ""), nil))
 		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/refresh",

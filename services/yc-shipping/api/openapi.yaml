@@ -442,7 +442,7 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/QuoteItem' }
-        subtotal_minor: { type: integer, format: int64, description: Items total (gross), for price-tiered rates. }
+        subtotal_minor: { type: integer, format: int64, description: 'Items total (gross), for price-tiered rates.' }
     QuoteZone:
       type: object
       required: [zone_id, name]

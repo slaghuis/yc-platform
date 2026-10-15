@@ -157,6 +157,7 @@ func TestGateway(t *testing.T) {
 	t.Setenv("YC_GATEWAY__UPSTREAMS__IDENTITY", fakeIdentity(t))
 	t.Setenv("YC_GATEWAY_COOKIE_SECURE", "false")
 	t.Setenv("YC_GATEWAY__REGISTRY__HEALTH_INTERVAL", "100ms")
+	t.Setenv("YC_GATEWAY__REGISTRY__STARTUP_GRACE", "0s")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -364,6 +365,6 @@ func TestGateway(t *testing.T) {
 		assert.Equal(t, http.StatusOK, get(t, srv, "anything", "/healthz", nil).StatusCode)
 		var r httpkit.Readiness
 		require.Equal(t, http.StatusOK, get(t, srv, "anything", "/readyz", &r).StatusCode)
-		assert.Equal(t, map[string]string{"postgres": "ok", "nats": "ok"}, r.Checks)
+		assert.Equal(t, map[string]string{"postgres": "ok", "nats": "ok", "routes": "ok"}, r.Checks)
 	})
 }

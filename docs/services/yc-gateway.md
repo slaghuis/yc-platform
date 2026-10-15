@@ -86,7 +86,7 @@ POST /internal/register
 
 Route fields mean what they mean in static config: longest prefix wins, empty `methods` admits any method, empty `roles` admits any actor (visitors included), `anonymous` admits token-less requests on platform hosts.
 
-- Registrations are held in memory, one per service name; a registration replaces the service's previous routes. Services re-register every `gateway.interval` (default 30 s), so a restarted gateway relearns them; an unchanged re-registration is a no-op.
+- Registrations are held in memory, one per service name; a registration replaces the service's previous routes. Services re-register every `gateway.interval` (5 s since Phase 9, was 30 s), so a restarted gateway relearns them within seconds; an unchanged re-registration is a no-op. Because there is one registration per service name, replicas of a service would keep replacing each other's registration, and one replica stopping would deregister them all. Run one replica per service until registrations are per instance (ADR-026).
 - Routes are **also** declared in a static configuration file for cold-start availability — self-registration **augments** static config, and a registered route may not reuse a static prefix.
 - The gateway polls each registration's `health_url` every `registry.health_interval` (5 s) and deregisters after `registry.failure_threshold` (3) consecutive failures. Services call `POST /internal/deregister {"service_name", "instance_id"}` on shutdown.
 - Registration and deregistration publish `platform.service.registered.v1` / `platform.service.deregistered.v1` through the outbox.
@@ -160,7 +160,7 @@ CREATE TABLE processed_events ( ... );
 
 - `tenant_hosts` is written by the `platform.tenant.provisioned.v1` handler and loaded into memory at startup, after `tenant_hosts` from config, and reloaded every `tenant_hosts_refresh` so every instance learns new tenants. It has no RLS: it is read before a tenant is known.
 - A provisioning event that claims a hostname owned by another tenant (in config or `tenant_hosts`) is rejected whole and dead-lettered as poison.
-- Service registrations are held in memory. On restart, services re-register within `gateway.interval` (static routes apply meanwhile).
+- Service registrations are held in memory. On restart, services re-register within `gateway.interval` (static routes apply meanwhile), and `/readyz` reports `routes` unready for `registry.startup_grace` (10 s) so a load balancer waits for them (ADR-026 rule 6).
 - Token validation results are cached in memory only.
 
 ## Published Events
@@ -193,6 +193,8 @@ Implemented in Phase 3 on the public listener (`service.RateLimiter`, `golang.or
 - Over quota: `429` with `RATE_LIMITED` and `Retry-After` in whole seconds.
 - Buckets idle for `idle_ttl` are swept. The internal listener is not limited.
 - Defaults: tenant 200/s burst 400, actor 600/min burst 60, visitor 120/min burst 30; `tenant_overrides` per tenant. `YC_GATEWAY_RATE_LIMIT=false` turns limiting off.
+- Invalid credentials count against the client address, like no credentials (Phase 9). Without this, a flood of forged tokens or stale cookies would be limited by nobody's bucket.
+- **Client address.** By default, the address is the connection's remote address and `X-Forwarded-For` is ignored, because any client can set it. Behind a load balancer, set `trusted_proxies` (CIDRs or IPs; `YC_GATEWAY__TRUSTED_PROXIES=10.0.0.0/8,…`) to the balancers' addresses. A request from a trusted proxy is then attributed to the rightmost `X-Forwarded-For` entry that isn't itself trusted; entries to its left are the client's to forge. Without it, every anonymous visitor shares the balancer's address and its visitor quota, which comes to about 2 requests/s for a whole shop.
 
 ## Observability
 
@@ -245,6 +247,7 @@ rate_limit:
   visitor: { requests: 120, per: 1m, burst: 30 }
   tenant_overrides: {}          # tenant ID → quota
   idle_ttl: 10m
+trusted_proxies: []             # load balancers whose X-Forwarded-For is believed
 nats:
   url: ${NATS_URL}
 ```
@@ -261,6 +264,12 @@ Tenant resolution is by hostname only.
 
 - **Unserved internal paths** (ADR-025 rule 18): on the internal listener, a path no registered service serves is `503 unavailable` ("No service serves this path"), not 404, so a caller retries while the owning service restarts or re-registers. The public listener keeps 404.
 - **Monitoring:** yc-monitor learns every registered service from `platform.service.registered.v1` and `.deregistered.v1` and checks it independently of the gateway's own health polling.
+
+### Phase 9 Implementation Notes
+
+- **Security headers** on every public response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `Referrer-Policy: no-referrer` and `Strict-Transport-Security: max-age=31536000`. The platform serves only JSON and redirects, so nothing needs to be framed or loaded. Browsers ignore HSTS over plain HTTP.
+- **Rate limits** count invalid credentials against the client address, and `trusted_proxies` attributes requests behind a load balancer to the real client (see Rate Limiting). See `docs/reports/security-review.md`.
+- **Registration is unauthenticated** on the internal listener (ADR-020 rule 6). Deployments must keep `internal_http` unreachable from outside the platform network.
 
 ## Dependencies on Other Services
 

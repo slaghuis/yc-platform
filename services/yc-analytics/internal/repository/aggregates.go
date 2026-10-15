@@ -71,9 +71,17 @@ var builds = []struct {
 }
 
 // Rebuild replaces the aggregates for tenantID (” for every tenant) over
-// the dates from to to with rows computed from the facts, clears those
-// days' dirty marks and returns the rows written.
+// the dates from to to with rows computed from the facts and returns the
+// rows written. It clears only the dirty marks set before it started (by
+// row version): a fact committed during the rebuild marks its day again,
+// and that mark stays for the next rebuild to count it.
 func (Aggregates) Rebuild(ctx context.Context, tx pgx.Tx, tenantID string, from, to time.Time) (int64, error) {
+	var marks []string
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(array_agg(xmin::text), '{}') FROM agg_dirty
+		WHERE ($1 = '' OR tenant_id = $1) AND date_key BETWEEN $2 AND $3`, tenantID, from, to).Scan(&marks); err != nil {
+		return 0, fmt.Errorf("read dirty days: %w", err)
+	}
 	var rows int64
 	for _, b := range builds {
 		if _, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE ($1 = '' OR tenant_id = $1) AND date_key BETWEEN $2 AND $3`, b.table),
@@ -86,11 +94,26 @@ func (Aggregates) Rebuild(ctx context.Context, tx pgx.Tx, tenantID string, from,
 		}
 		rows += tag.RowsAffected()
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM agg_dirty WHERE ($1 = '' OR tenant_id = $1) AND date_key BETWEEN $2 AND $3`,
-		tenantID, from, to); err != nil {
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM agg_dirty
+		WHERE ($1 = '' OR tenant_id = $1) AND date_key BETWEEN $2 AND $3 AND xmin::text = ANY($4)`,
+		tenantID, from, to, marks); err != nil {
 		return rows, fmt.Errorf("clear dirty days: %w", err)
 	}
 	return rows, nil
+}
+
+// LockDay reserves a shop's day for rebuilding until tx ends. It reports
+// false when another rebuild holds it. Unlike a row lock on its dirty
+// mark, it does not block the facts marking the day meanwhile.
+func (Aggregates) LockDay(ctx context.Context, tx pgx.Tx, d domain.Day) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended('agg_dirty/' || $1 || '/' || $2::text, 0))`,
+		d.TenantID, d.Date).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("lock day: %w", err)
+	}
+	return ok, nil
 }
 
 // MarkDirty records that a shop's day needs its aggregates rebuilt.
@@ -108,12 +131,11 @@ func (Aggregates) MarkDirty(ctx context.Context, tx pgx.Tx, tenantID string, dat
 	return nil
 }
 
-// ClaimDirty returns up to limit dirty days, locked until tx ends.
-func (Aggregates) ClaimDirty(ctx context.Context, tx pgx.Tx, limit int) ([]domain.Day, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT tenant_id, date_key FROM agg_dirty ORDER BY marked_at LIMIT $1 FOR UPDATE SKIP LOCKED`, limit)
+// DirtyDays returns up to limit dirty days, the longest dirty first.
+func (Aggregates) DirtyDays(ctx context.Context, tx pgx.Tx, limit int) ([]domain.Day, error) {
+	rows, err := tx.Query(ctx, `SELECT tenant_id, date_key FROM agg_dirty ORDER BY marked_at LIMIT $1`, limit)
 	if err != nil {
-		return nil, fmt.Errorf("claim dirty days: %w", err)
+		return nil, fmt.Errorf("list dirty days: %w", err)
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.Day, error) {
 		var d domain.Day
@@ -121,7 +143,7 @@ func (Aggregates) ClaimDirty(ctx context.Context, tx pgx.Tx, limit int) ([]domai
 		return d, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("claim dirty days: %w", err)
+		return nil, fmt.Errorf("list dirty days: %w", err)
 	}
 	return out, nil
 }

@@ -20,24 +20,32 @@ const (
 	TriggerManual   = "manual"
 )
 
-// Refresh rebuilds the aggregates of days whose facts changed and
-// returns how many days it rebuilt.
+// Refresh rebuilds the aggregates of up to RefreshBatch days whose facts
+// changed, each in its own transaction, and returns how many days it
+// looked at. Days another rebuild holds are skipped.
 func (s *Service) Refresh(ctx context.Context) (int, error) {
-	var n int
+	var days []domain.Day
 	err := dbkit.WithPlatformTx(ctx, s.db, func(tx pgx.Tx) error {
-		days, err := s.aggs.ClaimDirty(ctx, tx, s.cfg.RefreshBatch)
-		if err != nil {
-			return err
-		}
-		for _, d := range days {
-			if _, err := s.aggs.Rebuild(ctx, tx, d.TenantID, d.Date, d.Date); err != nil {
+		var err error
+		days, err = s.aggs.DirtyDays(ctx, tx, s.cfg.RefreshBatch)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, d := range days {
+		err := dbkit.WithPlatformTx(ctx, s.db, func(tx pgx.Tx) error {
+			if ok, err := s.aggs.LockDay(ctx, tx, d); err != nil || !ok {
 				return err
 			}
+			_, err := s.aggs.Rebuild(ctx, tx, d.TenantID, d.Date, d.Date)
+			return err
+		})
+		if err != nil {
+			return 0, err
 		}
-		n = len(days)
-		return nil
-	})
-	return n, err
+	}
+	return len(days), nil
 }
 
 // RunRefresher refreshes the aggregates every interval until ctx ends.

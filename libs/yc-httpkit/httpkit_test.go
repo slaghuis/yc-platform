@@ -238,3 +238,34 @@ func TestServeShutsDownGracefully(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 }
+
+func TestServeDrainsBeforeShutdown(t *testing.T) {
+	telemetry.InitForTest(t, "yc-test")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	base := "http://" + ln.Addr().String()
+	status := func(path string) int {
+		resp, err := http.Get(base + path)
+		if err != nil {
+			return 0
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	cfg := httpkit.DefaultServerConfig()
+	cfg.ShutdownDelay = 500 * time.Millisecond
+	go func() { done <- httpkit.ServeListener(ctx, cfg, ln, newTestRouter()) }()
+	require.Eventually(t, func() bool { return status("/readyz") == http.StatusOK }, 2*time.Second, 20*time.Millisecond)
+	assert.Equal(t, 0, httpkit.Probe([]string{base + "/healthz"}))
+
+	cancel()
+	require.Eventually(t, func() bool { return status("/readyz") == http.StatusServiceUnavailable },
+		400*time.Millisecond, 10*time.Millisecond, "unready while draining")
+	assert.Equal(t, http.StatusOK, status("/healthz"), "still serving while draining")
+	require.NoError(t, <-done)
+	assert.Equal(t, 1, httpkit.Probe([]string{base + "/healthz"}), "closed after the delay")
+}

@@ -16,4 +16,4 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_PRODUCT_ADVERTISE_URL:-http://yc-product:8080}
-  interval: 30s
+  interval: 5s

@@ -121,6 +121,7 @@ func TestPayments(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	validator, err := events.NewValidator()
 	require.NoError(t, err)
 	upstream, err := eventbus.NewClient(ctx, eventbus.Config{

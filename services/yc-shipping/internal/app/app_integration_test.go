@@ -139,6 +139,7 @@ func TestShipping(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	outbox := func(tenant, eventType string) []map[string]any {
 		rows, err := db.Query(ctx, `SELECT envelope->'payload' FROM outbox
 			WHERE tenant_id = $1 AND envelope->>'event_type' = $2 ORDER BY created_at, id`, tenant, eventType)

@@ -107,6 +107,7 @@ The contract is `services/yc-identity/api/openapi.yaml`. Implemented: `/visitor`
 - **Passwords** are hashed with Argon2id (`password.argon2`: time 2, 64 MiB, 2 threads by default; weaker settings are rejected at start-up).
 - **Registration** turns the calling visitor into a customer in place: the user ID is kept, so the visitor's cart and history follow, and the visitor token stops validating. A caller without a visitor gets a new customer. Emails are unique per tenant.
 - **Login** looks the email up in the tenant yc-gateway resolved and returns the same 401 for an unknown email and a wrong password. On the platform host (`admin.localhost` in dev) that tenant is `_platform`, so only system admins can log in there. `identity.user.login_failed.v1` is not published yet.
+- **Failed sign-ins** are counted per shop and email (`login_failures`, keyed by the SHA-256 of the normalised email, under RLS). After `password.login_max_failures` (10) failures within `password.login_failure_window` (15m), logins for that email get 429 until the window has passed, even with the right password. Unknown emails are counted the same way, so the 429 doesn't reveal which emails are registered. A successful login or a completed password reset clears the count. This complements yc-gateway's per-address rate limit, which a botnet spreads across many addresses. The trade-off: anyone can lock an email out of a shop for the window. A password reset ends it. 0 turns it off.
 - **The first system admin** is created by `yc-identity bootstrap-admin --email <email>`, with the password from `YC_BOOTSTRAP_ADMIN_PASSWORD` or stdin. It is idempotent: an existing email is left unchanged.
 - **Shop admins** register as customers on their shop, and a system admin promotes them (`{"role": "shop_admin"}`). Only customers can be promoted, and only to shop_admin of their own tenant. Promotion publishes `identity.user.promoted.v1`, and tokens issued before it stop validating because `/internal/validate-token` checks the user's current role.
 - **Listing users**: shop admins see their own tenant; system admins see every tenant or filter with `tenant_id`. Results are newest first, cursor-paginated.
@@ -301,5 +302,4 @@ On `DELETE /user/me` or admin deletion:
 - Social auth beyond Google/Facebook (Apple, Microsoft)
 - Shop admin scoping to multiple tenants
 - Session revocation across devices
-- Rate limiting on login attempts (currently expected to live in yc-gateway)
 - Account merging when a visitor registers after guest orders

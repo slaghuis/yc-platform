@@ -47,6 +47,8 @@ jobs:
       - name: Backward compat
         if: github.event_name == 'pull_request'
         run: ./schemas/yc-event-schemas/scripts/check_backward_compat.sh origin/${{ github.base_ref }}
+      - name: Lint OpenAPI specs
+        run: docker run --rm -v "$PWD:/spec" -w /spec redocly/cli:2.1.0 lint services/*/api/openapi.yaml
 
   generated:
     name: Generated code up to date

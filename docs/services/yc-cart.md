@@ -117,7 +117,7 @@ The contract is `services/yc-cart/api/openapi.yaml`. Implemented: the public end
 - **Visitor merge** runs on `identity.user.logged_in.v1` for customers with a `previous_visitor_id` (password or OAuth login). For each type with `merge_on_login`, the visitor's lines merge into the customer's cart: duplicate SKUs sum (capped at `max_quantity`) and keep the customer's snapshot; new lines are taken oldest first until `max_items`. The visitor cart is then deleted and `cart.merged.v1` published, so a redelivered login finds nothing to merge. Registration keeps the visitor's user ID, so the cart simply stays with the new customer and no merge is needed.
 - **Moves** keep the snapshot on a new destination line and publish `cart.item.moved.v1`; `quantity` defaults to the whole line.
 - **Deleted SKUs** (`product.sku.deleted.v1`, and the `sku_ids` of `product.deleted.v1`) are removed from every cart in the shop with `cart.item.removed.v1` reason `sku_deleted`.
-- **Not yet subscribed:** `identity.user.registered.v1` (not needed, see above), `identity.user.deleted.v1`, inventory, promotions, tenant lifecycle and checkout events.
+- **`identity.user.deleted.v1`** takes part in the GDPR cascade (ADR-025). **Not subscribed:** `identity.user.registered.v1` (not needed, see above), inventory, promotions, tenant lifecycle and checkout events.
 
 ### Phase 4 Implementation Notes
 

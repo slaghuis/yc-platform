@@ -106,6 +106,10 @@ type PasswordConfig struct {
 	ResetURL string `koanf:"reset_url"`
 	// LogResetLinks logs reset tokens. Refused in production.
 	LogResetLinks bool `koanf:"log_reset_links"`
+	// LoginMaxFailures failed sign-ins for one email in a shop refuse the
+	// rest of the LoginFailureWindow; 0 turns the limit off.
+	LoginMaxFailures   int           `koanf:"login_max_failures"`
+	LoginFailureWindow time.Duration `koanf:"login_failure_window"`
 }
 
 // LoadConfig layers the embedded defaults, the optional file named by
@@ -140,6 +144,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Password.ResetTTL <= 0 || c.OAuth.StateTTL <= 0 || c.OAuth.Timeout <= 0 {
 		errs = append(errs, errors.New("password.reset_ttl, oauth.state_ttl and oauth.timeout must be positive"))
+	}
+	if c.Password.LoginMaxFailures < 0 || (c.Password.LoginMaxFailures > 0 && c.Password.LoginFailureWindow <= 0) {
+		errs = append(errs, errors.New("password.login_max_failures must be 0 or more, with a positive login_failure_window"))
 	}
 	for name, secret := range c.serviceClients() {
 		if len(secret) < minServiceSecretLen {

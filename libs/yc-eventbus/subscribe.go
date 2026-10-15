@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,9 +32,16 @@ type SubscribeOpts struct {
 	// Default: 30s.
 	AckWait time.Duration
 
-	// Concurrency is the number of messages fetched at a time. Default: 1.
+	// Concurrency is the number of messages handled at once. Default: 1.
+	// Above 1 messages complete out of order, so only handlers that do not
+	// depend on order (counters, idempotent inserts) may raise it.
 	Concurrency int
 }
+
+// pullBuffer is the minimum number of messages a subscription keeps
+// buffered, so that handling one does not wait for a round trip to fetch
+// the next. Buffered messages are still handled in order.
+const pullBuffer = 16
 
 func (o *SubscribeOpts) applyDefaults() {
 	if o.MaxRetries == 0 {
@@ -115,7 +123,7 @@ func (c *Client) startConsumer(ctx context.Context, opts SubscribeOpts, handle f
 		return fmt.Errorf("subscribe: create consumer %q: %w", opts.DurableName, err)
 	}
 
-	iter, err := cons.Messages(jetstream.PullMaxMessages(opts.Concurrency))
+	iter, err := cons.Messages(jetstream.PullMaxMessages(max(2*opts.Concurrency, pullBuffer)))
 	if err != nil {
 		return fmt.Errorf("subscribe: messages iter: %w", err)
 	}
@@ -145,6 +153,9 @@ func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesCont
 	stop := context.AfterFunc(c.bgCtx, iter.Stop)
 	defer stop()
 
+	slots := make(chan struct{}, max(opts.Concurrency, 1))
+	var handling sync.WaitGroup
+	defer handling.Wait()
 	for {
 		msg, err := iter.Next()
 		if err != nil {
@@ -158,7 +169,15 @@ func (c *Client) runSubscription(opts SubscribeOpts, iter jetstream.MessagesCont
 				"durable", opts.DurableName, "err", err)
 			continue
 		}
-		handle(msg)
+		if opts.Concurrency <= 1 {
+			handle(msg)
+			continue
+		}
+		slots <- struct{}{}
+		handling.Go(func() {
+			defer func() { <-slots }()
+			handle(msg)
+		})
 	}
 }
 

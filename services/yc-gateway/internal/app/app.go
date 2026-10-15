@@ -137,9 +137,15 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		limiter = service.NewRateLimiter(cfg.RateLimit, time.Now)
 	}
 	gw := transport.New(a.Hosts, identity, a.Registry, limiter, cfg.VisitorCookie)
+	proxies, err := cfg.trustedProxies()
+	if err != nil {
+		return nil, err
+	}
+	gw.TrustProxies(proxies)
 	a.Handler = transport.NewRouter(gw, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
+		{Name: "routes", Fn: a.Registry.Ready},
 	})
 	identityURL, err := url.Parse(cfg.Upstreams[identityUpstream])
 	if err != nil {

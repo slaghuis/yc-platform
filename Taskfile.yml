@@ -5,6 +5,7 @@ vars:
   # Deployable services: every services/<name> with a cmd/<name> package.
   SERVICES:
     sh: for d in services/*/cmd/*/; do s="${d#services/}"; echo "${s%%/*}"; done
+  REDOCLY: docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/spec" -w /spec redocly/cli:2.1.0
 
 tasks:
   default:
@@ -51,6 +52,29 @@ tasks:
           if [ -f services/{{.ITEM}}/api/openapi.yaml ]; then
             (cd services/{{.ITEM}} && task gen:openapi)
           fi
+
+  # ─── API documentation ────────────────────────────────────
+  docs:api:
+    desc: Build HTML API docs from every service's OpenAPI spec into dist/api/
+    deps: [docs:api:lint]
+    cmds:
+      - mkdir -p dist/api
+      - |
+        {
+          echo '<!doctype html><meta charset="utf-8"><title>yc-platform APIs</title><h1>yc-platform APIs</h1>'
+          echo '<p>Public and admin paths are served through yc-gateway; internal paths only on its internal listener (ADR-021).</p><ul>'
+          for spec in services/*/api/openapi.yaml; do
+            s=${spec#services/}; s=${s%%/*}
+            {{.REDOCLY}} build-docs "$spec" -o "dist/api/$s.html" >&2
+            echo "<li><a href=\"$s.html\">$s</a></li>"
+          done
+          echo '</ul>'
+        } > dist/api/index.html
+
+  docs:api:lint:
+    desc: Check every OpenAPI spec is valid (redocly.yaml)
+    cmds:
+      - '{{.REDOCLY}} lint services/*/api/openapi.yaml'
 
   # ─── Linting and formatting ───────────────────────────────
   lint:
@@ -116,7 +140,8 @@ tasks:
     cmds:
       - docker build -t yc-platform/{{.SERVICE}}:dev
           -f deploy/docker/Dockerfile.service
-          --build-arg SERVICE={{.SERVICE}} .
+          --build-arg SERVICE={{.SERVICE}}
+          --build-arg VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) .
 
   # ─── Dev stack ────────────────────────────────────────────
   devstack:up:
@@ -171,6 +196,11 @@ tasks:
     desc: Run the Phase 8 operations demo (monitor, alerts, DLQ replay, analytics, chargeback, GDPR) against the running stack (see scripts/demo-phase8.sh)
     cmds:
       - ./scripts/demo-phase8.sh
+
+  load:
+    desc: "Run the Phase 9 load test against the running stack (browse 500 RPS, 10 concurrent checkouts, 1000 events/s; pass scenarios with -- browse checkout events; see docs/reports/load-test.md)"
+    cmds:
+      - ./scripts/load-test.sh {{.CLI_ARGS}}
 
   devstack:down:
     desc: Stop local dev stack

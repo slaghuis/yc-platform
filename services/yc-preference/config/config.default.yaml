@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_PREFERENCE_ADVERTISE_URL:-http://yc-preference:8080}
-  interval: 30s
+  interval: 5s
 # Calls to yc-message through the gateway for verification codes (ADR-021).
 internal_calls:
   gateway_url: ${YC_GATEWAY_INTERNAL_URL}

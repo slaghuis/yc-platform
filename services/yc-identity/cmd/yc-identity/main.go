@@ -2,6 +2,7 @@
 //
 //	yc-identity                                  serve
 //	yc-identity bootstrap-admin --email <email>  create the first system admin
+//	yc-identity healthcheck [url]                container health check (/healthz)
 //
 // bootstrap-admin reads the password from YC_BOOTSTRAP_ADMIN_PASSWORD or,
 // when that is unset, the first line of stdin. It is idempotent: an
@@ -33,6 +34,9 @@ var (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(httpkit.Probe(os.Args[2:]))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

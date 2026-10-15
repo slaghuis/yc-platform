@@ -141,6 +141,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		Messages:        messages,
 		Orders:          orders,
 		LogResetLinks:   cfg.Password.LogResetLinks,
+
+		LoginMaxFailures:   cfg.Password.LoginMaxFailures,
+		LoginFailureWindow: cfg.Password.LoginFailureWindow,
 	})
 	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},

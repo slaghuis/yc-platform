@@ -15,7 +15,7 @@ telemetry:
 gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_INVENTORY_ADVERTISE_URL:-http://yc-inventory:8080}
-  interval: 30s
+  interval: 5s
 # Settings for shops that have not changed their own. The reservation TTL
 # is shorter than the 30-minute checkout session, so stock is not held
 # longer than the saga.

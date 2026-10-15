@@ -306,7 +306,7 @@ type OrderItem struct {
 type OrderItemInput struct {
 	IsDigital *bool `json:"is_digital,omitempty"`
 
-	// LineTotalMinor Gross; tax is rounded per line
+	// LineTotalMinor Gross; tax is rounded per line, so not always unit price times quantity.
 	LineTotalMinor int64               `json:"line_total_minor"`
 	NameSnapshot   string              `json:"name_snapshot"`
 	ProductID      *openapi_types.UUID `json:"product_id,omitempty"`
@@ -317,7 +317,7 @@ type OrderItemInput struct {
 	// TaxMinor Tax included in the line total.
 	TaxMinor *int64 `json:"tax_minor,omitempty"`
 
-	// UnitPriceMinor Gross
+	// UnitPriceMinor Gross, as charged.
 	UnitPriceMinor        int64                   `json:"unit_price_minor"`
 	VariantValuesSnapshot *map[string]interface{} `json:"variant_values_snapshot,omitempty"`
 }

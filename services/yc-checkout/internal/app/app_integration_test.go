@@ -163,6 +163,7 @@ func TestCheckout(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	testkit.AssertTenantIsolation(t, db, "outbox")
 	inShop := func(sql string, args ...any) {
 		t.Helper()
 		require.NoError(t, pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {

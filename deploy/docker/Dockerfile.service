@@ -1,43 +1,59 @@
 # syntax=docker/dockerfile:1.6
 #
 # Shared Dockerfile for all yc-platform services.
-# Build with: docker build --build-arg SERVICE=yc-identity -f deploy/docker/Dockerfile.service .
+# Build with: docker build --build-arg SERVICE=yc-identity --build-arg VERSION=$(git describe --tags --always) \
+#   -f deploy/docker/Dockerfile.service .
 
 ARG GO_VERSION=1.26
 
 # ─────────────────────────────────────────────────────────────
+# Only the module files, so the download layer below is reused until a
+# go.mod or go.sum changes. This stage reruns on every source change, but
+# its output, and so the next COPY's cache key, stays the same.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS modules
+WORKDIR /src
+COPY . .
+RUN find . -type f ! -name go.mod ! -name go.sum ! -name 'go.work*' -delete
+
+# ─────────────────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
-ARG SERVICE
-ARG TARGETOS
-ARG TARGETARCH
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /src
 
-# Every module listed in go.work must be present, or the build fails.
-COPY go.work go.work.sum* ./
-COPY libs/ libs/
-COPY services/ services/
-COPY test/ test/
-COPY tools/ tools/
+# A layer rather than a cache mount, so CI layer caches (type=gha), which
+# don't keep cache mounts, reuse it. It comes before the ARGs: a declared
+# ARG is part of every later RUN's cache key, and this layer is the same
+# for every service.
+COPY --from=modules /src/ ./
+RUN go mod download
 
-# Build with cache mounts. nodynamic stops gen2brain/webp (yc-image) linking
-# purego's dynamic loader, which distroless/static cannot run.
+ARG SERVICE
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+
+# Every module listed in go.work must be present, or the build fails.
+COPY . .
+
+# nodynamic stops gen2brain/webp (yc-image) linking purego's dynamic
+# loader, which distroless/static cannot run.
 RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/go/pkg/mod \
     cd services/${SERVICE} && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
       -trimpath -tags=nodynamic \
-      -ldflags="-s -w -X main.version=$(git describe --tags --always 2>/dev/null || echo dev) -X main.builtAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.builtAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       -o /out/service \
       ./cmd/${SERVICE}
 
 # ─────────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 ARG SERVICE
+ARG VERSION=dev
 
 LABEL org.opencontainers.image.title="${SERVICE}"
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/slaghuis/yc-platform"
 LABEL org.opencontainers.image.vendor="slaghuis"
 
@@ -45,5 +61,10 @@ COPY --from=builder /out/service /app/service
 
 USER nonroot:nonroot
 EXPOSE 8080
+
+# Liveness for runtimes without HTTP probes (compose, ECS). Orchestrators
+# that probe HTTP should use /healthz for liveness and /readyz for readiness.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["/app/service", "healthcheck"]
 
 ENTRYPOINT ["/app/service"]

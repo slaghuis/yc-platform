@@ -54,8 +54,10 @@ var counters = map[string]string{
 // Subscriptions are yc-monitor's consumers. The critical webhook consumes
 // yc-monitor's own alerts only when a webhook is configured.
 func Subscriptions(h Handlers, criticalWebhook bool) []Subscription {
+	visitors := sub(ycevents.TypeIdentityVisitorCreatedV1, Received(h))
+	visitors.Opts.Concurrency = visitorConcurrency
 	subs := []Subscription{
-		sub(ycevents.TypeIdentityVisitorCreatedV1, Received(h)),
+		visitors,
 		sub(ycevents.TypePlatformServiceRegisteredV1, platform(h.ServiceRegistered)),
 		sub(ycevents.TypePlatformServiceDeregisteredV1, platform(h.ServiceDeregistered)),
 		sub(ycevents.TypeOrderDisputedV1, typed(h.OrderDisputed)),
@@ -73,6 +75,10 @@ func Subscriptions(h Handlers, criticalWebhook bool) []Subscription {
 	}
 	return subs
 }
+
+// visitorConcurrency is how many visitor events are recorded at once: the
+// busiest event, and recording does not depend on order.
+const visitorConcurrency = 8
 
 func sub(eventType string, h eventbus.Handler) Subscription {
 	return Subscription{

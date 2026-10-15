@@ -562,8 +562,8 @@ components:
         name_snapshot: { type: string, minLength: 1, maxLength: 500 }
         variant_values_snapshot: { type: object, additionalProperties: true }
         quantity: { type: integer, format: int64, minimum: 1 }
-        unit_price_minor: { type: integer, format: int64, description: Gross, as charged. }
-        line_total_minor: { type: integer, format: int64, description: Gross; tax is rounded per line, so not always unit price times quantity. }
+        unit_price_minor: { type: integer, format: int64, description: 'Gross, as charged.' }
+        line_total_minor: { type: integer, format: int64, description: 'Gross; tax is rounded per line, so not always unit price times quantity.' }
         tax_minor: { type: integer, format: int64, description: Tax included in the line total. }
         is_digital: { type: boolean }
     OrderItem:
