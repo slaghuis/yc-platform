@@ -1061,7 +1061,7 @@ func (InventoryStockRestoredV1) EventType() string { return TypeInventoryStockRe
 
 // OrderCancelledV1 is the payload of order.cancelled.v1.
 //
-// A received or packaged order was cancelled before shipment. A captured payment is refunded through yc-payment, and yc-shipping cancels the shipment.
+// A received order was cancelled before shipment. A captured payment is refunded through yc-payment.
 type OrderCancelledV1 struct {
 	OrderID     string `json:"order_id"`
 	OrderNumber string `json:"order_number"`
