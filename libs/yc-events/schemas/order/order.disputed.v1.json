@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.disputed.v1.json",
+  "title": "order.disputed.v1",
+  "description": "A chargeback was received for the order's payment; the order is now disputed.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "chargeback_id",
+    "amount",
+    "disputed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The buyer's ID, or their pseudonym after a GDPR deletion."
+    },
+    "chargeback_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "disputed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

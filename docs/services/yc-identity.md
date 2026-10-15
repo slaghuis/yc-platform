@@ -128,6 +128,12 @@ Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confir
 - **Reset emails.** After the reset request commits, yc-identity calls yc-message `POST /internal/send` (ADR-023 rule 6) as client `yc-identity` (`internal_calls`, `YC_IDENTITY_SERVICE_SECRET`) with the link built from `password.reset_url`: `{host}` is the shop host the request came in on, `{token}` the URL-escaped token (`YC_IDENTITY__PASSWORD__RESET_URL`; the dev stack uses `http://{host}/account/reset-password?token={token}`). The reference and `Idempotency-Key` are `password-reset:<request id>`. A failed send is logged and the answer is still 202. Without `internal_calls.gateway_url`, no link is sent; `password.log_reset_links` still logs it in development.
 - **Service clients** now also include `yc-identity`, `yc-message`, `yc-preference` and `yc-review`.
 
+### Phase 8 Implementation Notes
+
+- **Deletion** (ADR-025 rules 1 and 2) is `DELETE /me` for customers and `DELETE /admin/users/{id}` for system admins (customers and shop admins; a system admin is 409), both 204. Before deleting, yc-identity asks yc-orders `GET /internal/customer-orders?user_id=` (`internal_calls`); unfinished orders or open returns are 409, no answer is 503. Deleting an already deleted user is 404.
+- **What changes:** the user's email, phone, display name and password hash are cleared and the status becomes `deleted`; OAuth links, password reset tokens and sessions are removed; `pseudonym_map` records the random UUID pseudonym, who asked and when. `identity.user.deleted.v1` (with the pseudonym, role and `requested_by`) and yc-identity's own `platform.gdpr.cascade_completed.v1` (`anonymized`) are published in the same transaction. Tracking the cascade is yc-audit's (ADR-005), not yc-identity's.
+- **Service clients** now also include `yc-shipping`, which asks yc-orders for a deleted customer's orders.
+
 ## Database Schema
 
 Database: **`yc_identity`**

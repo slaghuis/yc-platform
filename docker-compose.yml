@@ -84,9 +84,9 @@ services:
   # ─── Application services (profile "app") ─────────────────
   # `task devstack:app` builds and starts them; `task devstack:up` does not.
   # Host ports match the local `task run` ports in .env.example. Every
-  # service but identity and monitor registers its routes with the
-  # gateway's internal listener (:8091, not published to the host), which
-  # also carries service-to-service calls (ADR-021).
+  # service but identity registers its routes with the gateway's internal
+  # listener (:8091, not published to the host), which also carries
+  # service-to-service calls (ADR-021).
   yc-identity:
     profiles: [app]
     build: &service-build
@@ -108,6 +108,7 @@ services:
       YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
       YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET:-dev-preference-service-secret-32ch}
       YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET:-dev-review-service-secret-32-chars!}
+      YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET:-dev-shipping-service-secret-32char}
       # Password reset links go out through yc-message (gateway internal
       # listener); the dev shops are plain HTTP on the gateway's port.
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
@@ -148,6 +149,9 @@ services:
       - "8090:8080"
     depends_on: *infra
 
+  # Checks every registered service's /readyz, counts business and
+  # dead-letter events and raises alerts, which yc-message emails and
+  # YC_MONITOR_CRITICAL_WEBHOOK receives when critical (ADR-025).
   yc-monitor:
     profiles: [app]
     build:
@@ -158,6 +162,10 @@ services:
     restart: unless-stopped
     environment:
       YC_MONITOR_DB_URL: postgres://yc_monitor_app:devpass@postgres:5432/yc_monitor?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_MONITOR_HEALTH_INTERVAL: ${YC_MONITOR_HEALTH_INTERVAL:-15s}
+      YC_MONITOR_EVALUATE_INTERVAL: ${YC_MONITOR_EVALUATE_INTERVAL:-15s}
+      YC_MONITOR_CRITICAL_WEBHOOK: ${YC_MONITOR_CRITICAL_WEBHOOK:-}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -334,6 +342,7 @@ services:
     environment:
       YC_SHIPPING_DB_URL: postgres://yc_shipping_app:devpass@postgres:5432/yc_shipping?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET:-dev-shipping-service-secret-32char}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -406,6 +415,8 @@ services:
       YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
       SMTP_ADDR: mailhog:1025
       YC_MESSAGE_SHOP_URL: http://{tenant}.localhost:8090
+      YC_MESSAGE_SYSTEM_ADMIN_EMAILS: ${YC_MESSAGE_SYSTEM_ADMIN_EMAILS:-ops@yourcommerce.test}
+      YC_MESSAGE_EVENT_RETRY_BACKOFF: ${YC_MESSAGE_EVENT_RETRY_BACKOFF:-}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -436,6 +447,49 @@ services:
       OTEL_METRICS_EXPORTER: none
     ports:
       - "8096:8080"
+    depends_on: *infra
+
+  # Insert-only audit trail of financial, security and GDPR events, and the
+  # GDPR cascade register; a deletion not complete by
+  # YC_AUDIT_GDPR_DEADLINE is a compliance incident (ADR-005, ADR-025).
+  yc-audit:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-audit }
+    image: yc-platform/yc-audit:dev
+    container_name: yc-audit
+    restart: unless-stopped
+    environment:
+      YC_AUDIT_DB_URL: postgres://yc_audit_app:devpass@postgres:5432/yc_audit?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_AUDIT_GDPR_DEADLINE: ${YC_AUDIT_GDPR_DEADLINE:-72h}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8097:8080"
+    depends_on: *infra
+
+  # Facts from business events, aggregates rebuilt from them, dashboards
+  # and shop milestones (ADR-025).
+  yc-analytics:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-analytics }
+    image: yc-platform/yc-analytics:dev
+    container_name: yc-analytics
+    restart: unless-stopped
+    environment:
+      YC_ANALYTICS_DB_URL: postgres://yc_analytics_app:devpass@postgres:5432/yc_analytics?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_ANALYTICS_REFRESH_INTERVAL: ${YC_ANALYTICS_REFRESH_INTERVAL:-30s}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8098:8080"
     depends_on: *infra
 
 volumes:

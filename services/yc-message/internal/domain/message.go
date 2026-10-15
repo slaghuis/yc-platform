@@ -25,13 +25,16 @@ const (
 	TypeRefundIssued        Type = "refund_issued"
 	TypeCartAbandoned       Type = "cart_abandoned"
 	TypeReviewPrompt        Type = "review_prompt"
+	// Phase 8: to admins rather than customers.
+	TypeAdminAlert Type = "admin_alert"
+	TypeMilestone  Type = "milestone"
 )
 
 // Types lists every message type, in a stable order.
 var Types = []Type{
 	TypeWelcome, TypePasswordReset, TypeChannelVerification,
 	TypeOrderConfirmation, TypeOrderShipped, TypeOrderDelivered, TypeOrderCancelled, TypeRefundIssued,
-	TypeCartAbandoned, TypeReviewPrompt,
+	TypeCartAbandoned, TypeReviewPrompt, TypeAdminAlert, TypeMilestone,
 }
 
 // Valid reports whether t is a known message type.

@@ -164,6 +164,13 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 - **Verification:** `POST /internal/channels/verify-start` and `verify-confirm` are called by yc-preference; codes are 6 digits, hashed, 15 minutes, 5 tries, one resend a minute. `preference.channel.added.v1` starts a verification for email and SMS channels.
 - **Events published:** `message.sent.v1`, `message.failed.v1`, `message.delivered.v1`, `message.bounced.v1`, `message.verification_sent.v1`, `message.verification_confirmed.v1`.
 
+### Phase 8 Implementation Notes
+
+- **Admin alerts** (ADR-025 rule 11): `monitor.alert.opened.v1` becomes an `admin_alert` email (subject `[severity] summary`) to each audience in the alert's `notify`. System admins are the addresses in `admins.system_emails` (`YC_MESSAGE_SYSTEM_ADMIN_EMAILS`, comma-separated; `ops@yourcommerce.test` in the dev stack), sent under `_platform`. Shop admins come from a projection of `identity.user.promoted.v1` (`to_role` shop_admin), sent in the shop. Resolved and acknowledged alerts send nothing.
+- **Milestones:** `analytics.milestone.reached.v1` becomes a `milestone` email to the shop admins.
+- **Missing recipients:** when yc-preference answers 404 for a customer, the message is skipped; any other failure (including 503 while yc-preference is down) retries the event, so it dead-letters after `MaxRetries` and can be replayed with `yc-dlq-cli`. `nats.retry_backoff` (`YC_MESSAGE_EVENT_RETRY_BACKOFF`, comma-separated durations) shortens the redelivery backoff for demos.
+- **GDPR:** see GDPR Behavior.
+
 ## Database Schema
 
 Database: **`yc_message`**
@@ -309,6 +316,8 @@ yc-message:
 - Message history is PII (contains address, rendered content with personal data)
 - On `identity.user.deleted.v1`: anonymize `recipient_user_id`, hash `recipient_address`, retain delivery audit for 90 days then purge content
 - Verification codes deleted immediately on expiry or use
+
+*Phase 8:* Implemented: the user's messages keep their history under the pseudonym, queued ones are cancelled, verification codes are deleted, and the action is reported as `pseudonymized`. The 90-day content purge is not implemented yet.
 
 ## Open Questions / Future Scope
 

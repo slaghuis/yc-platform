@@ -29,6 +29,7 @@ type Orders interface {
 	Refund(ctx context.Context, id string, amountMinor int64, reason, key string) (domain.Order, error)
 	Order(ctx context.Context, id string) (service.Detail, error)
 	LatestPurchase(ctx context.Context, userID, productID string) (repository.Purchase, bool, error)
+	CustomerOrders(ctx context.Context, userIDs []string) ([]repository.CustomerOrder, int, error)
 	AdminOrder(ctx context.Context, id string) (service.Detail, error)
 	CustomerOrder(ctx context.Context, id string) (service.Detail, error)
 	Mine(ctx context.Context, after *repository.OrderCursor, limit int) ([]domain.Order, error)
@@ -70,7 +71,20 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/admin/returns", Roles: admin},
 		{Prefix: "/internal/orders"},
 		{Prefix: "/internal/purchases", Methods: []string{http.MethodGet}},
+		{Prefix: "/internal/customer-orders", Methods: []string{http.MethodGet}},
 	}
+}
+
+func (h handlers) ListCustomerOrders(ctx context.Context, req api.ListCustomerOrdersRequestObject) (api.ListCustomerOrdersResponseObject, error) {
+	os, open, err := h.svc.CustomerOrders(ctx, req.Params.UserID)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListCustomerOrders200JSONResponse{OpenCount: open, Orders: make([]api.CustomerOrder, len(os))}
+	for i, o := range os {
+		out.Orders[i] = api.CustomerOrder{OrderID: mustUUID(o.ID), Status: api.OrderStatus(o.Status), OpenReturn: o.OpenReturn}
+	}
+	return out, nil
 }
 
 func (h handlers) FindPurchase(ctx context.Context, req api.FindPurchaseRequestObject) (api.FindPurchaseResponseObject, error) {

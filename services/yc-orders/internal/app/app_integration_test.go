@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -617,5 +618,84 @@ func TestOrders(t *testing.T) {
 			statuses[string(it.Status)] = true
 		}
 		assert.True(t, statuses["delivered"] && statuses["returned"] && statuses["cancelled"], statuses)
+	})
+
+	t.Run("a chargeback disputes the order once", func(t *testing.T) {
+		o := create(newOrder(customerID, "customer"))
+		code, _ := confirm(o.OrderID)
+		require.Equal(t, http.StatusOK, code)
+		orderID, reason := o.OrderID.String(), "fraudulent"
+		cb := events.PaymentChargebackReceivedV1{
+			ChargebackID: uuid.NewString(), TransactionID: tx.String(), OrderID: &orderID, Gateway: "stripe",
+			GatewayReference: "dp_1", Amount: events.Money{AmountMinor: 11500, Currency: "ZAR"}, Reason: &reason,
+			ReceivedAt: time.Now().UTC(),
+		}
+		publish(events.TypePaymentChargebackReceivedV1, cb)
+		publish(events.TypePaymentChargebackReceivedV1, cb)
+		disputed := waitFor(o.OrderID, "disputed")
+		assert.Equal(t, api.OrderStatus("received"), *(*disputed.History)[len(*disputed.History)-1].FromStatus)
+		require.Eventually(t, func() bool { return len(outbox(events.TypeOrderDisputedV1)) == 1 }, 10*time.Second, 50*time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		got := outbox(events.TypeOrderDisputedV1)
+		require.Len(t, got, 1, "a repeated chargeback changes nothing")
+		assert.Equal(t, cb.ChargebackID, got[0]["chargeback_id"])
+		assert.Equal(t, customerID, got[0]["user_id"])
+	})
+
+	t.Run("a deleted customer's orders are pseudonymised", func(t *testing.T) {
+		userID := uuid.NewString()
+		lookup := func(ids ...string) api.CustomerOrders {
+			t.Helper()
+			q := url.Values{"user_id": ids}
+			var out api.CustomerOrders
+			code, _ := svc.do("GET", "/internal/customer-orders?"+q.Encode(), nil, &out)
+			require.Equal(t, http.StatusOK, code)
+			return out
+		}
+		o := create(newOrder(userID, "customer"))
+		assert.Equal(t, 1, lookup(userID).OpenCount, "a pending order is unfinished")
+		code, _ := confirm(o.OrderID)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, 1, lookup(userID).OpenCount)
+		require.Equal(t, http.StatusOK, admin.code("POST", "/admin/orders/"+o.OrderID.String()+"/cancel", nil))
+		assert.Equal(t, 0, lookup(userID).OpenCount)
+		assert.Len(t, lookup(userID).Orders, 1)
+		assert.Equal(t, http.StatusBadRequest, svc.code("GET", "/internal/customer-orders", nil))
+
+		pseudonym := uuid.NewString()
+		deleted := events.IdentityUserDeletedV1{
+			UserID: userID, Pseudonym: pseudonym, Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+		}
+		publish(events.TypeIdentityUserDeletedV1, deleted)
+		publish(events.TypeIdentityUserDeletedV1, deleted)
+		completed := func() []map[string]any {
+			var out []map[string]any
+			for _, p := range outbox(events.TypePlatformGdprCascadeCompletedV1) {
+				if p["user_id"] == userID {
+					out = append(out, p)
+				}
+			}
+			return out
+		}
+		require.Eventually(t, func() bool { return len(completed()) == 1 }, 10*time.Second, 50*time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+		done := completed()
+		require.Len(t, done, 1, "a repeated deletion changes nothing")
+		assert.Equal(t, "yc-orders", done[0]["service"])
+		assert.Equal(t, "pseudonymized", done[0]["action"])
+		assert.EqualValues(t, 1, done[0]["record_count"])
+
+		got := get(o.OrderID)
+		assert.Equal(t, pseudonym, got.UserID)
+		assert.Nil(t, got.DeliveryAddress)
+		assert.EqualValues(t, 11500, got.Total.AmountMinor, "amounts stay for the books")
+		assert.Empty(t, lookup(userID).Orders)
+		assert.Len(t, lookup(userID, pseudonym).Orders, 1)
+
+		late := create(newOrder(userID, "customer"))
+		code, placed := confirm(late.OrderID)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, pseudonym, placed.UserID, "an order paid for during the deletion is pseudonymised too")
+		assert.Nil(t, placed.DeliveryAddress)
 	})
 }

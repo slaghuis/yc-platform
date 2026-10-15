@@ -89,8 +89,10 @@ func (e MessageStatus) Valid() bool {
 
 // Defines values for MessageType.
 const (
+	AdminAlert          MessageType = "admin_alert"
 	CartAbandoned       MessageType = "cart_abandoned"
 	ChannelVerification MessageType = "channel_verification"
+	Milestone           MessageType = "milestone"
 	OrderCancelled      MessageType = "order_cancelled"
 	OrderConfirmation   MessageType = "order_confirmation"
 	OrderDelivered      MessageType = "order_delivered"
@@ -104,9 +106,13 @@ const (
 // Valid indicates whether the value is a known member of the MessageType enum.
 func (e MessageType) Valid() bool {
 	switch e {
+	case AdminAlert:
+		return true
 	case CartAbandoned:
 		return true
 	case ChannelVerification:
+		return true
+	case Milestone:
 		return true
 	case OrderCancelled:
 		return true

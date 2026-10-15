@@ -213,6 +213,20 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete the caller's account (GDPR)
+      description: |
+        Customers only. Refused while the customer has unfinished orders or
+        open returns (409). Anonymises the account, revokes its sessions and
+        publishes identity.user.deleted.v1, which starts the GDPR cascade
+        (ADR-005).
+      operationId: deleteMe
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
 
   /admin/users:
     get:
@@ -249,6 +263,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a user (system_admin, GDPR)
+      description: |
+        Deletes a customer or shop admin as DELETE /me does. System admins
+        and visitors cannot be deleted (409). A deleted user is 404.
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
 
   /admin/users/{id}/promote:
     post:

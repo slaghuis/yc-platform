@@ -11,3 +11,35 @@ nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_MONITOR_ADVERTISE_URL:-http://yc-monitor:8080}
+  interval: 30s
+# Every service registered with yc-gateway is checked at <base_url>/readyz.
+health_check:
+  interval: ${YC_MONITOR_HEALTH_INTERVAL:-15s}
+  timeout: 3s
+  failures_to_unhealthy: 3
+  successes_to_recover: 3
+# Threshold defaults; PUT /sysadmin/thresholds overrides them.
+alerts:
+  evaluate_interval: ${YC_MONITOR_EVALUATE_INTERVAL:-15s}
+  # Every critical alert is also posted here (Slack-compatible JSON).
+  critical_webhook_url: ${YC_MONITOR_CRITICAL_WEBHOOK}
+  dlq_rate:
+    threshold: 10       # dead letters per minute, every shop together
+    min_volume: 0
+    window_minutes: 1
+  checkout_success_rate:
+    threshold: 0.5      # completed / (completed + failed)
+    min_volume: 10
+    window_minutes: 5
+# ADR-004: dead letters 90 days; rollups by bucket size.
+retention:
+  purge_interval: 1h
+  rollup_1m: 168h
+  rollup_5m: 720h
+  rollup_1h: 8760h
+  rollup_1d: 43800h
+  dead_letters: 2160h
+  received_events: 720h

@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS milestones;
+DROP TABLE IF EXISTS agg_dirty;
+DROP TABLE IF EXISTS agg_gateway_performance;
+DROP TABLE IF EXISTS agg_product_performance;
+DROP TABLE IF EXISTS agg_daily_funnel;
+DROP TABLE IF EXISTS agg_daily_revenue;
+DROP TABLE IF EXISTS fact_visitor_session;
+DROP TABLE IF EXISTS fact_cart_event;
+DROP TABLE IF EXISTS fact_checkout_step;
+DROP TABLE IF EXISTS fact_payment;
+DROP TABLE IF EXISTS fact_order_item;
+DROP TABLE IF EXISTS fact_order;
+DROP TABLE IF EXISTS dim_tenant;

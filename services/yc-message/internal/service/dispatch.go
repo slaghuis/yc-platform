@@ -42,7 +42,7 @@ func (s *Service) Dispatch(ctx context.Context) (int, error) {
 // send it twice, and records the outcome: sent, retried later, or failed
 // after the last attempt or a permanent refusal.
 func (s *Service) deliver(ctx context.Context, d repository.Due) error {
-	return s.inTenant(ctx, d.TenantID, func(tx pgx.Tx, tenantID string) error {
+	return s.inAnyTenant(ctx, d.TenantID, func(tx pgx.Tx, tenantID string) error {
 		m, ok, err := s.repo.LockDue(ctx, tx, tenantID, d.ID, s.now().UTC())
 		if err != nil || !ok {
 			return err

@@ -33,6 +33,8 @@ type Identity interface {
 	ListUsers(ctx context.Context, f repository.Filter, after *repository.Cursor, limit int) ([]domain.User, *repository.Cursor, error)
 	GetUser(ctx context.Context, id string) (domain.User, error)
 	Promote(ctx context.Context, id string, role domain.Role) (domain.User, error)
+	DeleteMe(ctx context.Context) error
+	DeleteUser(ctx context.Context, id string) error
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -243,6 +245,20 @@ func (h handlers) PromoteUser(ctx context.Context, req api.PromoteUserRequestObj
 		return nil, err
 	}
 	return api.PromoteUser200JSONResponse(user(u)), nil
+}
+
+func (h handlers) DeleteMe(ctx context.Context, _ api.DeleteMeRequestObject) (api.DeleteMeResponseObject, error) {
+	if err := h.svc.DeleteMe(ctx); err != nil {
+		return nil, err
+	}
+	return api.DeleteMe204Response{}, nil
+}
+
+func (h handlers) DeleteUser(ctx context.Context, req api.DeleteUserRequestObject) (api.DeleteUserResponseObject, error) {
+	if err := h.svc.DeleteUser(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.DeleteUser204Response{}, nil
 }
 
 func (h handlers) ValidateToken(ctx context.Context, req api.ValidateTokenRequestObject) (api.ValidateTokenResponseObject, error) {

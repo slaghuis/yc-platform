@@ -54,6 +54,8 @@ type Config struct {
 	// FakeWebhook accepts delivery reports on POST /webhooks/fake
 	// (development only).
 	FakeWebhook bool
+	// SystemAdminEmails receive platform alerts.
+	SystemAdminEmails []string
 }
 
 // Service implements the messaging use cases.

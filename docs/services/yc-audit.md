@@ -82,6 +82,15 @@ cascade_register
 |---|---|---|---|
 | GET | `/admin/audit` | Tenant-scoped audit records | shop_admin |
 
+### Phase 8 Implementation Notes
+
+The contract is `services/yc-audit/api/openapi.yaml`; the design is ADR-025.
+
+- **Recorded events** (one record per event ID): `identity.user.promoted.v1` (role change); `platform.tenant.provisioned.v1` (tenant lifecycle); `pricing.config.changed.v1` (config change); `identity.user.deleted.v1`, `platform.gdpr.cascade_completed.v1`, `audit.gdpr.cascade_complete.v1` and `.cascade_incident.v1` (GDPR); `payment.chargeback_received.v1`, `order.disputed.v1` and `order.refunded.v1` (financial); `payment.webhook_signature_failed.v1` (security). There is no `admin_action` category; demotions, login failures and tenant configuration events come when those events exist.
+- **Immutability:** `UPDATE`, `DELETE` and `TRUNCATE` are revoked from `PUBLIC` and from the migrating role, and triggers refuse them for anyone.
+- **Filters:** `category`, `tenant_id` (system admins), `event_type`, `subject_ref` (`user:<id>`, `order:<id>`, `transaction:<id>` …), `from`, `to`, with cursor paging. `GET /sysadmin/audit/export?format=csv|jsonl` returns at most `export.max_records` (10,000).
+- **Register:** the configured `gdpr.expected_services` are copied into each entry; reports that arrive first are kept in `gdpr_cascade_reports` until the deletion does. `GET /sysadmin/gdpr/register?status=` lists entries; `/{user_id}` adds each service's report. Every `sweep_interval` (1m) entries past `deadline` (72h, `YC_AUDIT_GDPR_DEADLINE`) become incidents.
+
 ## Database Schema
 
 Database: **`yc_audit`**

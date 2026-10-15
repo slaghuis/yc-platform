@@ -1,11 +1,38 @@
 service: yc-analytics
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_ANALYTICS_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_ANALYTICS_ADVERTISE_URL:-http://yc-analytics:8080}
+  interval: 30s
+# Aggregates are rebuilt from the facts: days whose facts changed every
+# refresh_interval, and every shop's last nightly_days days (ending
+# yesterday) at nightly_at, UTC.
+aggregates:
+  refresh_interval: ${YC_ANALYTICS_REFRESH_INTERVAL:-30s}
+  refresh_batch: 100
+  nightly_at: "02:00"
+  nightly_days: 2
+# Carts of these types count in the funnel (yc-cart's convertible types).
+funnel:
+  cart_types: [shopping]
+# Milestones announced to shop admins (analytics.milestone.reached.v1).
+# Revenue tiers are minor units of the store currency, net of refunds.
+# Orders placed more than max_age ago announce nothing, so replaying old
+# events does not.
+milestones:
+  first_order: true
+  order_counts: [10, 100, 1000, 10000]
+  revenue_tiers: [10000000, 100000000, 1000000000]
+  max_age: 24h

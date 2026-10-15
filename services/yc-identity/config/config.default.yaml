@@ -50,6 +50,7 @@ service_clients:
   yc-message: ${YC_MESSAGE_SERVICE_SECRET}
   yc-preference: ${YC_PREFERENCE_SERVICE_SECRET}
   yc-review: ${YC_REVIEW_SERVICE_SECRET}
+  yc-shipping: ${YC_SHIPPING_SERVICE_SECRET}
 
 # OAuth providers. A provider is enabled by a client ID and secret, or by
 # fake (development only: signs in whatever email the client passes as

@@ -79,6 +79,7 @@ const (
 	OrderStatusCancelled         OrderStatus = "cancelled"
 	OrderStatusDelivered         OrderStatus = "delivered"
 	OrderStatusDeliveryException OrderStatus = "delivery_exception"
+	OrderStatusDisputed          OrderStatus = "disputed"
 	OrderStatusPackaged          OrderStatus = "packaged"
 	OrderStatusPendingPayment    OrderStatus = "pending_payment"
 	OrderStatusReceived          OrderStatus = "received"
@@ -96,6 +97,8 @@ func (e OrderStatus) Valid() bool {
 	case OrderStatusDelivered:
 		return true
 	case OrderStatusDeliveryException:
+		return true
+	case OrderStatusDisputed:
 		return true
 	case OrderStatusPackaged:
 		return true
@@ -216,6 +219,20 @@ type CreateOrderInput struct {
 
 // CreateOrderInputUserType defines model for CreateOrderInput.UserType.
 type CreateOrderInputUserType string
+
+// CustomerOrder defines model for CustomerOrder.
+type CustomerOrder struct {
+	// OpenReturn A return awaits the shop's decision.
+	OpenReturn bool               `json:"open_return"`
+	OrderID    openapi_types.UUID `json:"order_id"`
+	Status     OrderStatus        `json:"status"`
+}
+
+// CustomerOrders defines model for CustomerOrders.
+type CustomerOrders struct {
+	OpenCount int             `json:"open_count"`
+	Orders    []CustomerOrder `json:"orders"`
+}
 
 // GuestContact defines model for GuestContact.
 type GuestContact struct {
@@ -479,6 +496,11 @@ type ListReturnsParams struct {
 	Status   *ReturnStatus `form:"status,omitempty" json:"status,omitempty"`
 }
 
+// ListCustomerOrdersParams defines parameters for ListCustomerOrders.
+type ListCustomerOrdersParams struct {
+	UserID []string `form:"user_id" json:"user_id"`
+}
+
 // CreateOrderParams defines parameters for CreateOrder.
 type CreateOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -556,6 +578,9 @@ type ServerInterface interface {
 	// RejectReturn Reject a return
 	// (POST /admin/returns/{id}/reject)
 	RejectReturn(w http.ResponseWriter, r *http.Request, id ReturnID)
+	// ListCustomerOrders List a customer's orders for GDPR deletion
+	// (GET /internal/customer-orders)
+	ListCustomerOrders(w http.ResponseWriter, r *http.Request, params ListCustomerOrdersParams)
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams)
@@ -631,6 +656,12 @@ func (_ Unimplemented) AcceptReturn(w http.ResponseWriter, r *http.Request, id R
 // RejectReturn Reject a return
 // (POST /admin/returns/{id}/reject)
 func (_ Unimplemented) RejectReturn(w http.ResponseWriter, r *http.Request, id ReturnID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListCustomerOrders List a customer's orders for GDPR deletion
+// (GET /internal/customer-orders)
+func (_ Unimplemented) ListCustomerOrders(w http.ResponseWriter, r *http.Request, params ListCustomerOrdersParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -984,6 +1015,39 @@ func (siw *ServerInterfaceWrapper) RejectReturn(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RejectReturn(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCustomerOrders operation middleware
+func (siw *ServerInterfaceWrapper) ListCustomerOrders(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCustomerOrdersParams
+
+	// ------------- Required query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "user_id", r.URL.Query(), &params.UserID, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCustomerOrders(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1470,6 +1534,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/purchases", wrapper.FindPurchase)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/customer-orders", wrapper.ListCustomerOrders)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/orders/{id}/confirm", wrapper.ConfirmOrder)
@@ -2002,6 +2069,44 @@ func (response RejectReturn409ApplicationProblemPlusJSONResponse) VisitRejectRet
 	return err
 }
 
+type ListCustomerOrdersRequestObject struct {
+	Params ListCustomerOrdersParams
+}
+
+type ListCustomerOrdersResponseObject interface {
+	VisitListCustomerOrdersResponse(w http.ResponseWriter) error
+}
+
+type ListCustomerOrders200JSONResponse CustomerOrders
+
+func (response ListCustomerOrders200JSONResponse) VisitListCustomerOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCustomerOrders400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListCustomerOrders400ApplicationProblemPlusJSONResponse) VisitListCustomerOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateOrderRequestObject struct {
 	Params CreateOrderParams
 	Body   *CreateOrderJSONRequestBody
@@ -2436,6 +2541,9 @@ type StrictServerInterface interface {
 	// RejectReturn Reject a return
 	// (POST /admin/returns/{id}/reject)
 	RejectReturn(ctx context.Context, request RejectReturnRequestObject) (RejectReturnResponseObject, error)
+	// ListCustomerOrders List a customer's orders for GDPR deletion
+	// (GET /internal/customer-orders)
+	ListCustomerOrders(ctx context.Context, request ListCustomerOrdersRequestObject) (ListCustomerOrdersResponseObject, error)
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(ctx context.Context, request CreateOrderRequestObject) (CreateOrderResponseObject, error)
@@ -2737,6 +2845,32 @@ func (sh *strictHandler) RejectReturn(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RejectReturnResponseObject); ok {
 		if err := validResponse.VisitRejectReturnResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCustomerOrders operation middleware
+func (sh *strictHandler) ListCustomerOrders(w http.ResponseWriter, r *http.Request, params ListCustomerOrdersParams) {
+	var request ListCustomerOrdersRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCustomerOrders(ctx, request.(ListCustomerOrdersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCustomerOrders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCustomerOrdersResponseObject); ok {
+		if err := validResponse.VisitListCustomerOrdersResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

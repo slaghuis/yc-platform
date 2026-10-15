@@ -303,12 +303,49 @@ func (Payments) UpdateRefund(ctx context.Context, tx pgx.Tx, tenantID string, x 
 	return nil
 }
 
+// PseudonymizeActor replaces a user's ID on the refunds they issued with
+// their pseudonym, returning how many changed.
+func (Payments) PseudonymizeActor(ctx context.Context, tx pgx.Tx, tenantID, userID, pseudonym string) (int64, error) {
+	tag, err := tx.Exec(ctx, `UPDATE refunds SET actor_id = $3 WHERE tenant_id = $1 AND actor_id = $2`,
+		tenantID, userID, pseudonym)
+	if err != nil {
+		return 0, fmt.Errorf("pseudonymize refund actors: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // RecordWebhook stores a webhook; false means it was seen before.
 func (Payments) RecordWebhook(ctx context.Context, tx pgx.Tx, tenantID, gw, eventID, eventType string, payload []byte, now time.Time) (bool, error) {
 	tag, err := tx.Exec(ctx, `INSERT INTO webhook_events (gateway, gateway_event_id, tenant_id, event_type, received_at, payload)
 		VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`, gw, eventID, tenantID, eventType, now, payload)
 	if err != nil {
 		return false, fmt.Errorf("record webhook: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// Chargeback is a dispute the gateway reported on a transaction.
+type Chargeback struct {
+	ID               string
+	TransactionID    string
+	OrderID          string
+	Gateway          string
+	GatewayReference string
+	AmountMinor      int64
+	Currency         string
+	Reason           string
+	ReceivedAt       time.Time
+}
+
+// InsertChargeback records a chargeback; false means the gateway reported
+// it before.
+func (Payments) InsertChargeback(ctx context.Context, tx pgx.Tx, tenantID string, c Chargeback) (bool, error) {
+	tag, err := tx.Exec(ctx, `INSERT INTO chargebacks (id, transaction_id, tenant_id, order_id, gateway, gateway_reference,
+			amount_minor, currency, reason, received_at)
+		VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5, $6, $7, $8, NULLIF($9, ''), $10) ON CONFLICT DO NOTHING`,
+		c.ID, c.TransactionID, tenantID, c.OrderID, c.Gateway, c.GatewayReference, c.AmountMinor, c.Currency, c.Reason, c.ReceivedAt)
+	if err != nil {
+		return false, fmt.Errorf("insert chargeback: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
 }

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/monitor/monitor.service.unhealthy.v1.json",
+  "title": "monitor.service.unhealthy.v1",
+  "description": "A registered service failed its readiness check the configured number of times in a row. Published under _platform.",
+  "type": "object",
+  "required": [
+    "service_name",
+    "consecutive_failures",
+    "last_error",
+    "detected_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+    },
+    "consecutive_failures": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_error": {
+      "type": "string"
+    },
+    "last_healthy_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "detected_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

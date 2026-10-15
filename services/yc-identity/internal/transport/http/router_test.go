@@ -142,6 +142,10 @@ func (f *fakeIdentity) Promote(_ context.Context, id string, role domain.Role) (
 	return domain.User{ID: id, TenantID: "shop-a", Role: role, Status: domain.StatusActive}, nil
 }
 
+func (*fakeIdentity) DeleteMe(context.Context) error { return nil }
+
+func (*fakeIdentity) DeleteUser(context.Context, string) error { return nil }
+
 func serve(t *testing.T, f *fakeIdentity, req *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()

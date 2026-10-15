@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/analytics/analytics.aggregate.rebuilt.v1.json",
+  "title": "analytics.aggregate.rebuilt.v1",
+  "description": "yc-analytics rebuilt its aggregates from the facts for a date range. Published under _platform.",
+  "type": "object",
+  "required": [
+    "aggregates",
+    "from",
+    "to",
+    "rows",
+    "rebuilt_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "aggregates": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "from": {
+      "type": "string",
+      "format": "date"
+    },
+    "to": {
+      "type": "string",
+      "format": "date",
+      "description": "Inclusive."
+    },
+    "rows": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "schedule",
+        "manual"
+      ]
+    },
+    "rebuilt_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

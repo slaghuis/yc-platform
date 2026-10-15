@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/analytics/analytics.milestone.reached.v1.json",
+  "title": "analytics.milestone.reached.v1",
+  "description": "A shop reached a milestone: its first order, an order count or a revenue tier. Published once per milestone under the shop's tenant; yc-message congratulates the shop admins.",
+  "type": "object",
+  "required": [
+    "milestone",
+    "threshold",
+    "reached_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "milestone": {
+      "type": "string",
+      "enum": [
+        "first_order",
+        "order_count",
+        "revenue"
+      ]
+    },
+    "threshold": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The order count, or the revenue in minor units of the store currency; 1 for first_order."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "The store currency, for revenue milestones."
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The order that reached it."
+    },
+    "reached_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

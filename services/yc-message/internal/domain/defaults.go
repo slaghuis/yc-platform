@@ -120,6 +120,32 @@ Pick up where you left off: {{.cart_url}}
 {{end}}`,
 	},
 	{TypeReviewPrompt, ChannelSMS}: {Body: `How was order {{.order_number}}? Review it at {{.shop_url}}`},
+
+	{TypeAdminAlert, ChannelEmail}: {
+		Subject: "[{{.severity}}] {{.summary}}",
+		Body: `yc-monitor raised a {{.severity}} alert at {{.opened_at}}.
+
+{{.summary}}
+
+Rule:      {{.rule}}
+Metric:    {{.metric}}
+{{range .dimensions}}{{.name}}: {{.value}}
+{{end}}{{if .value}}Value:     {{.value}}
+{{end}}{{if .threshold}}Threshold: {{.threshold}}
+{{end}}
+It resolves on its own when the condition clears, or acknowledge it in the admin console.
+`,
+	},
+	{TypeAdminAlert, ChannelSMS}: {Body: `[{{.severity}}] {{.summary}}`},
+
+	{TypeMilestone, ChannelEmail}: {
+		Subject: "Your shop reached a milestone: {{.title}}",
+		Body: `Congratulations! Your shop reached a milestone on {{.reached_at}}: {{.title}}.
+
+See how the shop is doing in the analytics dashboard at {{.shop_url}}.
+`,
+	},
+	{TypeMilestone, ChannelSMS}: {Body: `Congratulations! Your shop reached a milestone: {{.title}}.`},
 }
 
 // Default returns the platform's built-in template for a type and channel.
@@ -169,6 +195,12 @@ var samples = map[Type]map[string]any{
 		"order_number": "YC-000123",
 		"products":     []map[string]any{{"name": "Kettle", "review_url": "https://shop.example/products/example#review"}},
 	},
+	TypeAdminAlert: {
+		"severity": "critical", "summary": "yc-pricing failed 3 health checks", "rule": "service_unhealthy",
+		"metric": "health", "dimensions": []map[string]any{{"name": "service", "value": "yc-pricing"}},
+		"value": "", "threshold": "", "opened_at": "2026-01-01 13:00 UTC",
+	},
+	TypeMilestone: {"title": "your first order", "reached_at": "2026-01-01 13:00 UTC"},
 }
 
 // Sample returns an example context for a message type, with the fields

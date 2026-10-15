@@ -33,14 +33,15 @@ type Publisher interface {
 type Service struct {
 	db      *pgxpool.Pool
 	bus     Publisher
+	orders  Orders
 	drivers map[string]carrier.Driver
 	repo    repository.Shipping
 	now     func() time.Time
 }
 
 // New returns a Service with the given carrier drivers.
-func New(db *pgxpool.Pool, bus Publisher, drivers ...carrier.Driver) *Service {
-	s := &Service{db: db, bus: bus, drivers: map[string]carrier.Driver{}, now: time.Now}
+func New(db *pgxpool.Pool, bus Publisher, orders Orders, drivers ...carrier.Driver) *Service {
+	s := &Service{db: db, bus: bus, orders: orders, drivers: map[string]carrier.Driver{}, now: time.Now}
 	for _, d := range drivers {
 		s.drivers[d.Name()] = d
 	}

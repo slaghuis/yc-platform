@@ -273,6 +273,20 @@ func (Carts) LinesWithSKUs(ctx context.Context, tx pgx.Tx, tenantID string, skuI
 	return out, nil
 }
 
+// DeleteUser removes a user's carts, their lines and display currency,
+// returning how many carts and currencies went.
+func (Carts) DeleteUser(ctx context.Context, tx pgx.Tx, tenantID, userID string) (int64, error) {
+	carts, err := tx.Exec(ctx, `DELETE FROM carts WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete carts: %w", err)
+	}
+	currencies, err := tx.Exec(ctx, `DELETE FROM display_currencies WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete display currency: %w", err)
+	}
+	return carts.RowsAffected() + currencies.RowsAffected(), nil
+}
+
 // DisplayCurrency returns userID's display currency, or "" when unknown.
 func (Carts) DisplayCurrency(ctx context.Context, tx pgx.Tx, tenantID, userID string) (string, error) {
 	var c string

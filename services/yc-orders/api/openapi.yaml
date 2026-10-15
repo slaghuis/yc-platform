@@ -324,6 +324,35 @@ paths:
               schema: { $ref: '#/components/schemas/Purchase' }
         '400': { $ref: '#/components/responses/Problem' }
 
+  /internal/customer-orders:
+    get:
+      summary: List a customer's orders for GDPR deletion
+      description: |
+        The orders of the given users (a customer and, after deletion,
+        their pseudonym), newest first, up to 1000. open_count counts
+        those still in progress or with a return awaiting a decision:
+        yc-identity refuses to delete the customer while it is above zero,
+        and yc-shipping finds the shipments to clear (ADR-005).
+      operationId: listCustomerOrders
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 10
+            items: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: The customer's orders.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerOrders' }
+        '400': { $ref: '#/components/responses/Problem' }
+
   /internal/orders/{id}/confirm:
     parameters:
       - $ref: '#/components/parameters/OrderID'
@@ -400,6 +429,21 @@ components:
       schema: { type: string }
 
   schemas:
+    CustomerOrders:
+      type: object
+      required: [orders, open_count]
+      properties:
+        orders:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerOrder' }
+        open_count: { type: integer }
+    CustomerOrder:
+      type: object
+      required: [order_id, status, open_return]
+      properties:
+        order_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        open_return: { type: boolean, description: A return awaits the shop's decision. }
     Purchase:
       type: object
       required: [purchased]
@@ -417,7 +461,7 @@ components:
     OrderStatus:
       type: string
       enum: [pending_payment, abandoned, received, cancelled, packaged, shipped, delivered, delivery_exception,
-        returned]
+        returned, disputed]
     ReturnStatus:
       type: string
       enum: [requested, accepted, rejected]

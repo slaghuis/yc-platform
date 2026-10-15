@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/monitor/monitor.alert.resolved.v1.json",
+  "title": "monitor.alert.resolved.v1",
+  "description": "An alert's condition cleared. Published under the alert's tenant.",
+  "type": "object",
+  "required": [
+    "alert_id",
+    "rule",
+    "metric",
+    "severity",
+    "summary",
+    "notify",
+    "opened_at",
+    "resolved_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "alert_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metric": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "notify": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "system_admin",
+          "shop_admin"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "opened_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "resolved_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

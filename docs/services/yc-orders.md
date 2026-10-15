@@ -186,6 +186,12 @@ The flow is ADR-022. Implemented: packaging, the shipping subscriptions, `delive
 - **Verified purchase** (ADR-024 rule 2) is `GET /internal/purchases?user_id=&product_id=` rather than the path above: the customer's latest placed order with a line of the product (not pending payment, abandoned or cancelled), with its ID, number and `placed_at`; delivery is not required, and guest orders do not count. yc-review calls it when a review is submitted.
 - **`GET /internal/orders/{id}`** is also read by yc-message (order number, items, customer or guest contact for order emails, ADR-023) and yc-review (buyer type and products for review prompts).
 
+### Phase 8 Implementation Notes
+
+- **Chargebacks** (ADR-025 rule 17): `payment.chargeback_received.v1` moves the paid order it names to `disputed` (from any status after payment) and publishes `order.disputed.v1` with the amount and reason. A disputed order ignores later shipping events and is not unfinished for account deletion.
+- **`GET /internal/customer-orders?user_id=`** (repeatable `user_id`) returns the users' orders, newest first (up to 1,000), and `open_count`, the orders still in progress or with a return awaiting a decision. yc-identity calls it before deleting an account; yc-shipping calls it with the user ID and pseudonym to find the shipments to clear.
+- **GDPR:** see GDPR Behavior.
+
 ## Database Schema
 
 Database: **`yc_orders`**
@@ -328,6 +334,8 @@ yc-orders:
   - After the operational retention window (configurable, default 90 days), nullify `guest_contact.phone`, retain email hash only
   - Retain items, amounts, timestamps for accounting
 - Publish `platform.gdpr.cascade_completed.v1`
+
+*Phase 8:* Implemented: orders, returns and status history get the pseudonym, and the orders' delivery address, guest contact and source email are cleared at once, not after an operational window; the action is reported as `pseudonymized`. `GET /internal/customer-orders?user_id=` tells yc-identity whether the user has unfinished orders or open returns (a disputed order does not count) and tells yc-shipping which orders were theirs.
 
 ## Open Questions / Future Scope
 

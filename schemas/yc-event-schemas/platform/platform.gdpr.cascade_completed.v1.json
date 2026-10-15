@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.gdpr.cascade_completed.v1.json",
+  "title": "platform.gdpr.cascade_completed.v1",
+  "description": "A service finished its part of a user's GDPR deletion (ADR-005). yc-audit marks the service complete in the cascade register. Published under the deleted user's tenant.",
+  "type": "object",
+  "required": [
+    "user_id",
+    "pseudonym",
+    "service",
+    "action",
+    "record_count",
+    "completed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pseudonym": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "deleted",
+        "anonymized",
+        "pseudonymized"
+      ],
+      "description": "What the service did with the user's records: removed them, stripped the personal data, or replaced user_id with the pseudonym."
+    },
+    "record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Records changed or removed; 0 when the service held nothing for the user."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

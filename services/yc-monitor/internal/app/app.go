@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
@@ -41,7 +42,14 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 	if err != nil {
 		return err
 	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		httpkit.KeepRegistered(ctx, cfg.Gateway, httpkit.Registration{
+			ServiceName: cfg.Service, Version: build.Version, Routes: transport.Routes(),
+		})
+	})
 	serveErr := httpkit.Serve(ctx, cfg.HTTP, a.Handler)
+	wg.Wait()
 
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -51,11 +59,13 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 // App is the wired service. Telemetry must be initialised first.
 type App struct {
 	Handler http.Handler
+	Service *service.Service
 	closers []func(context.Context) error
 }
 
 // New migrates the database (when configured), subscribes to the events
-// yc-monitor records and builds the HTTP handler.
+// yc-monitor counts and alerts on, starts the health checks, alert
+// evaluation and retention purge, and builds the HTTP handler.
 func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err error) {
 	a := &App{}
 	defer func() {
@@ -84,29 +94,43 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams:     []eventbus.StreamConfig{eventbus.IdentityStream(), eventbus.DLQStream()},
+		Streams: []eventbus.StreamConfig{
+			eventbus.IdentityStream(), eventbus.PlatformStream(), eventbus.MonitorStream(), eventbus.CheckoutStream(),
+			eventbus.OrderStream(), eventbus.PaymentStream(), eventbus.PricingStream(), eventbus.AuditStream(),
+			eventbus.DLQStream(),
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	svc := service.New(db)
-	if err := bus.Subscribe(ctx, subscribers.VisitorCreatedSubscription, subscribers.Received(svc)); err != nil {
-		return nil, err
+	a.Service = service.New(db, bus, cfg.settings())
+	for _, sub := range subscribers.Subscriptions(a.Service, cfg.Alerts.CriticalWebhookURL != "") {
+		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
+			return nil, err
+		}
 	}
-	if err := bus.SubscribeDLQ(ctx, subscribers.DLQSubscription, subscribers.DeadLetter(svc)); err != nil {
+	if err := bus.SubscribeDLQ(ctx, subscribers.DLQSubscription, subscribers.DeadLetter(a.Service)); err != nil {
 		return nil, err
 	}
 
-	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
+	bgCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	var wg sync.WaitGroup
+	wg.Go(func() { a.Service.RunHealthChecks(bgCtx, cfg.HealthCheck.Interval) })
+	wg.Go(func() { a.Service.RunEvaluator(bgCtx, cfg.Alerts.EvaluateInterval) })
+	wg.Go(func() { a.Service.RunPurger(bgCtx, cfg.Retention.PurgeInterval) })
+	a.closers = append(a.closers, func(context.Context) error { stop(); wg.Wait(); return nil })
+
+	a.Handler = transport.NewRouter(a.Service, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
 	})
 	return a, nil
 }
 
-// Close stops the event bus, then closes the database pool.
+// Close stops the background loops and the event bus, then closes the
+// database pool.
 func (a *App) Close(ctx context.Context) error {
 	var errs []error
 	for i := len(a.closers) - 1; i >= 0; i-- {

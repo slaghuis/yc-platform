@@ -200,5 +200,8 @@ func callerActor(a authctx.AuthContext) eventbus.Actor {
 	if a.Authenticated() {
 		return eventbus.Actor{Type: string(a.ActorType), ID: a.ActorID}
 	}
-	return eventbus.Actor{Type: string(authctx.ActorService), ID: "yc-identity"}
+	return eventbus.Actor{Type: string(authctx.ActorService), ID: serviceName}
 }
+
+// serviceName is yc-identity's name on the bus.
+const serviceName = "yc-identity"

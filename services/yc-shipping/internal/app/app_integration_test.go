@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,8 +94,41 @@ func TestShipping(t *testing.T) {
 	t.Setenv("YC_SHIPPING_DB_URL", dbURL)
 	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	// yc-gateway in front of yc-orders: customerOrders maps a user ID to its
+	// orders.
+	var (
+		mu             sync.Mutex
+		customerOrders = map[string][]string{}
+	)
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/internal/service-token":
+			_, _ = w.Write([]byte(`{"access_token":"svc-yc-shipping","expires_at":"2099-01-01T00:00:00Z"}`))
+		case "/internal/customer-orders":
+			if r.Header.Get(authctx.HeaderAuthorization) != "Bearer svc-yc-shipping" || r.Header.Get(authctx.HeaderTenantID) != "shop-a" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			out := []map[string]string{}
+			for _, u := range r.URL.Query()["user_id"] {
+				for _, id := range customerOrders[u] {
+					out = append(out, map[string]string{"order_id": id, "status": "delivered"})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"orders": out, "open_count": 0})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(gw.Close)
+	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
+	t.Setenv("YC_SHIPPING_SERVICE_SECRET", "shipping-secret")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
+	cfg.Gateway.InternalURL = ""
 	require.NoError(t, cfg.Validate())
 	a, err := app.New(ctx, cfg, httpkit.BuildInfo{Service: "yc-shipping", Version: "test"})
 	require.NoError(t, err)
@@ -330,6 +364,31 @@ func TestShipping(t *testing.T) {
 		var d api.ShipmentDetail
 		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/shipments/"+s2.ShipmentID.String(), nil, &d))
 		assert.Equal(t, api.ShipmentStatus("cancelled"), d.Status)
+	})
+
+	t.Run("a deleted customer's addresses are cleared (GDPR)", func(t *testing.T) {
+		userID, pseudonym := uuid.NewString(), uuid.NewString()
+		mu.Lock()
+		customerOrders[pseudonym] = []string{orderID.String(), uuid.NewString()}
+		mu.Unlock()
+		require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+			EventType: events.TypeIdentityUserDeletedV1, TenantID: "shop-a",
+			Actor: eventbus.Actor{Type: "service", ID: "yc-identity"},
+			Payload: events.IdentityUserDeletedV1{
+				UserID: userID, Pseudonym: pseudonym, Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+			},
+		}))
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		done := outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)[0]
+		assert.Equal(t, "yc-shipping", done["service"])
+		assert.Equal(t, "anonymized", done["action"])
+		assert.EqualValues(t, 1, done["record_count"], "found by the pseudonym; the other order has no shipment")
+
+		var d api.ShipmentDetail
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/shipments/"+sh.ShipmentID.String(), nil, &d))
+		assert.Empty(t, d.DeliveryAddress)
+		assert.Equal(t, sh.TrackingNumber, d.TrackingNumber, "the parcel's record stays")
 	})
 
 	t.Run("deleting a zone removes its rates", func(t *testing.T) {

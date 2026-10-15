@@ -373,6 +373,17 @@ func TestProduct(t *testing.T) {
 		assert.Equal(t, 1, list.Facets.Favourites.ProductCount, "visitors' orders are not anyone's favourites")
 		assert.Equal(t, http.StatusBadRequest, visitor.do("GET", "/products?favourites=true", nil, nil))
 
+		publish(events.TypeIdentityUserDeletedV1, events.IdentityUserDeletedV1{
+			UserID: "00000000-0000-0000-0000-0000000000a1", Pseudonym: uuid.NewString(), Role: "customer",
+			RequestedBy: "user", DeletedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool {
+			list, _ := names(customer, "")
+			return list.Facets.Favourites.ProductCount == 0
+		}, 10*time.Second, 50*time.Millisecond, "a deleted customer's favourites go (GDPR)")
+		_, popular := names(visitor, "")
+		assert.Equal(t, []string{"Mug", "Acme Organic T-Shirt", "Cap"}, popular, "popularity stays")
+
 		stats := func(name string) api.ReviewStats {
 			t.Helper()
 			var l api.ProductList

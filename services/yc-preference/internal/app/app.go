@@ -94,10 +94,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams: []eventbus.StreamConfig{
-			eventbus.PreferenceStream(), eventbus.IdentityStream(), eventbus.PlatformStream(),
-			eventbus.MessageStream(), eventbus.DLQStream(),
-		},
+		Streams: append([]eventbus.StreamConfig{
+			eventbus.PreferenceStream(), eventbus.MessageStream(), eventbus.DLQStream(),
+		}, eventbus.GDPRStreams()...),
 	})
 	if err != nil {
 		return nil, err

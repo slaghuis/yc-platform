@@ -301,6 +301,17 @@ func (Shipping) UpdateShipment(ctx context.Context, tx pgx.Tx, tenantID string, 
 	return nil
 }
 
+// ClearAddresses empties the delivery address of the orders' shipments
+// (ADR-005), returning how many changed.
+func (Shipping) ClearAddresses(ctx context.Context, tx pgx.Tx, tenantID string, orderIDs []string, now time.Time) (int64, error) {
+	tag, err := tx.Exec(ctx, `UPDATE shipments SET delivery_address = '{}', updated_at = $3
+		WHERE tenant_id = $1 AND order_id = ANY($2::uuid[]) AND delivery_address <> '{}'`, tenantID, orderIDs, now)
+	if err != nil {
+		return 0, fmt.Errorf("clear addresses: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // AddEvent records a step in a shipment's history.
 func (Shipping) AddEvent(ctx context.Context, tx pgx.Tx, tenantID, shipmentID, actorID string, e domain.Event) error {
 	_, err := tx.Exec(ctx, `INSERT INTO shipment_events (tenant_id, shipment_id, status, message, actor_id,

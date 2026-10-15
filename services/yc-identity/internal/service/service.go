@@ -45,6 +45,9 @@ type Config struct {
 	ResetURL string
 	// Messages emails reset links. Nil leaves them undelivered.
 	Messages Messages
+	// Orders refuses deletions while orders are unfinished. Nil skips the
+	// check (development without internal calls).
+	Orders Orders
 	// LogResetLinks logs reset tokens. Development only.
 	LogResetLinks bool
 }
@@ -65,17 +68,18 @@ type OAuthProvider struct {
 // OAuth sign-in, password reset, token validation, service tokens and user
 // administration.
 type Service struct {
-	db       *pgxpool.Pool
-	bus      Publisher
-	signer   *token.Signer
-	hasher   *password.Hasher
-	users    repository.Users
-	sessions repository.Sessions
-	oauth    repository.OAuth
-	resets   repository.PasswordResets
-	clients  map[string][sha256.Size]byte
-	cfg      Config
-	now      func() time.Time
+	db         *pgxpool.Pool
+	bus        Publisher
+	signer     *token.Signer
+	hasher     *password.Hasher
+	users      repository.Users
+	sessions   repository.Sessions
+	oauth      repository.OAuth
+	resets     repository.PasswordResets
+	pseudonyms repository.Pseudonyms
+	clients    map[string][sha256.Size]byte
+	cfg        Config
+	now        func() time.Time
 }
 
 // New returns a Service.

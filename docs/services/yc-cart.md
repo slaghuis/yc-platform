@@ -255,6 +255,8 @@ yc-cart:
 - Carts are PII (linked to user_id)
 - On `identity.user.deleted.v1`: delete all carts for the user; publish `platform.gdpr.cascade_completed.v1`
 
+*Phase 8:* Implemented as described; the display currency is deleted too, and the action is reported as `deleted`.
+
 ## Open Questions / Future Scope
 
 - Shared/collaborative carts (gift registries)

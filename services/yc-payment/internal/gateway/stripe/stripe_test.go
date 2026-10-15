@@ -158,6 +158,15 @@ func TestWebhook(t *testing.T) {
 	assert.Equal(t, r.Reference, ev.Refund.Reference)
 	assert.Equal(t, p.Reference, ev.PaymentReference)
 
+	body, sig, disputeID, ok := fake.Dispute("whsec_test", p.Reference, "fraudulent")
+	require.True(t, ok)
+	h.Set(stripe.SignatureHeader, sig)
+	ev, err = d.ParseWebhook("whsec_test", h, body, time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, gateway.WebhookDispute, ev.Kind)
+	assert.Equal(t, p.Reference, ev.PaymentReference)
+	assert.Equal(t, gateway.Dispute{Reference: disputeID, AmountMinor: p.AmountCaptured, Currency: "ZAR", Reason: "fraudulent"}, ev.Dispute)
+
 	body, sig = fake.Webhook("whsec_test", "customer.created", "cus_1")
 	h.Set(stripe.SignatureHeader, sig)
 	ev, err = d.ParseWebhook("whsec_test", h, body, time.Now())

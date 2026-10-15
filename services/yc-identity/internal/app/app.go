@@ -88,7 +88,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		DB:           db,
 		DisableRelay: cfg.NATS.DisableRelay,
 		Validator:    validator,
-		Streams:      []eventbus.StreamConfig{eventbus.IdentityStream(), eventbus.DLQStream()},
+		Streams: []eventbus.StreamConfig{
+			eventbus.IdentityStream(), eventbus.IdentityDeletedStream(), eventbus.PlatformStream(), eventbus.DLQStream(),
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -117,9 +119,14 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		}
 		providers[name] = service.OAuthProvider{Provider: p, RedirectURL: pc.RedirectURL}
 	}
-	var messages service.Messages
+	var (
+		messages service.Messages
+		orders   service.Orders
+	)
 	if cfg.InternalCalls.GatewayURL != "" {
-		messages = integration.NewMessages(httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls))
+		internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
+		messages = integration.NewMessages(internal)
+		orders = integration.NewOrders(internal)
 	}
 	svc := service.New(db, bus, signer, hasher, service.Config{
 		AccessTokenTTL:  cfg.JWT.AccessTokenTTL,
@@ -132,6 +139,7 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		OAuth:           providers,
 		ResetURL:        cfg.Password.ResetURL,
 		Messages:        messages,
+		Orders:          orders,
 		LogResetLinks:   cfg.Password.LogResetLinks,
 	})
 	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{

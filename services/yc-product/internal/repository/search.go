@@ -90,6 +90,15 @@ func (Catalog) SetReviewStats(ctx context.Context, tx pgx.Tx, tenantID, productI
 	return nil
 }
 
+// DeleteFavourites removes userID's favourites, returning how many went.
+func (Catalog) DeleteFavourites(ctx context.Context, tx pgx.Tx, tenantID, userID string) (int64, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM customer_favourites WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete favourites: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // FavouriteCount counts the active products userID has ordered.
 func (Catalog) FavouriteCount(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
 	var n int

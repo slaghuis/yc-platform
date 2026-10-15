@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/monitor/monitor.alert.opened.v1.json",
+  "title": "monitor.alert.opened.v1",
+  "description": "yc-monitor raised an alert. Published under the alert's tenant (_platform for platform alerts). yc-message emails the admins named in notify.",
+  "type": "object",
+  "required": [
+    "alert_id",
+    "rule",
+    "metric",
+    "severity",
+    "summary",
+    "notify",
+    "opened_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "alert_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rule": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The alert rule's name, e.g. dlq_rate or service_unhealthy."
+    },
+    "metric": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One line for people, e.g. 'yc-pricing failed 3 health checks'."
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "What the alert is about, e.g. {\"service\": \"yc-pricing\"}."
+    },
+    "value": {
+      "type": "number",
+      "description": "The measured value that crossed the threshold, for threshold rules."
+    },
+    "threshold": {
+      "type": "number"
+    },
+    "notify": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "system_admin",
+          "shop_admin"
+        ]
+      },
+      "uniqueItems": true,
+      "description": "Who should be told: the platform's system admins, the tenant's shop admins, or nobody (empty)."
+    },
+    "opened_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

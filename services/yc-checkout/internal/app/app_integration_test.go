@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	testkit "github.com/slaghuis/yc-platform/libs/yc-testkit"
@@ -688,5 +689,29 @@ func TestCheckout(t *testing.T) {
 		other := as(t, srv, "admin", "shop_admin")
 		other.hdr[authctx.HeaderTenantID] = "shop-b"
 		assert.Equal(t, http.StatusNotFound, other.do(http.MethodGet, "/admin/sessions/"+s.SessionID.String(), nil, nil))
+	})
+
+	t.Run("a deleted customer's sessions are pseudonymised (GDPR)", func(t *testing.T) {
+		c := customer(t, fakeLine{mug, 1})
+		s := c.quote()
+		require.Equal(t, http.StatusOK, c.ship(s.SessionID, map[string]any{"delivery_address": address}, &s))
+		pseudonym := uuid.NewString()
+		deleted := events.IdentityUserDeletedV1{
+			UserID: c.hdr[authctx.HeaderActorID], Pseudonym: pseudonym, Role: "customer", RequestedBy: "user",
+			DeletedAt: time.Now().UTC(),
+		}
+		require.NoError(t, a.Service.ForgetUser(ctx, shop, deleted))
+
+		var got api.AdminSession
+		require.Equal(t, http.StatusOK, admin.do(http.MethodGet, "/admin/sessions/"+s.SessionID.String(), nil, &got))
+		assert.Equal(t, pseudonym, got.UserID)
+		assert.Nil(t, got.DeliveryAddress)
+		assert.Equal(t, int64(11500), got.Totals.ItemsTotal.AmountMinor, "amounts stay")
+		var done map[string]any
+		require.NoError(t, db.QueryRow(ctx, `SELECT envelope->'payload' FROM outbox
+			WHERE envelope->>'event_type' = $1`, events.TypePlatformGdprCascadeCompletedV1).Scan(&done))
+		assert.Equal(t, "yc-checkout", done["service"])
+		assert.Equal(t, "pseudonymized", done["action"])
+		assert.EqualValues(t, 1, done["record_count"])
 	})
 }

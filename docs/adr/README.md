@@ -26,6 +26,7 @@
 | 022 | Order Fulfilment Flow | Accepted |
 | 023 | Customer Messaging | Accepted |
 | 024 | Product Reviews | Accepted |
+| 025 | Operational Maturity | Accepted |
 
 Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
 

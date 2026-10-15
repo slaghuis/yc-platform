@@ -315,6 +315,8 @@ All inter-service calls are synchronous `/internal/` calls through yc-gateway wi
 - `payment_gateway_token` is cleared immediately after successful authorization/charge (never retained beyond use)
 - Publish `platform.gdpr.cascade_completed.v1` when done
 
+*Phase 8:* Implemented: every session of the user, terminal or not, gets the pseudonym and loses its guest contact and delivery address at once; the action is reported as `pseudonymized`.
+
 ## Open Questions / Future Scope
 
 - Multiple shipment splitting (one order, multiple deliveries)

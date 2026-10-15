@@ -311,6 +311,23 @@ func TestPreference(t *testing.T) {
 		}
 	})
 
+	t.Run("a deleted user's preferences are deleted (GDPR)", func(t *testing.T) {
+		svc := as(t, srv, "shop-a", "yc-message", "service")
+		svc.hdr[authctx.HeaderCallerService] = "yc-message"
+		require.Equal(t, http.StatusOK, svc.do("GET", "/internal/preferences/"+bob, nil, nil))
+		publish("shop-a", events.TypeIdentityUserDeletedV1, events.IdentityUserDeletedV1{
+			UserID: bob, Pseudonym: uuid.NewString(), Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		done := outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)[0]
+		assert.Equal(t, "yc-preference", done["service"])
+		assert.Equal(t, "deleted", done["action"])
+		assert.EqualValues(t, 3, done["record_count"], "preferences, email and sms")
+		assert.Equal(t, http.StatusNotFound, svc.do("GET", "/internal/preferences/"+bob, nil, nil))
+		assert.Equal(t, http.StatusOK, svc.do("GET", "/internal/preferences/"+alice, nil, nil), "others are kept")
+	})
+
 	t.Run("roles", func(t *testing.T) {
 		visitor := as(t, srv, "shop-a", uuid.NewString(), "visitor")
 		assert.Equal(t, http.StatusForbidden, visitor.do("GET", "/preferences/me", nil, nil))

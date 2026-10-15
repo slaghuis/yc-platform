@@ -29,6 +29,7 @@ const (
 	StatusDelivered         Status = "delivered"
 	StatusDeliveryException Status = "delivery_exception"
 	StatusReturned          Status = "returned"
+	StatusDisputed          Status = "disputed"
 )
 
 // Placed reports whether the order was paid and confirmed: only placed
@@ -38,6 +39,19 @@ func (s Status) Placed() bool { return s != StatusPendingPayment && s != StatusA
 // PlacedStatuses are the statuses Placed accepts.
 var PlacedStatuses = []Status{
 	StatusReceived, StatusCancelled, StatusPackaged, StatusShipped, StatusDelivered, StatusDeliveryException, StatusReturned,
+	StatusDisputed,
+}
+
+// Open reports whether the order is still in progress: its customer
+// cannot be deleted until it finishes (ADR-005). A disputed order waits on
+// the bank, not the customer, so it does not count.
+func (s Status) Open() bool {
+	switch s {
+	case StatusPendingPayment, StatusReceived, StatusPackaged, StatusShipped, StatusDeliveryException:
+		return true
+	case StatusAbandoned, StatusCancelled, StatusDelivered, StatusReturned, StatusDisputed:
+	}
+	return false
 }
 
 // from lists the states each state is reached from. Shipping events are
@@ -52,6 +66,11 @@ var from = map[Status][]Status{
 	StatusDelivered:         {StatusPackaged, StatusShipped, StatusDeliveryException},
 	StatusDeliveryException: {StatusPackaged, StatusShipped},
 	StatusReturned:          {StatusDelivered},
+	// A chargeback can arrive at any point after payment (ADR-025).
+	StatusDisputed: {
+		StatusReceived, StatusCancelled, StatusPackaged, StatusShipped, StatusDelivered, StatusDeliveryException,
+		StatusReturned,
+	},
 }
 
 // CanBecome reports whether an order in s may move to next.
@@ -115,6 +134,7 @@ type Order struct {
 	PaymentTransactionID string
 	PaymentGateway       string
 	RefundedMinor        int64
+	ChargebackID         string
 	Shipment             Shipment
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
@@ -283,9 +303,17 @@ func (o *Order) Transition(next Status, now time.Time) error {
 		o.Shipment.ShippedAt = &now
 	case StatusDelivered:
 		o.Shipment.DeliveredAt = &now
-	case StatusPendingPayment, StatusAbandoned, StatusCancelled, StatusDeliveryException, StatusReturned:
+	case StatusPendingPayment, StatusAbandoned, StatusCancelled, StatusDeliveryException, StatusReturned, StatusDisputed:
 	}
 	return nil
+}
+
+// Pseudonymise replaces the buyer's identity with pseudonym and clears
+// how they were reached; amounts and lines stay for the books (ADR-005).
+func (o *Order) Pseudonymise(pseudonym string) {
+	o.UserID = pseudonym
+	o.GuestContact = nil
+	o.DeliveryAddress = nil
 }
 
 // OrderNumber formats a shop's nth order number, e.g. DEMO-SHOP-000042.

@@ -189,8 +189,26 @@ func (OAuth) Link(ctx context.Context, tx pgx.Tx, user domain.User, provider str
 	return nil
 }
 
+// UnlinkAll removes every provider account linked to user and returns how
+// many there were.
+func (OAuth) UnlinkAll(ctx context.Context, tx pgx.Tx, userID string) (int64, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM oauth_identities WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("unlink oauth identities: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // PasswordResets persists reset tokens.
 type PasswordResets struct{}
+
+// DeleteUser removes every reset token of user.
+func (PasswordResets) DeleteUser(ctx context.Context, tx pgx.Tx, userID string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM password_reset_tokens WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("delete password reset tokens: %w", err)
+	}
+	return nil
+}
 
 // Insert stores a reset token by its hash.
 func (PasswordResets) Insert(ctx context.Context, tx pgx.Tx, id, tenantID, userID string, hash []byte, expiresAt time.Time) error {

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.chargeback_received.v1.json",
+  "title": "payment.chargeback_received.v1",
+  "description": "The gateway reported a chargeback (dispute) on a payment. yc-orders marks the order disputed; the response to the dispute is handled in the gateway's dashboard.",
+  "type": "object",
+  "required": [
+    "chargeback_id",
+    "transaction_id",
+    "gateway",
+    "gateway_reference",
+    "amount",
+    "received_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "chargeback_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Absent when the payment never became an order."
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "gateway_reference": {
+      "type": "string",
+      "description": "The gateway's dispute ID."
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "reason": {
+      "type": "string",
+      "description": "The gateway's reason code, e.g. fraudulent."
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

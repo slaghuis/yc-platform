@@ -19,6 +19,7 @@ type Handlers interface {
 	ReservationExpired(ctx context.Context, tenantID, sessionID, reservationID string) error
 	PaymentSettled(ctx context.Context, tenantID, sessionID string, waitingIn domain.State) error
 	Charged(ctx context.Context, tenantID, sessionID, transactionID string) error
+	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -35,7 +36,11 @@ type paymentEvent struct {
 
 // Subscriptions are yc-checkout's consumers.
 func Subscriptions(h Handlers) []Subscription {
-	subs := make([]Subscription, 0, 7)
+	subs := make([]Subscription, 0, 8)
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-checkout-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetUser(ctx, tenantID, e))
+	})
+	subs = append(subs, Subscription{Opts: gdprOpts, Handler: gdpr})
 	subs = append(subs, Subscription{
 		Opts: eventbus.SubscribeOpts{
 			Subject:     "yc.*." + ycevents.TypeInventoryStockReservationExpiredV1,

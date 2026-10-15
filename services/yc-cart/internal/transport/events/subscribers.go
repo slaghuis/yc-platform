@@ -18,6 +18,7 @@ type Handlers interface {
 	SetDisplayCurrency(ctx context.Context, tenantID, userID, currency string, at time.Time) error
 	RemoveSKUs(ctx context.Context, tenantID string, skuIDs []string) error
 	ConvertCart(ctx context.Context, tenantID, userID, cartType, sessionID, orderID string, checkedOut map[string]int) error
+	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -28,7 +29,11 @@ type Subscription struct {
 
 // Subscriptions are yc-cart's consumers.
 func Subscriptions(h Handlers) []Subscription {
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-cart-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetUser(ctx, tenantID, e))
+	})
 	return []Subscription{
+		{Opts: gdprOpts, Handler: gdpr},
 		{
 			Opts: eventbus.SubscribeOpts{
 				Subject:     "yc.*." + ycevents.TypeIdentityUserLoggedInV1,

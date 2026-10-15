@@ -15,6 +15,7 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	"github.com/slaghuis/yc-platform/services/yc-shipping/internal/carrier"
+	"github.com/slaghuis/yc-platform/services/yc-shipping/internal/integration"
 	"github.com/slaghuis/yc-platform/services/yc-shipping/internal/service"
 	subscribers "github.com/slaghuis/yc-platform/services/yc-shipping/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-shipping/internal/transport/http"
@@ -94,14 +95,17 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams:     []eventbus.StreamConfig{eventbus.ShippingStream(), eventbus.OrderStream(), eventbus.DLQStream()},
+		Streams: append([]eventbus.StreamConfig{
+			eventbus.ShippingStream(), eventbus.OrderStream(), eventbus.DLQStream(),
+		}, eventbus.GDPRStreams()...),
 	})
 	if err != nil {
 		return nil, err
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	a.Service = service.New(db, bus, carrier.Manual{})
+	internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
+	a.Service = service.New(db, bus, integration.NewOrders(internal), carrier.Manual{})
 	for _, sub := range subscribers.Subscriptions(a.Service) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
 			return nil, err

@@ -91,15 +91,21 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	if err != nil {
 		return nil, err
 	}
+	backoff, err := eventbus.ParseBackoff(cfg.NATS.RetryBackoff)
+	if err != nil {
+		return nil, err
+	}
 	bus, err := eventbus.NewClient(ctx, eventbus.Config{
-		NATSURL:     cfg.NATS.URL,
-		ServiceName: cfg.Service,
-		DB:          db,
-		Validator:   validator,
-		Streams: []eventbus.StreamConfig{
-			eventbus.MessageStream(), eventbus.IdentityStream(), eventbus.OrderStream(), eventbus.CartStream(),
-			eventbus.ReviewStream(), eventbus.PreferenceStream(), eventbus.DLQStream(),
-		},
+		NATSURL:       cfg.NATS.URL,
+		ServiceName:   cfg.Service,
+		DB:            db,
+		Validator:     validator,
+		OutboxBackoff: backoff,
+		Streams: append([]eventbus.StreamConfig{
+			eventbus.MessageStream(), eventbus.OrderStream(), eventbus.CartStream(),
+			eventbus.ReviewStream(), eventbus.PreferenceStream(), eventbus.MonitorStream(), eventbus.AnalyticsStream(),
+			eventbus.DLQStream(),
+		}, eventbus.GDPRStreams()...),
 	})
 	if err != nil {
 		return nil, err

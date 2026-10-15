@@ -14,6 +14,7 @@ import (
 // Handlers are the use cases the subscribers drive.
 type Handlers interface {
 	OrderDelivered(ctx context.Context, tenantID string, p ycevents.OrderDeliveredV1) error
+	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -24,7 +25,11 @@ type Subscription struct {
 
 // Subscriptions are yc-review's consumers.
 func Subscriptions(h Handlers) []Subscription {
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-review-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetUser(ctx, tenantID, e))
+	})
 	return []Subscription{
+		{Opts: gdprOpts, Handler: gdpr},
 		{
 			Opts: eventbus.SubscribeOpts{
 				Subject:     "yc.*." + ycevents.TypeOrderDeliveredV1,

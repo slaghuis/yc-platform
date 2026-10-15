@@ -7,8 +7,12 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
+	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	"github.com/slaghuis/yc-platform/services/yc-product/internal/domain"
 )
+
+// serviceName attributes the events yc-product publishes on its own behalf.
+const serviceName = "yc-product"
 
 // RecordOrder counts a placed order (order.placed.v1) towards its SKUs'
 // popularity and, for a customer's order, the customer's favourites.
@@ -22,6 +26,21 @@ func (s *Service) RecordOrder(ctx context.Context, tenantID, userID string, cust
 	}
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
 		return s.cat.RecordOrder(ctx, tx, tenantID, userID, skuIDs, at)
+	})
+}
+
+// ForgetUser deletes a deleted customer's favourites (ADR-005) and reports
+// yc-product's part of the cascade. Popularity counts no one and stays.
+func (s *Service) ForgetUser(ctx context.Context, tenantID string, e events.IdentityUserDeletedV1) error {
+	if err := validateShopTenant(tenantID); err != nil {
+		return err
+	}
+	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
+		n, err := s.cat.DeleteFavourites(ctx, tx, tenantID, e.UserID)
+		if err != nil {
+			return err
+		}
+		return s.bus.Publish(ctx, tx, events.GDPRCompleted(tenantID, serviceName, e, events.GDPRDeleted, n, s.now()))
 	})
 }
 

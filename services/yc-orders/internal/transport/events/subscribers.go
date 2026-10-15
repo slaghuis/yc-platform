@@ -1,5 +1,6 @@
 // Package events holds yc-orders' event subscribers: shipment progress
-// from yc-shipping (ADR-022).
+// from yc-shipping (ADR-022), chargebacks from yc-payment (ADR-025) and
+// GDPR deletions (ADR-005).
 package events
 
 import (
@@ -18,6 +19,8 @@ import (
 // Handlers are the use cases the subscribers drive.
 type Handlers interface {
 	RecordShipment(ctx context.Context, tenantID string, p service.ShipmentProgress) error
+	ForgetCustomer(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
+	Dispute(ctx context.Context, tenantID string, c service.Chargeback) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -40,7 +43,24 @@ func Subscriptions(h Handlers) []Subscription {
 			},
 		}
 	}
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-orders-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetCustomer(ctx, tenantID, e))
+	})
 	return []Subscription{
+		{Opts: gdprOpts, Handler: gdpr},
+		{
+			Opts: eventbus.SubscribeOpts{Subject: "yc.*." + ycevents.TypePaymentChargebackReceivedV1, DurableName: "yc-orders-chargebacks"},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var e ycevents.PaymentChargebackReceivedV1
+				if err := json.Unmarshal(evt.Payload, &e); err != nil {
+					return fmt.Errorf("%w: decode payload: %w", eventbus.ErrPoison, err)
+				}
+				return poisonInvalid(h.Dispute(ctx, evt.Envelope.TenantID, service.Chargeback{
+					ChargebackID: e.ChargebackID, TransactionID: e.TransactionID, OrderID: deref(e.OrderID),
+					AmountMinor: e.Amount.AmountMinor, Currency: e.Amount.Currency, Reason: deref(e.Reason),
+				}))
+			},
+		},
 		on(ycevents.TypeShippingInTransitV1, "yc-orders-shipping-in-transit", func(raw json.RawMessage) (service.ShipmentProgress, error) {
 			var e ycevents.ShippingInTransitV1
 			err := json.Unmarshal(raw, &e)

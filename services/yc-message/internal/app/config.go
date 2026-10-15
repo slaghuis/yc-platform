@@ -2,11 +2,15 @@ package app
 
 import (
 	"errors"
+	"fmt"
+	"net/mail"
 	"os"
+	"strings"
 	"time"
 
 	config "github.com/slaghuis/yc-platform/libs/yc-config"
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	defaults "github.com/slaghuis/yc-platform/services/yc-message/config"
 	"github.com/slaghuis/yc-platform/services/yc-message/internal/driver"
@@ -29,6 +33,24 @@ type Config struct {
 	SMS           SMSConfig              `koanf:"sms"`
 	Messages      MessagesConfig         `koanf:"messages"`
 	Verification  VerificationConfig     `koanf:"verification"`
+	Admins        AdminsConfig           `koanf:"admins"`
+}
+
+// AdminsConfig is the `admins:` block.
+type AdminsConfig struct {
+	// SystemEmails is a comma-separated list of the system admins'
+	// addresses for platform alerts.
+	SystemEmails string `koanf:"system_emails"`
+}
+
+func (a AdminsConfig) emails() []string {
+	var out []string
+	for e := range strings.SplitSeq(a.SystemEmails, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // LogConfig is the `log:` block.
@@ -39,6 +61,10 @@ type LogConfig struct {
 // NATSConfig is the `nats:` block.
 type NATSConfig struct {
 	URL string `koanf:"url"`
+	// RetryBackoff is the wait between deliveries of an event whose
+	// handler failed, e.g. "1s,2s,5s" (eventbus.ParseBackoff); empty is
+	// the library default.
+	RetryBackoff string `koanf:"retry_backoff"`
 }
 
 // TelemetryConfig is the `telemetry:` block.
@@ -138,6 +164,14 @@ func (c *Config) Validate() error {
 	if c.Verification.TTL < time.Minute {
 		errs = append(errs, errors.New("verification.ttl must be at least 1m"))
 	}
+	if _, err := eventbus.ParseBackoff(c.NATS.RetryBackoff); err != nil {
+		errs = append(errs, fmt.Errorf("nats.retry_backoff: %w", err))
+	}
+	for _, e := range c.Admins.emails() {
+		if _, err := mail.ParseAddress(e); err != nil {
+			errs = append(errs, fmt.Errorf("admins.system_emails: %q is not an email address", e))
+		}
+	}
 	return errors.Join(errs...)
 }
 
@@ -150,5 +184,6 @@ func (c *Config) settings() service.Config {
 		Locale: locale, ShopURL: c.Messages.ShopURL, MaxAttempts: c.Messages.MaxAttempts,
 		RetryBackoff: c.Messages.RetryBackoff, BatchSize: c.Messages.BatchSize,
 		VerificationTTL: c.Verification.TTL, FakeWebhook: c.SMS.FakeWebhook,
+		SystemAdminEmails: c.Admins.emails(),
 	}
 }

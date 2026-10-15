@@ -362,6 +362,35 @@ func TestReviews(t *testing.T) {
 		require.Len(t, products, 1, "only the products not reviewed yet")
 		assert.Equal(t, map[string]any{"product_id": kettle, "name": "Kettle"}, products[0])
 	})
+
+	t.Run("a deleted customer's reviews stay under a pseudonym (GDPR)", func(t *testing.T) {
+		pseudonym := uuid.NewString()
+		require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+			EventType: events.TypeIdentityUserDeletedV1, TenantID: "shop-a", Actor: eventbus.Actor{Type: "service", ID: "yc-identity"},
+			Payload: events.IdentityUserDeletedV1{
+				UserID: sipho, Pseudonym: pseudonym, Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+			},
+		}))
+		require.Eventually(t, func() bool { return len(outbox(events.TypePlatformGdprCascadeCompletedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		done := last(events.TypePlatformGdprCascadeCompletedV1)
+		assert.Equal(t, "yc-review", done["service"])
+		assert.Equal(t, "pseudonymized", done["action"])
+		assert.EqualValues(t, 3, done["record_count"], "two reviews and a like")
+
+		unliked := last(events.TypeReviewLikeRemovedV1)
+		assert.Equal(t, teapot, unliked["product_id"])
+		assert.Equal(t, pseudonym, unliked["user_id"])
+		assert.EqualValues(t, 0, stats(unliked)["like_count"])
+
+		var mine api.ReviewList
+		require.Equal(t, http.StatusOK, other.do("GET", "/reviews/mine", nil, &mine))
+		assert.Empty(t, mine.Items)
+		var kept api.ReviewList
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/reviews?product_id="+kettle, nil, &kept))
+		require.Len(t, kept.Items, 1)
+		assert.Equal(t, pseudonym, *kept.Items[0].UserID, "the text stays, the author does not")
+	})
 }
 
 // mustID returns the client's review of a product.
