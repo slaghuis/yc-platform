@@ -3,11 +3,14 @@ info:
   title: yc-checkout
   version: 0.1.0
   description: |
-    Checkout (docs/services/yc-checkout.md). Phase 4: the Variant A saga
-    (ADR-019). POST /checkout snapshots the caller's cart and prices it;
-    the quote is honoured until the session expires (ADR-011, 30 minutes).
-    Confirm runs RESERVING, AUTHORIZING, ORDER_CREATE, CAPTURING and
-    CONFIRMING inline, compensating any failure before capture.
+    Checkout (docs/services/yc-checkout.md). POST /checkout snapshots the
+    caller's cart, prices it and routes the payment to one of the shop's
+    gateways by currency (ADR-013); the quote is honoured until the session
+    expires (ADR-011, 30 minutes). Confirm runs the saga inline (ADR-019)
+    and compensates any failure before the payment is taken. A gateway
+    that authorizes separately (Stripe) runs Variant A: RESERVING,
+    AUTHORIZING, ORDER_CREATE, CAPTURING, CONFIRMING. One that does not
+    (Yoco) runs Variant B: RESERVING, ORDER_CREATE, CHARGING, CONFIRMING.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -25,8 +28,10 @@ paths:
         items get the flat-fee Standard shipping option, selected; a
         digital-only checkout has no shipping and needs no address. An empty
         or non-convertible cart, an unavailable SKU (unavailable_skus) or an
-        unpriced one (unpriced) is 409. Publishes checkout.started.v1 and
-        checkout.priced.v1.
+        unpriced one (unpriced) is 409, as is a shop that takes no payments
+        in the store currency. The session's payment names the routed
+        gateway, its flow and whether the customer pays on the gateway's
+        page (hosted). Publishes checkout.started.v1 and checkout.priced.v1.
       operationId: startCheckout
       requestBody:
         content:
@@ -89,7 +94,10 @@ paths:
         (ADR-010; 400 and checkout.validation_failed.v1 otherwise), then runs
         the saga inline (ADR-019 rule 7). After 3-D Secure, call again with
         the same Idempotency-Key; another key for a confirmed session is 409.
-        An expired session is 410.
+        An expired session is 410. A hosted payment (Yoco) answers 202 in
+        CHARGING with payment.next_action redirect_to_url: send the customer
+        there; the gateway's webhook settles the payment and the session
+        completes on its own.
       operationId: confirmCheckout
       parameters:
         - $ref: '#/components/parameters/SessionID'
@@ -128,8 +136,10 @@ paths:
       summary: Cancel my checkout
       description: |
         Before confirm, or while the payment waits on the customer (the
-        authorization is voided and stock released). 409 once the saga runs
-        on its own.
+        authorization is voided, the pending order abandoned and stock
+        released). A hosted payment page cannot be closed: if the customer
+        pays on it after all, the payment is refunded. 409 once the saga
+        runs on its own.
       operationId: cancelCheckout
       parameters:
         - $ref: '#/components/parameters/SessionID'
@@ -225,7 +235,8 @@ components:
         currency: { type: string }
     State:
       type: string
-      enum: [PRICING, RESERVING, AUTHORIZING, ORDER_CREATE, CAPTURING, CONFIRMING, COMPLETED, COMPENSATING, FAILED, EXPIRED]
+      enum: [PRICING, RESERVING, AUTHORIZING, ORDER_CREATE, CHARGING, CAPTURING, CONFIRMING, COMPLETED, COMPENSATING,
+        FAILED, EXPIRED]
     StartInput:
       type: object
       additionalProperties: false
@@ -246,7 +257,6 @@ components:
         phone_e164: { type: string, maxLength: 16, description: 'E.164, e.g. +27831234567.' }
     ConfirmInput:
       type: object
-      required: [payment_gateway_token]
       additionalProperties: false
       properties:
         guest_contact: { $ref: '#/components/schemas/GuestContact' }
@@ -255,9 +265,18 @@ components:
           additionalProperties: true
           description: Free-form (ADR-015). Required when requires_shipping.
         shipping_option_id: { type: string, maxLength: 64, description: Defaults to the selected option. }
-        payment_gateway: { type: string, maxLength: 32, description: Defaults to the shop's gateway (stripe). }
-        payment_gateway_token: { type: string, maxLength: 255, description: 'The gateway SDK payment method, e.g. pm_...' }
-        return_url: { type: string, maxLength: 2048, description: Where a 3-D Secure redirect returns to. }
+        payment_gateway:
+          type: string
+          maxLength: 32
+          description: Another of the shop's gateways for the store currency; defaults to the session's.
+        payment_gateway_token:
+          type: string
+          maxLength: 255
+          description: 'The gateway SDK payment method, e.g. pm_...; required unless the payment is hosted.'
+        return_url:
+          type: string
+          maxLength: 2048
+          description: Where a 3-D Secure redirect or the gateway's payment page returns to; required when hosted.
     SessionItem:
       type: object
       required: [sku_id, sku_code, name, quantity, is_digital, inventory_tracked, unit_price, line_total, tax]
@@ -290,9 +309,17 @@ components:
         total: { $ref: '#/components/schemas/Money' }
     PaymentState:
       type: object
-      required: [gateway]
+      required: [gateway, flow, hosted]
       properties:
         gateway: { type: string }
+        flow:
+          type: string
+          enum: [auth_capture, charge]
+          description: auth_capture (Variant A) or a single charge (Variant B).
+        hosted:
+          type: boolean
+          description: The customer pays on the gateway's page; confirm sends a return_url and no token.
+        public_key: { type: string, description: The gateway's publishable key, for its client SDK. }
         transaction_id: { type: string, format: uuid }
         status: { type: string }
         next_action:
@@ -355,7 +382,7 @@ components:
       type: object
       required: [step, result, at]
       properties:
-        step: { type: string, enum: [payment_voided, order_abandoned, reservation_released] }
+        step: { type: string, enum: [payment_voided, order_abandoned, reservation_released, late_charge_refunded] }
         result: { type: string }
         at: { type: string, format: date-time }
     HistoryEntry:

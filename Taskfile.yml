@@ -152,6 +152,11 @@ tasks:
     cmds:
       - ./scripts/demo-phase4.sh
 
+  demo:phase5:
+    desc: Run the Phase 5 Yoco and gateway-routing demo against the running stack (see scripts/demo-phase5.sh)
+    cmds:
+      - ./scripts/demo-phase5.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:

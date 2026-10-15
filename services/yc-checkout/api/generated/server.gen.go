@@ -40,6 +40,7 @@ func (e AdminSessionUserType) Valid() bool {
 
 // Defines values for CompensationEntryStep.
 const (
+	LateChargeRefunded  CompensationEntryStep = "late_charge_refunded"
 	OrderAbandoned      CompensationEntryStep = "order_abandoned"
 	PaymentVoided       CompensationEntryStep = "payment_voided"
 	ReservationReleased CompensationEntryStep = "reservation_released"
@@ -48,11 +49,31 @@ const (
 // Valid indicates whether the value is a known member of the CompensationEntryStep enum.
 func (e CompensationEntryStep) Valid() bool {
 	switch e {
+	case LateChargeRefunded:
+		return true
 	case OrderAbandoned:
 		return true
 	case PaymentVoided:
 		return true
 	case ReservationReleased:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentStateFlow.
+const (
+	AuthCapture PaymentStateFlow = "auth_capture"
+	Charge      PaymentStateFlow = "charge"
+)
+
+// Valid indicates whether the value is a known member of the PaymentStateFlow enum.
+func (e PaymentStateFlow) Valid() bool {
+	switch e {
+	case AuthCapture:
+		return true
+	case Charge:
 		return true
 	default:
 		return false
@@ -81,6 +102,7 @@ func (e SessionUserType) Valid() bool {
 const (
 	AUTHORIZING  State = "AUTHORIZING"
 	CAPTURING    State = "CAPTURING"
+	CHARGING     State = "CHARGING"
 	COMPENSATING State = "COMPENSATING"
 	COMPLETED    State = "COMPLETED"
 	CONFIRMING   State = "CONFIRMING"
@@ -97,6 +119,8 @@ func (e State) Valid() bool {
 	case AUTHORIZING:
 		return true
 	case CAPTURING:
+		return true
+	case CHARGING:
 		return true
 	case COMPENSATING:
 		return true
@@ -170,13 +194,13 @@ type ConfirmInput struct {
 	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
 	GuestContact    *GuestContact           `json:"guest_contact,omitempty"`
 
-	// PaymentGateway Defaults to the shop's gateway (stripe).
+	// PaymentGateway Another of the shop's gateways for the store currency; defaults to the session's.
 	PaymentGateway *string `json:"payment_gateway,omitempty"`
 
-	// PaymentGatewayToken The gateway SDK payment method, e.g. pm_...
-	PaymentGatewayToken string `json:"payment_gateway_token"`
+	// PaymentGatewayToken The gateway SDK payment method, e.g. pm_...; required unless the payment is hosted.
+	PaymentGatewayToken *string `json:"payment_gateway_token,omitempty"`
 
-	// ReturnURL Where a 3-D Secure redirect returns to.
+	// ReturnURL Where a 3-D Secure redirect or the gateway's payment page returns to; required when hosted.
 	ReturnURL *string `json:"return_url,omitempty"`
 
 	// ShippingOptionID Defaults to the selected option.
@@ -224,13 +248,24 @@ type PageInfo = httpkit.PageInfo
 
 // PaymentState defines model for PaymentState.
 type PaymentState struct {
-	Gateway string `json:"gateway"`
+	// Flow auth_capture (Variant A) or a single charge (Variant B).
+	Flow    PaymentStateFlow `json:"flow"`
+	Gateway string           `json:"gateway"`
+
+	// Hosted The customer pays on the gateway's page; confirm sends a return_url and no token.
+	Hosted bool `json:"hosted"`
 
 	// NextAction While the payment waits on the customer, what to do, as the gateway describes it.
-	NextAction    *map[string]interface{} `json:"next_action,omitempty"`
-	Status        *string                 `json:"status,omitempty"`
-	TransactionID *openapi_types.UUID     `json:"transaction_id,omitempty"`
+	NextAction *map[string]interface{} `json:"next_action,omitempty"`
+
+	// PublicKey The gateway's publishable key
+	PublicKey     *string             `json:"public_key,omitempty"`
+	Status        *string             `json:"status,omitempty"`
+	TransactionID *openapi_types.UUID `json:"transaction_id,omitempty"`
 }
+
+// PaymentStateFlow auth_capture (Variant A) or a single charge (Variant B).
+type PaymentStateFlow string
 
 // Problem RFC 9457 problem details (docs/standards/error-handling.md).
 type Problem struct {

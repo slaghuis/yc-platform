@@ -1,5 +1,6 @@
 // Package service holds yc-checkout's use cases and the saga that drives
-// a confirmed session through its participants (ADR-019, Variant A).
+// a confirmed session through its participants (ADR-019, Variants A and
+// B).
 // Every state change writes the session, its history and its events in
 // one transaction.
 package service
@@ -40,9 +41,12 @@ type Participants interface {
 	Reserve(ctx context.Context, key, sessionID string, lines []integration.CartLine, ttlMinutes int) (integration.Reservation, error)
 	Commit(ctx context.Context, key, reservationID, reference string) error
 	Release(ctx context.Context, key, reservationID string) error
-	Authorize(ctx context.Context, key string, req integration.AuthorizeRequest) (integration.Transaction, error)
+	Route(ctx context.Context, currency, gateway string) (integration.Route, error)
+	Authorize(ctx context.Context, key string, req integration.PaymentRequest) (integration.Transaction, error)
+	Charge(ctx context.Context, key string, req integration.PaymentRequest) (integration.Transaction, error)
 	Capture(ctx context.Context, key, transactionID, orderID string) (integration.Transaction, error)
 	Void(ctx context.Context, key, transactionID, authorizationKey string) (string, error)
+	Refund(ctx context.Context, key, transactionID, orderID, reason string) (integration.RefundResult, error)
 	Transaction(ctx context.Context, id string) (integration.Transaction, error)
 	CreateOrder(ctx context.Context, key string, in integration.CreateOrder) (integration.Order, error)
 	ConfirmOrder(ctx context.Context, key, orderID, transactionID string) (integration.Order, error)
@@ -58,9 +62,6 @@ type Settings struct {
 	// Shipping is the one flat-fee option offered for physical items. It
 	// is untaxed.
 	Shipping domain.ShippingOption
-	// Gateways are the payment gateways a session may use; the first is
-	// the default.
-	Gateways []string
 	// ConfirmDeadline bounds one run of the saga; confirm then answers 202
 	// and the sweeper carries on.
 	ConfirmDeadline time.Duration
@@ -99,9 +100,6 @@ type Service struct {
 
 // New returns a Service.
 func New(db *pgxpool.Pool, bus Publisher, p Participants, cfg Settings) *Service {
-	if len(cfg.Gateways) == 0 {
-		cfg.Gateways = []string{"stripe"}
-	}
 	if cfg.Host == "" {
 		cfg.Host = ServiceName
 	}

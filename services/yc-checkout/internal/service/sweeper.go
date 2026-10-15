@@ -11,6 +11,7 @@ import (
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 
 	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/domain"
+	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/integration"
 	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/repository"
 )
 
@@ -205,6 +206,80 @@ func (s *Service) PaymentSettled(ctx context.Context, tenantID, sessionID string
 	}
 	_, err = s.run(ctx, tenantID, sessionID, "")
 	return err
+}
+
+// Charged handles a combined charge that succeeded (payment.charged.v1).
+// A session waiting in CHARGING resumes, as does one compensating before
+// its payment was undone (the void finds the charge and the session goes
+// forward). A session that had already left the payment open refunds it:
+// the customer paid on the gateway's page after checkout gave up.
+func (s *Service) Charged(ctx context.Context, tenantID, sessionID, transactionID string) error {
+	ctx = serviceContext(ctx, tenantID)
+	sess, err := s.load(ctx, tenantID, sessionID)
+	if err != nil {
+		return ignoreNotFound(err)
+	}
+	if sess.State == domain.StateCharging || awaitingVoid(sess) {
+		if sess, err = s.run(ctx, tenantID, sessionID, ""); err != nil {
+			return err
+		}
+	}
+	switch {
+	case awaitingVoid(sess):
+		return errSessionBusy
+	case sess.Undone(domain.UndoPayment) && (sess.State == domain.StateCompensating ||
+		sess.State == domain.StateFailed || sess.State == domain.StateExpired):
+		return s.refundLateCharge(ctx, tenantID, sess, transactionID)
+	}
+	return nil
+}
+
+// awaitingVoid: the session is compensating and has yet to undo its
+// payment.
+func awaitingVoid(sess domain.Session) bool {
+	return sess.State == domain.StateCompensating && sess.Reached(sess.PaymentState()) && !sess.Undone(domain.UndoPayment)
+}
+
+// refundLateCharge refunds a charge that settled after the session ended
+// and records it once. A refund that fails needs the shop's attention.
+func (s *Service) refundLateCharge(ctx context.Context, tenantID string, sess domain.Session, transactionID string) error {
+	if sess.Undone(domain.UndoLateCharge) {
+		return nil
+	}
+	log := telemetry.LoggerFromContext(ctx)
+	detail := map[string]any{"transaction_id": transactionID}
+	r, err := s.p.Refund(ctx, sess.Key(sess.PaymentCall())+":refund", transactionID, sess.OrderID,
+		"checkout "+sess.FailureReason+" before the payment arrived")
+	rej, rejected := integration.Rejected(err)
+	switch {
+	case rejected:
+		r.Status = "rejected: " + string(rej.Problem.Code)
+	case err != nil:
+		return err
+	case r.Refund != nil:
+		detail["refund_id"] = r.Refund.ID
+	}
+	detail["status"] = r.Status
+	if r.Status == integration.RefundPending || r.Status == integration.RefundCompleted {
+		log.Warn("payment arrived after checkout ended; refunded", "session_id", sess.ID,
+			"transaction_id", transactionID, "refund_status", r.Status)
+	} else {
+		log.Error("payment arrived after checkout ended and could not be refunded; needs attention", "alert", "critical",
+			"session_id", sess.ID, "transaction_id", transactionID, "refund_status", r.Status, "err", err)
+	}
+	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
+		x, ok, err := s.repo.Session(ctx, tx, tenantID, sess.ID, true)
+		if err != nil || !ok || x.Undone(domain.UndoLateCharge) {
+			return err
+		}
+		now := s.now().UTC()
+		x.Undo(domain.UndoLateCharge, r.Status, now)
+		x.UpdatedAt = now
+		if err := s.repo.UpdateSession(ctx, tx, tenantID, x); err != nil {
+			return err
+		}
+		return s.history(ctx, tx, tenantID, x.ID, domain.UndoLateCharge, "", "", detail)
+	})
 }
 
 func ignoreNotFound(err error) error {

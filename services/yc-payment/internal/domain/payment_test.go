@@ -49,6 +49,66 @@ func TestApplyFailure(t *testing.T) {
 	assert.False(t, tx.Status.Settled() == false)
 }
 
+func TestApplyCapturedAfterFailure(t *testing.T) {
+	tx := domain.Transaction{Status: domain.StatusFailed, Kind: domain.KindCharge, AmountMinor: 500, FailureReason: "payment_failed"}
+	assert.True(t, tx.Apply(gateway.Payment{Status: gateway.StatusCaptured, AmountCaptured: 500}, time.Now()),
+		"a customer who paid with another card on the hosted page")
+	assert.Equal(t, domain.StatusCaptured, tx.Status)
+	assert.EqualValues(t, 500, tx.CapturedMinor)
+	assert.False(t, tx.Apply(gateway.Payment{Status: gateway.StatusFailed}, time.Now()), "but not back again")
+}
+
+func TestRoute(t *testing.T) {
+	supported := func(gw string) ([]string, bool) {
+		switch gw {
+		case "stripe":
+			return nil, true
+		case "yoco":
+			return []string{"ZAR"}, true
+		}
+		return nil, false
+	}
+	stripe := domain.GatewayConfig{Gateway: "stripe", Enabled: true, Priority: 20}
+	yoco := domain.GatewayConfig{Gateway: "yoco", Enabled: true, Priority: 10}
+	both := []domain.GatewayConfig{stripe, yoco}
+
+	c, ok := domain.Route(both, "ZAR", supported)
+	assert.True(t, ok)
+	assert.Equal(t, "yoco", c.Gateway, "Yoco has priority for ZAR")
+	c, _ = domain.Route(both, "USD", supported)
+	assert.Equal(t, "stripe", c.Gateway, "Yoco does not take USD")
+
+	stripeZAR := stripe
+	stripeZAR.Priority = 5
+	stripeZAR.Currencies = []string{"USD", "EUR"}
+	c, _ = domain.Route([]domain.GatewayConfig{stripeZAR, yoco}, "ZAR", supported)
+	assert.Equal(t, "yoco", c.Gateway, "the shop routes only USD and EUR to Stripe")
+	_, ok = domain.Route([]domain.GatewayConfig{stripeZAR}, "GBP", supported)
+	assert.False(t, ok)
+
+	off := yoco
+	off.Enabled = false
+	c, _ = domain.Route([]domain.GatewayConfig{stripe, off}, "ZAR", supported)
+	assert.Equal(t, "stripe", c.Gateway, "a disabled gateway is skipped")
+	_, ok = domain.Route([]domain.GatewayConfig{{Gateway: "paypal", Enabled: true}}, "ZAR", supported)
+	assert.False(t, ok, "a gateway without a driver is skipped")
+
+	tie := yoco
+	tie.Priority = 20
+	c, _ = domain.Route([]domain.GatewayConfig{tie, stripe}, "ZAR", supported)
+	assert.Equal(t, "stripe", c.Gateway, "ties go by name")
+}
+
+func TestValidateRouting(t *testing.T) {
+	assert.NoError(t, domain.ValidateRouting(100, nil, nil))
+	assert.NoError(t, domain.ValidateRouting(0, []string{"ZAR"}, []string{"ZAR"}))
+	assert.Error(t, domain.ValidateRouting(-1, nil, nil))
+	assert.Error(t, domain.ValidateRouting(1001, nil, nil))
+	assert.Error(t, domain.ValidateRouting(1, []string{"zar"}, nil))
+	assert.Error(t, domain.ValidateRouting(1, []string{"USD"}, []string{"ZAR"}), "Yoco takes only ZAR")
+	assert.Error(t, domain.ValidateRouting(1, []string{"USD", "USD"}, nil))
+}
+
 func TestKeyHint(t *testing.T) {
 	assert.Equal(t, "sk_test_…4242", domain.KeyHint("sk_test_51abcdef4242"))
 	assert.Equal(t, "…cdef", domain.KeyHint("0123456789abcdef"))

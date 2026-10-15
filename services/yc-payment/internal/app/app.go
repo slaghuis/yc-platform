@@ -16,6 +16,7 @@ import (
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/gateway/stripe"
+	"github.com/slaghuis/yc-platform/services/yc-payment/internal/gateway/yoco"
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/secrets"
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/service"
 	transport "github.com/slaghuis/yc-platform/services/yc-payment/internal/transport/http"
@@ -107,7 +108,10 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	a.closers = append(a.closers, bus.Close)
 
 	stripeClient := httpkit.NewClient(httpkit.ClientOptions{Timeout: cfg.Gateways.Stripe.Timeout})
-	a.Service = service.New(db, bus, cipher, stripe.New(cfg.Gateways.Stripe.APIBase, stripeClient))
+	yocoClient := httpkit.NewClient(httpkit.ClientOptions{Timeout: cfg.Gateways.Yoco.Timeout})
+	a.Service = service.New(db, bus, cipher,
+		stripe.New(cfg.Gateways.Stripe.APIBase, stripeClient),
+		yoco.New(cfg.Gateways.Yoco.APIBase, yocoClient))
 	a.Handler = transport.NewRouter(a.Service, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},

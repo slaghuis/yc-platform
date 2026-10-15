@@ -51,6 +51,7 @@ type EncryptionConfig struct {
 // GatewaysConfig is the `gateways:` block.
 type GatewaysConfig struct {
 	Stripe DriverConfig `koanf:"stripe"`
+	Yoco   DriverConfig `koanf:"yoco"`
 }
 
 // DriverConfig is one gateway driver's settings.
@@ -90,6 +91,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateways.Stripe.APIBase == "" || c.Gateways.Stripe.Timeout <= 0 {
 		errs = append(errs, errors.New("gateways.stripe.api_base and timeout are required"))
+	}
+	if c.Gateways.Yoco.APIBase == "" || c.Gateways.Yoco.Timeout <= 0 {
+		errs = append(errs, errors.New("gateways.yoco.api_base and timeout are required"))
 	}
 	return errors.Join(errs...)
 }

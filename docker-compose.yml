@@ -281,11 +281,12 @@ services:
       - "8088:8080"
     depends_on: *infra
 
-  # Each shop's Stripe key is stored encrypted under the cipher key; the
-  # webhook is a gateway callback route on the shop's host. Without a
-  # Stripe account, run the fake on the host (go run
-  # ./services/yc-payment/cmd/fake-stripe) and set
-  # YC_PAYMENT_STRIPE_API_BASE=http://host.docker.internal:12111.
+  # Each shop's Stripe and Yoco keys are stored encrypted under the cipher
+  # key; the webhooks (/webhooks/stripe, /webhooks/yoco) are gateway
+  # callback routes on the shop's host. Without accounts, run the fakes on
+  # the host (go run ./services/yc-payment/cmd/fake-stripe, cmd/fake-yoco)
+  # and set YC_PAYMENT_STRIPE_API_BASE=http://host.docker.internal:12111 and
+  # YC_PAYMENT_YOCO_API_BASE=http://host.docker.internal:12112.
   yc-payment:
     profiles: [app]
     build:
@@ -301,6 +302,7 @@ services:
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_PAYMENT_CIPHER_KEY: ${YC_PAYMENT_CIPHER_KEY:-ZGV2LTMyLWJ5dGUta2V5LXJlcGxhY2UtaW4tcHJvZCE=}
       YC_PAYMENT_STRIPE_API_BASE: ${YC_PAYMENT_STRIPE_API_BASE:-https://api.stripe.com}
+      YC_PAYMENT_YOCO_API_BASE: ${YC_PAYMENT_YOCO_API_BASE:-https://payments.yoco.com}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none

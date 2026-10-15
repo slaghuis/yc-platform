@@ -21,12 +21,33 @@ import (
 // Defines values for AuthorizeInputGateway.
 const (
 	AuthorizeInputGatewayStripe AuthorizeInputGateway = "stripe"
+	AuthorizeInputGatewayYoco   AuthorizeInputGateway = "yoco"
 )
 
 // Valid indicates whether the value is a known member of the AuthorizeInputGateway enum.
 func (e AuthorizeInputGateway) Valid() bool {
 	switch e {
 	case AuthorizeInputGatewayStripe:
+		return true
+	case AuthorizeInputGatewayYoco:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GatewayName.
+const (
+	GatewayNameStripe GatewayName = "stripe"
+	GatewayNameYoco   GatewayName = "yoco"
+)
+
+// Valid indicates whether the value is a known member of the GatewayName enum.
+func (e GatewayName) Valid() bool {
+	switch e {
+	case GatewayNameStripe:
+		return true
+	case GatewayNameYoco:
 		return true
 	default:
 		return false
@@ -78,6 +99,42 @@ func (e RefundResultStatus) Valid() bool {
 	}
 }
 
+// Defines values for TransactionKind.
+const (
+	TransactionKindAuthorize TransactionKind = "authorize"
+	TransactionKindCharge    TransactionKind = "charge"
+)
+
+// Valid indicates whether the value is a known member of the TransactionKind enum.
+func (e TransactionKind) Valid() bool {
+	switch e {
+	case TransactionKindAuthorize:
+		return true
+	case TransactionKindCharge:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransactionDetailKind.
+const (
+	TransactionDetailKindAuthorize TransactionDetailKind = "authorize"
+	TransactionDetailKindCharge    TransactionDetailKind = "charge"
+)
+
+// Valid indicates whether the value is a known member of the TransactionDetailKind enum.
+func (e TransactionDetailKind) Valid() bool {
+	switch e {
+	case TransactionDetailKindAuthorize:
+		return true
+	case TransactionDetailKindCharge:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TransactionStatus.
 const (
 	TransactionStatusAuthorized TransactionStatus = "authorized"
@@ -113,9 +170,10 @@ func (e TransactionStatus) Valid() bool {
 
 // Defines values for VoidResultStatus.
 const (
-	VoidResultStatusFailed VoidResultStatus = "failed"
-	VoidResultStatusNone   VoidResultStatus = "none"
-	VoidResultStatusVoided VoidResultStatus = "voided"
+	VoidResultStatusFailed  VoidResultStatus = "failed"
+	VoidResultStatusNone    VoidResultStatus = "none"
+	VoidResultStatusPending VoidResultStatus = "pending"
+	VoidResultStatusVoided  VoidResultStatus = "voided"
 )
 
 // Valid indicates whether the value is a known member of the VoidResultStatus enum.
@@ -125,22 +183,9 @@ func (e VoidResultStatus) Valid() bool {
 		return true
 	case VoidResultStatusNone:
 		return true
-	case VoidResultStatusVoided:
+	case VoidResultStatusPending:
 		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for Gateway.
-const (
-	GatewayStripe Gateway = "stripe"
-)
-
-// Valid indicates whether the value is a known member of the Gateway enum.
-func (e Gateway) Valid() bool {
-	switch e {
-	case GatewayStripe:
+	case VoidResultStatusVoided:
 		return true
 	default:
 		return false
@@ -166,11 +211,17 @@ type AuthorizeInputGateway string
 // Capabilities defines model for Capabilities.
 type Capabilities struct {
 	// Configured The shop has credentials and the gateway enabled.
-	Configured bool    `json:"configured"`
-	Gateway    string  `json:"gateway"`
-	PublicKey  *string `json:"public_key,omitempty"`
+	Configured bool   `json:"configured"`
+	Gateway    string `json:"gateway"`
 
-	// SupportsSeparateAuthCapture Variant A when true.
+	// HostedPayment The customer pays on the gateway's page; no payment token, the outcome arrives by webhook.
+	HostedPayment bool    `json:"hosted_payment"`
+	PublicKey     *string `json:"public_key,omitempty"`
+
+	// SupportedCurrencies The currencies the gateway takes; absent when it takes any.
+	SupportedCurrencies *[]string `json:"supported_currencies,omitempty"`
+
+	// SupportsSeparateAuthCapture Variant A when true; Variant B (charge) when false.
 	SupportsSeparateAuthCapture bool `json:"supports_separate_auth_capture"`
 }
 
@@ -182,12 +233,30 @@ type CaptureInput struct {
 	TransactionID openapi_types.UUID  `json:"transaction_id"`
 }
 
+// ChargeInput defines model for ChargeInput.
+type ChargeInput struct {
+	Amount  Money       `json:"amount"`
+	Gateway GatewayName `json:"gateway"`
+
+	// OrderID The pending order the charge pays for.
+	OrderID *openapi_types.UUID `json:"order_id,omitempty"`
+
+	// PaymentToken The gateway SDK payment method; omitted for a hosted gateway (Yoco).
+	PaymentToken *string `json:"payment_token,omitempty"`
+
+	// ReturnURL Where the customer returns to after paying on the gateway's page; required for a hosted gateway.
+	ReturnURL *string `json:"return_url,omitempty"`
+	SessionID string  `json:"session_id"`
+}
+
 // GatewayConfig defines model for GatewayConfig.
 type GatewayConfig struct {
 	// APIKeyHint The key masked, e.g. sk_test_…4242.
 	APIKeyHint       string    `json:"api_key_hint"`
+	Currencies       []string  `json:"currencies"`
 	Enabled          bool      `json:"enabled"`
 	Gateway          string    `json:"gateway"`
+	Priority         int       `json:"priority"`
 	PublicKey        *string   `json:"public_key,omitempty"`
 	UpdatedAt        time.Time `json:"updated_at"`
 	WebhookSecretSet bool      `json:"webhook_secret_set"`
@@ -195,14 +264,20 @@ type GatewayConfig struct {
 
 // GatewayConfigInput defines model for GatewayConfigInput.
 type GatewayConfigInput struct {
-	// APIKey The secret key (Stripe sk_...).
-	APIKey  *string `json:"api_key,omitempty"`
-	Enabled bool    `json:"enabled"`
+	// APIKey The secret key (Stripe or Yoco sk_...).
+	APIKey *string `json:"api_key,omitempty"`
+
+	// Currencies Route only these currencies to the gateway; empty routes every currency it supports. Omitted keeps the stored list.
+	Currencies *[]string `json:"currencies,omitempty"`
+	Enabled    bool      `json:"enabled"`
+
+	// Priority Lowest first among gateways that take a currency. Omitted keeps the stored one (default 100).
+	Priority *int `json:"priority,omitempty"`
 
 	// PublicKey The publishable key for the storefront SDK.
 	PublicKey *string `json:"public_key,omitempty"`
 
-	// WebhookSecret The webhook signing secret (Stripe whsec_...).
+	// WebhookSecret The webhook signing secret (whsec_...).
 	WebhookSecret *string `json:"webhook_secret,omitempty"`
 }
 
@@ -210,6 +285,9 @@ type GatewayConfigInput struct {
 type GatewayConfigList struct {
 	Items []GatewayConfig `json:"items"`
 }
+
+// GatewayName defines model for GatewayName.
+type GatewayName string
 
 // GatewayTestResult defines model for GatewayTestResult.
 type GatewayTestResult struct {
@@ -286,6 +364,9 @@ type Transaction struct {
 	Gateway             string    `json:"gateway"`
 	GatewayReference    *string   `json:"gateway_reference,omitempty"`
 
+	// Kind authorize (Variant A) or a combined charge (Variant B).
+	Kind *TransactionKind `json:"kind,omitempty"`
+
 	// NextAction While pending, what the customer must do, as the gateway describes it.
 	NextAction          *map[string]interface{} `json:"next_action,omitempty"`
 	OrderID             *openapi_types.UUID     `json:"order_id,omitempty"`
@@ -296,6 +377,9 @@ type Transaction struct {
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
 
+// TransactionKind authorize (Variant A) or a combined charge (Variant B).
+type TransactionKind string
+
 // TransactionDetail defines model for TransactionDetail.
 type TransactionDetail struct {
 	Amount              Money     `json:"amount"`
@@ -304,6 +388,9 @@ type TransactionDetail struct {
 	FailureReason       *string   `json:"failure_reason,omitempty"`
 	Gateway             string    `json:"gateway"`
 	GatewayReference    *string   `json:"gateway_reference,omitempty"`
+
+	// Kind authorize (Variant A) or a combined charge (Variant B).
+	Kind *TransactionDetailKind `json:"kind,omitempty"`
 
 	// NextAction While pending, what the customer must do, as the gateway describes it.
 	NextAction          *map[string]interface{} `json:"next_action,omitempty"`
@@ -315,6 +402,9 @@ type TransactionDetail struct {
 	TransactionID       openapi_types.UUID      `json:"transaction_id"`
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
+
+// TransactionDetailKind authorize (Variant A) or a combined charge (Variant B).
+type TransactionDetailKind string
 
 // TransactionList defines model for TransactionList.
 type TransactionList struct {
@@ -329,7 +419,7 @@ type TransactionStatus string
 
 // VoidInput defines model for VoidInput.
 type VoidInput struct {
-	// AuthorizationKey The Idempotency-Key of the authorize call.
+	// AuthorizationKey The Idempotency-Key of the authorize or charge call.
 	AuthorizationKey *string             `json:"authorization_key,omitempty"`
 	TransactionID    *openapi_types.UUID `json:"transaction_id,omitempty"`
 }
@@ -347,7 +437,7 @@ type VoidResultStatus string
 type Cursor = string
 
 // Gateway defines model for Gateway.
-type Gateway string
+type Gateway = GatewayName
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
@@ -372,6 +462,17 @@ type AuthorizePaymentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ChargePaymentParams defines parameters for ChargePayment.
+type ChargePaymentParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RouteGatewayParams defines parameters for RouteGateway.
+type RouteGatewayParams struct {
+	Currency string       `form:"currency" json:"currency"`
+	Gateway  *GatewayName `form:"gateway,omitempty" json:"gateway,omitempty"`
+}
+
 // RefundPaymentParams defines parameters for RefundPayment.
 type RefundPaymentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -385,6 +486,9 @@ type AuthorizePaymentJSONRequestBody = AuthorizeInput
 
 // CapturePaymentJSONRequestBody defines body for CapturePayment for application/json ContentType.
 type CapturePaymentJSONRequestBody = CaptureInput
+
+// ChargePaymentJSONRequestBody defines body for ChargePayment for application/json ContentType.
+type ChargePaymentJSONRequestBody = ChargeInput
 
 // RefundPaymentJSONRequestBody defines body for RefundPayment for application/json ContentType.
 type RefundPaymentJSONRequestBody = RefundInput
@@ -415,16 +519,22 @@ type ServerInterface interface {
 	// CapturePayment Capture an authorized payment
 	// (POST /internal/capture)
 	CapturePayment(w http.ResponseWriter, r *http.Request)
+	// ChargePayment Charge a payment in one step (Variant B)
+	// (POST /internal/charge)
+	ChargePayment(w http.ResponseWriter, r *http.Request, params ChargePaymentParams)
 	// GetGatewayCapabilities What a gateway supports, and whether the shop has it set up
 	// (GET /internal/gateway-capabilities/{gateway})
 	GetGatewayCapabilities(w http.ResponseWriter, r *http.Request, gateway Gateway)
+	// RouteGateway Pick the shop's gateway for a currency
+	// (GET /internal/gateway-route)
+	RouteGateway(w http.ResponseWriter, r *http.Request, params RouteGatewayParams)
 	// RefundPayment Refund a captured payment
 	// (POST /internal/refund)
 	RefundPayment(w http.ResponseWriter, r *http.Request, params RefundPaymentParams)
 	// GetInternalTransaction Get a transaction and its refunds
 	// (GET /internal/transactions/{id})
 	GetInternalTransaction(w http.ResponseWriter, r *http.Request, id TransactionID)
-	// VoidPayment Void an authorization
+	// VoidPayment Void an authorization or an unfinished charge
 	// (POST /internal/void)
 	VoidPayment(w http.ResponseWriter, r *http.Request)
 }
@@ -475,9 +585,21 @@ func (_ Unimplemented) CapturePayment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ChargePayment Charge a payment in one step (Variant B)
+// (POST /internal/charge)
+func (_ Unimplemented) ChargePayment(w http.ResponseWriter, r *http.Request, params ChargePaymentParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetGatewayCapabilities What a gateway supports, and whether the shop has it set up
 // (GET /internal/gateway-capabilities/{gateway})
 func (_ Unimplemented) GetGatewayCapabilities(w http.ResponseWriter, r *http.Request, gateway Gateway) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RouteGateway Pick the shop's gateway for a currency
+// (GET /internal/gateway-route)
+func (_ Unimplemented) RouteGateway(w http.ResponseWriter, r *http.Request, params RouteGatewayParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -493,7 +615,7 @@ func (_ Unimplemented) GetInternalTransaction(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// VoidPayment Void an authorization
+// VoidPayment Void an authorization or an unfinished charge
 // (POST /internal/void)
 func (_ Unimplemented) VoidPayment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -744,6 +866,51 @@ func (siw *ServerInterfaceWrapper) CapturePayment(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ChargePayment operation middleware
+func (siw *ServerInterfaceWrapper) ChargePayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ChargePaymentParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChargePayment(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetGatewayCapabilities operation middleware
 func (siw *ServerInterfaceWrapper) GetGatewayCapabilities(w http.ResponseWriter, r *http.Request) {
 
@@ -761,6 +928,52 @@ func (siw *ServerInterfaceWrapper) GetGatewayCapabilities(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetGatewayCapabilities(w, r, gateway)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RouteGateway operation middleware
+func (siw *ServerInterfaceWrapper) RouteGateway(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RouteGatewayParams
+
+	// ------------- Required query parameter "currency" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "currency", r.URL.Query(), &params.Currency, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "currency"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "currency", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "gateway" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "gateway", r.URL.Query(), &params.Gateway, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "gateway"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "gateway", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RouteGateway(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -985,6 +1198,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/authorize", wrapper.AuthorizePayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/charge", wrapper.ChargePayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/gateway-route", wrapper.RouteGateway)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/capture", wrapper.CapturePayment)
@@ -1456,6 +1675,101 @@ func (response CapturePayment503ApplicationProblemPlusJSONResponse) VisitCapture
 	return err
 }
 
+type ChargePaymentRequestObject struct {
+	Params ChargePaymentParams
+	Body   *ChargePaymentJSONRequestBody
+}
+
+type ChargePaymentResponseObject interface {
+	VisitChargePaymentResponse(w http.ResponseWriter) error
+}
+
+type ChargePayment200JSONResponse Transaction
+
+func (response ChargePayment200JSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChargePayment400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ChargePayment400ApplicationProblemPlusJSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChargePayment404ApplicationProblemPlusJSONResponse Problem
+
+func (response ChargePayment404ApplicationProblemPlusJSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChargePayment409ApplicationProblemPlusJSONResponse Problem
+
+func (response ChargePayment409ApplicationProblemPlusJSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChargePayment412ApplicationProblemPlusJSONResponse Problem
+
+func (response ChargePayment412ApplicationProblemPlusJSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChargePayment503ApplicationProblemPlusJSONResponse Problem
+
+func (response ChargePayment503ApplicationProblemPlusJSONResponse) VisitChargePaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGatewayCapabilitiesRequestObject struct {
 	Gateway Gateway `json:"gateway"`
 }
@@ -1490,6 +1804,72 @@ func (response GetGatewayCapabilities404ApplicationProblemPlusJSONResponse) Visi
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RouteGatewayRequestObject struct {
+	Params RouteGatewayParams
+}
+
+type RouteGatewayResponseObject interface {
+	VisitRouteGatewayResponse(w http.ResponseWriter) error
+}
+
+type RouteGateway200JSONResponse Capabilities
+
+func (response RouteGateway200JSONResponse) VisitRouteGatewayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RouteGateway400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RouteGateway400ApplicationProblemPlusJSONResponse) VisitRouteGatewayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RouteGateway404ApplicationProblemPlusJSONResponse Problem
+
+func (response RouteGateway404ApplicationProblemPlusJSONResponse) VisitRouteGatewayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RouteGateway412ApplicationProblemPlusJSONResponse Problem
+
+func (response RouteGateway412ApplicationProblemPlusJSONResponse) VisitRouteGatewayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1688,16 +2068,22 @@ type StrictServerInterface interface {
 	// CapturePayment Capture an authorized payment
 	// (POST /internal/capture)
 	CapturePayment(ctx context.Context, request CapturePaymentRequestObject) (CapturePaymentResponseObject, error)
+	// ChargePayment Charge a payment in one step (Variant B)
+	// (POST /internal/charge)
+	ChargePayment(ctx context.Context, request ChargePaymentRequestObject) (ChargePaymentResponseObject, error)
 	// GetGatewayCapabilities What a gateway supports, and whether the shop has it set up
 	// (GET /internal/gateway-capabilities/{gateway})
 	GetGatewayCapabilities(ctx context.Context, request GetGatewayCapabilitiesRequestObject) (GetGatewayCapabilitiesResponseObject, error)
+	// RouteGateway Pick the shop's gateway for a currency
+	// (GET /internal/gateway-route)
+	RouteGateway(ctx context.Context, request RouteGatewayRequestObject) (RouteGatewayResponseObject, error)
 	// RefundPayment Refund a captured payment
 	// (POST /internal/refund)
 	RefundPayment(ctx context.Context, request RefundPaymentRequestObject) (RefundPaymentResponseObject, error)
 	// GetInternalTransaction Get a transaction and its refunds
 	// (GET /internal/transactions/{id})
 	GetInternalTransaction(ctx context.Context, request GetInternalTransactionRequestObject) (GetInternalTransactionResponseObject, error)
-	// VoidPayment Void an authorization
+	// VoidPayment Void an authorization or an unfinished charge
 	// (POST /internal/void)
 	VoidPayment(ctx context.Context, request VoidPaymentRequestObject) (VoidPaymentResponseObject, error)
 }
@@ -1940,6 +2326,39 @@ func (sh *strictHandler) CapturePayment(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// ChargePayment operation middleware
+func (sh *strictHandler) ChargePayment(w http.ResponseWriter, r *http.Request, params ChargePaymentParams) {
+	var request ChargePaymentRequestObject
+
+	request.Params = params
+
+	var body ChargePaymentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ChargePayment(ctx, request.(ChargePaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ChargePayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ChargePaymentResponseObject); ok {
+		if err := validResponse.VisitChargePaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetGatewayCapabilities operation middleware
 func (sh *strictHandler) GetGatewayCapabilities(w http.ResponseWriter, r *http.Request, gateway Gateway) {
 	var request GetGatewayCapabilitiesRequestObject
@@ -1959,6 +2378,32 @@ func (sh *strictHandler) GetGatewayCapabilities(w http.ResponseWriter, r *http.R
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetGatewayCapabilitiesResponseObject); ok {
 		if err := validResponse.VisitGetGatewayCapabilitiesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RouteGateway operation middleware
+func (sh *strictHandler) RouteGateway(w http.ResponseWriter, r *http.Request, params RouteGatewayParams) {
+	var request RouteGatewayRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RouteGateway(ctx, request.(RouteGatewayRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RouteGateway")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RouteGatewayResponseObject); ok {
+		if err := validResponse.VisitRouteGatewayResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

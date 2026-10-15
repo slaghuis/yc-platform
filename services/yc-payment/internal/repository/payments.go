@@ -26,19 +26,19 @@ type StoredGatewayConfig struct {
 }
 
 const gatewayColumns = `gateway, enabled, credentials_enc, api_key_hint, webhook_secret_set, COALESCE(public_key, ''),
-	created_at, updated_at`
+	priority, currencies, created_at, updated_at`
 
 func scanGateway(r pgx.Row) (StoredGatewayConfig, error) {
 	var c StoredGatewayConfig
 	err := r.Scan(&c.Gateway, &c.Enabled, &c.CredentialsEnc, &c.APIKeyHint, &c.WebhookSecretSet, &c.PublicKey,
-		&c.CreatedAt, &c.UpdatedAt)
+		&c.Priority, &c.Currencies, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
 }
 
-// GatewayConfigs returns the shop's gateway settings.
+// GatewayConfigs returns the shop's gateway settings, in priority order.
 func (Payments) GatewayConfigs(ctx context.Context, tx pgx.Tx, tenantID string) ([]StoredGatewayConfig, error) {
-	rows, err := tx.Query(ctx, `SELECT `+gatewayColumns+` FROM tenant_gateway_config WHERE tenant_id = $1 ORDER BY gateway`,
-		tenantID)
+	rows, err := tx.Query(ctx, `SELECT `+gatewayColumns+` FROM tenant_gateway_config WHERE tenant_id = $1
+		ORDER BY priority, gateway`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list gateway configs: %w", err)
 	}
@@ -64,35 +64,40 @@ func (Payments) GatewayConfig(ctx context.Context, tx pgx.Tx, tenantID, gw strin
 
 // PutGatewayConfig creates or replaces the shop's settings for a gateway.
 func (Payments) PutGatewayConfig(ctx context.Context, tx pgx.Tx, tenantID string, c StoredGatewayConfig) error {
+	currencies := c.Currencies
+	if currencies == nil {
+		currencies = []string{}
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO tenant_gateway_config (tenant_id, gateway, enabled, credentials_enc, api_key_hint,
-			webhook_secret_set, public_key, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $8)
+			webhook_secret_set, public_key, priority, currencies, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $10)
 		ON CONFLICT (tenant_id, gateway) DO UPDATE SET enabled = EXCLUDED.enabled,
 			credentials_enc = EXCLUDED.credentials_enc, api_key_hint = EXCLUDED.api_key_hint,
 			webhook_secret_set = EXCLUDED.webhook_secret_set, public_key = EXCLUDED.public_key,
-			updated_at = EXCLUDED.updated_at`,
-		tenantID, c.Gateway, c.Enabled, c.CredentialsEnc, c.APIKeyHint, c.WebhookSecretSet, c.PublicKey, c.UpdatedAt)
+			priority = EXCLUDED.priority, currencies = EXCLUDED.currencies, updated_at = EXCLUDED.updated_at`,
+		tenantID, c.Gateway, c.Enabled, c.CredentialsEnc, c.APIKeyHint, c.WebhookSecretSet, c.PublicKey, c.Priority,
+		currencies, c.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("put gateway config: %w", err)
 	}
 	return nil
 }
 
-const transactionColumns = `id, session_id, COALESCE(order_id::text, ''), gateway, COALESCE(gateway_reference, ''), status,
-	amount_minor, currency, captured_amount_minor, refunded_amount_minor, idempotency_key, next_action,
+const transactionColumns = `id, session_id, COALESCE(order_id::text, ''), kind, gateway, COALESCE(gateway_reference, ''),
+	status, amount_minor, currency, captured_amount_minor, refunded_amount_minor, idempotency_key, next_action,
 	COALESCE(failure_reason, ''), created_at, updated_at`
 
 func scanTransaction(r pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
-	var status string
+	var status, kind string
 	var next []byte
-	err := r.Scan(&t.ID, &t.SessionID, &t.OrderID, &t.Gateway, &t.GatewayReference, &status,
+	err := r.Scan(&t.ID, &t.SessionID, &t.OrderID, &kind, &t.Gateway, &t.GatewayReference, &status,
 		&t.AmountMinor, &t.Currency, &t.CapturedMinor, &t.RefundedMinor, &t.IdempotencyKey, &next,
 		&t.FailureReason, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return t, err
 	}
-	t.Status = domain.Status(status)
+	t.Status, t.Kind = domain.Status(status), domain.Kind(kind)
 	if len(next) > 0 {
 		if err := json.Unmarshal(next, &t.NextAction); err != nil {
 			return t, fmt.Errorf("decode next_action: %w", err)
@@ -140,10 +145,10 @@ func lock(forUpdate bool) string {
 
 // InsertTransaction records a new transaction.
 func (Payments) InsertTransaction(ctx context.Context, tx pgx.Tx, tenantID string, t domain.Transaction) error {
-	_, err := tx.Exec(ctx, `INSERT INTO transactions (id, tenant_id, session_id, order_id, gateway, status, amount_minor,
-			currency, idempotency_key, created_at, updated_at)
-		VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9, $10, $10)`,
-		t.ID, tenantID, t.SessionID, t.OrderID, t.Gateway, string(t.Status), t.AmountMinor, t.Currency,
+	_, err := tx.Exec(ctx, `INSERT INTO transactions (id, tenant_id, session_id, order_id, kind, gateway, status,
+			amount_minor, currency, idempotency_key, created_at, updated_at)
+		VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9, $10, $11, $11)`,
+		t.ID, tenantID, t.SessionID, t.OrderID, string(t.Kind), t.Gateway, string(t.Status), t.AmountMinor, t.Currency,
 		t.IdempotencyKey, t.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert transaction: %w", err)
@@ -239,6 +244,13 @@ func (p Payments) RefundByKey(ctx context.Context, tx pgx.Tx, tenantID, key stri
 // RefundByReference returns (and locks) the refund for a gateway refund.
 func (p Payments) RefundByReference(ctx context.Context, tx pgx.Tx, tenantID, ref string) (domain.Refund, bool, error) {
 	return p.oneRefund(ctx, tx, `tenant_id = $1 AND gateway_reference = $2`, tenantID, ref)
+}
+
+// PendingRefund returns (and locks) a transaction's oldest pending refund
+// of amountMinor.
+func (p Payments) PendingRefund(ctx context.Context, tx pgx.Tx, tenantID, transactionID string, amountMinor int64) (domain.Refund, bool, error) {
+	return p.oneRefund(ctx, tx, `tenant_id = $1 AND transaction_id = $2 AND amount_minor = $3 AND status = 'pending'
+		ORDER BY created_at, id LIMIT 1`, tenantID, transactionID, amountMinor)
 }
 
 // Refunds returns a transaction's refunds, oldest first.

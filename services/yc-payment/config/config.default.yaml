@@ -26,3 +26,7 @@ gateways:
     # Tests point this at a fake.
     api_base: ${YC_PAYMENT_STRIPE_API_BASE:-https://api.stripe.com}
     timeout: 30s
+  yoco:
+    # The Checkout API; tests and the demo point this at a fake.
+    api_base: ${YC_PAYMENT_YOCO_API_BASE:-https://payments.yoco.com}
+    timeout: 30s

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.charged.v1.json",
+  "title": "payment.charged.v1",
+  "description": "A combined authorize-and-capture charge succeeded (Variant B). The point of no return of the checkout saga.",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "session_id",
+    "gateway",
+    "amount",
+    "charged_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session the payment belongs to."
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "gateway_reference": {
+      "type": "string",
+      "description": "The gateway's ID for the payment, e.g. a Yoco checkout ID."
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "charged_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -404,26 +404,28 @@ Add Yoco as a second gateway. This proves the gateway abstraction and the Varian
 - Driver capability reporting (`SupportsSeparateAuthCapture() = false`)
 
 **yc-checkout extensions**
-- Variant B path: CHARGING state replaces AUTHORIZING + CAPTURING
-- Gateway selection logic (per tenant, per currency)
-- Variant B compensation: refund instead of void when order creation fails post-charge
+- Variant B path: CHARGING state replaces AUTHORIZING + CAPTURING, after ORDER_CREATE (ADR-019)
+- Gateway selection logic (per tenant, per currency), asked of yc-payment at session start
+- Variant B compensation: the order is created before the charge, so a failed order creation moves no money; a hosted charge paid after the session ended is refunded (ADR-019 rule 12)
 
 **yc-payment config**
 - Per-tenant gateway enablement
-- Currency-to-gateway routing map
+- Currency-to-gateway routing: a priority and an optional currency list per gateway (ADR-013)
 
 ### Milestone
+
+`task demo:phase5` runs it against the fake Stripe and Yoco (`scripts/demo-phase5.sh`). Store currency is fixed per shop, so it provisions a ZAR shop and a USD shop.
 
 1. Tenant configured with both Stripe and Yoco; Yoco priority for ZAR
 2. Checkout in ZAR routes to Yoco (Variant B); runs CHARGING instead of AUTHORIZING+CAPTURING
 3. Checkout in USD routes to Stripe (Variant A)
-4. Compensation test: force order creation failure on a Yoco charge; verify refund issued
+4. Compensation test: force order creation failure on a Yoco checkout; verify no charge is made. Cancel a session with the Yoco page open, then pay it; verify the late charge is refunded
 5. Yoco webhook test: simulate a delayed charge confirmation; order state updates correctly
 
 ### Exit criteria
 
 - Both gateways work for happy path
-- Variant B compensation (refund) verified
+- Variant B compensation (late-charge refund) verified
 - Webhook idempotency verified (replay same webhook; no double update)
 - Gateway capability reporting drives saga variant selection correctly
 

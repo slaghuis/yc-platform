@@ -3,6 +3,8 @@
 package domain
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,11 +40,21 @@ func (s Status) Settled() bool {
 	return false
 }
 
+// Kind is how a transaction takes the money.
+type Kind string
+
+// Transaction kinds (ADR-013).
+const (
+	KindAuthorize Kind = "authorize" // Variant A: authorize, then capture
+	KindCharge    Kind = "charge"    // Variant B: one combined charge
+)
+
 // Transaction is one payment.
 type Transaction struct {
 	ID               string
 	SessionID        string
 	OrderID          string
+	Kind             Kind
 	Gateway          string
 	GatewayReference string
 	Status           Status
@@ -59,14 +71,17 @@ type Transaction struct {
 
 // Apply records the gateway's view of the payment. It never moves a
 // transaction backwards: a late webhook for an older state is ignored.
-// It reports whether anything changed.
+// The exception is money taken after a failure (a customer who tried
+// another card on a hosted page): captured is always recorded. It reports
+// whether anything changed.
 func (t *Transaction) Apply(p gateway.Payment, now time.Time) bool {
 	before := *t
 	if p.Reference != "" {
 		t.GatewayReference = p.Reference
 	}
 	next := Status(p.Status)
-	if rank(next) > rank(t.Status) || (t.Status == StatusCreated && next != "") {
+	if rank(next) > rank(t.Status) || (t.Status == StatusCreated && next != "") ||
+		(t.Status == StatusFailed && next == StatusCaptured) {
 		t.Status = next
 	}
 	switch t.Status {
@@ -163,8 +178,46 @@ type GatewayConfig struct {
 	APIKeyHint       string
 	WebhookSecretSet bool
 	PublicKey        string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// Priority orders the shop's gateways for a currency: lowest first.
+	Priority int
+	// Currencies limits the gateway to these ISO 4217 codes; empty means
+	// every currency its driver takes.
+	Currencies []string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// Gateway priorities.
+const (
+	DefaultPriority = 100
+	MaxPriority     = 1000
+)
+
+// Takes reports whether the config routes currency to its gateway, given
+// the currencies the driver supports (nil: any).
+func (c GatewayConfig) Takes(currency string, supported []string) bool {
+	if supported != nil && !slices.Contains(supported, currency) {
+		return false
+	}
+	return len(c.Currencies) == 0 || slices.Contains(c.Currencies, currency)
+}
+
+// Route picks the config for currency among enabled ones: the lowest
+// priority, then the gateway name. supported gives each gateway's
+// currencies (nil: any).
+func Route(configs []GatewayConfig, currency string, supported func(gw string) ([]string, bool)) (GatewayConfig, bool) {
+	var best GatewayConfig
+	found := false
+	for _, c := range configs {
+		cur, ok := supported(c.Gateway)
+		if !ok || !c.Enabled || !c.Takes(currency, cur) {
+			continue
+		}
+		if !found || c.Priority < best.Priority || (c.Priority == best.Priority && c.Gateway < best.Gateway) {
+			best, found = c, true
+		}
+	}
+	return best, found
 }
 
 // KeyHint masks a secret for display: its prefix and last four characters.
@@ -197,6 +250,45 @@ func ValidateCredentials(c gateway.Credentials, publicKey string) error {
 		return v.Build()
 	}
 	return nil
+}
+
+// ValidateRouting checks a gateway's priority and currencies against the
+// currencies its driver supports (nil: any).
+func ValidateRouting(priority int, currencies, supported []string) error {
+	v := ycerrors.Validation()
+	if priority < 0 || priority > MaxPriority {
+		v.Field("priority", "invalid", "Priority is between 0 and 1000")
+	}
+	if len(currencies) > 20 {
+		v.Field("currencies", "too_long", "At most 20 currencies")
+	}
+	for i, c := range currencies {
+		field := "currencies[" + strconv.Itoa(i) + "]"
+		switch {
+		case !currencyCode(c):
+			v.Field(field, "invalid", "Currency must be an ISO 4217 code")
+		case supported != nil && !slices.Contains(supported, c):
+			v.Field(field, "unsupported", "The gateway does not take "+c+"; it takes "+strings.Join(supported, ", "))
+		case slices.Index(currencies, c) != i:
+			v.Field(field, "duplicate", "Currency is listed twice")
+		}
+	}
+	if v.HasErrors() {
+		return v.Build()
+	}
+	return nil
+}
+
+func currencyCode(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for _, r := range s {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 // MaxReason bounds free-text reasons.
