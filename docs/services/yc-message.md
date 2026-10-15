@@ -171,6 +171,10 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 - **Missing recipients:** when yc-preference answers 404 for a customer, the message is skipped; any other failure (including 503 while yc-preference is down) retries the event, so it dead-letters after `MaxRetries` and can be replayed with `yc-dlq-cli`. `nats.retry_backoff` (`YC_MESSAGE_EVENT_RETRY_BACKOFF`, comma-separated durations) shortens the redelivery backoff for demos.
 - **GDPR:** see GDPR Behavior.
 
+### Phase 10 Implementation Notes
+
+- **Platform sends:** `POST /internal/send` from a `_platform` caller is accepted for `password_reset` only and must carry an `address` (system admins have no yc-preference record). It is queued and sent under `_platform`. Before this, yc-message refused the request and yc-identity logged "password reset link not sent" while still answering 202, so system admins never received reset emails.
+
 ## Database Schema
 
 Database: **`yc_message`**

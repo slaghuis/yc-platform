@@ -311,6 +311,26 @@ func TestMessaging(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, customer.do("GET", "/admin/messages", nil, nil))
 	})
 
+	t.Run("a system admin's password reset is sent under the platform", func(t *testing.T) {
+		platform := service(t, srv, eventbus.PlatformTenantID, "yc-identity")
+		req := api.SendRequest{
+			Type: "password_reset", Reference: "reset:" + uuid.NewString(), UserID: ptr(uuid.New()),
+			Channel: ptr(api.Channel("email")), Address: ptr("sysadmin@x.test"),
+			Context: &map[string]interface{}{"reset_url": "https://admin.shops.test/account/reset-password?token=p1", "expires_at": "12:00 UTC"},
+		}
+		require.Equal(t, http.StatusAccepted, platform.do("POST", "/internal/send", req, nil))
+		m := waitMail("sysadmin@x.test", 1)[0]
+		assert.Equal(t, "Reset your password", m.Subject)
+		assert.Contains(t, m.Body, "token=p1")
+
+		noAddress := req
+		noAddress.Reference, noAddress.Address, noAddress.Channel = "reset:"+uuid.NewString(), nil, nil
+		assert.Equal(t, http.StatusBadRequest, platform.do("POST", "/internal/send", noAddress, nil), "no preferences on the platform")
+		welcome := req
+		welcome.Type, welcome.Reference = "welcome", "welcome:"+uuid.NewString()
+		assert.Equal(t, http.StatusBadRequest, platform.do("POST", "/internal/send", welcome, nil), "shop messages stay in shops")
+	})
+
 	t.Run("shop templates override the defaults", func(t *testing.T) {
 		path := "/admin/templates/welcome/email/en"
 		assert.Equal(t, http.StatusBadRequest, admin.do("PUT", path, api.TemplateInput{
