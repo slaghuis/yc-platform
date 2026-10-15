@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 )
 
@@ -524,6 +523,7 @@ type MiddlewareFunc func(http.Handler) http.Handler
 
 // CreateCategory operation middleware
 func (siw *ServerInterfaceWrapper) CreateCategory(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateCategory(w, r)
 	}))
@@ -537,6 +537,7 @@ func (siw *ServerInterfaceWrapper) CreateCategory(w http.ResponseWriter, r *http
 
 // DeleteCategory operation middleware
 func (siw *ServerInterfaceWrapper) DeleteCategory(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -562,6 +563,7 @@ func (siw *ServerInterfaceWrapper) DeleteCategory(w http.ResponseWriter, r *http
 
 // UpdateCategory operation middleware
 func (siw *ServerInterfaceWrapper) UpdateCategory(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -587,6 +589,7 @@ func (siw *ServerInterfaceWrapper) UpdateCategory(w http.ResponseWriter, r *http
 
 // CreateProduct operation middleware
 func (siw *ServerInterfaceWrapper) CreateProduct(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProduct(w, r)
 	}))
@@ -600,6 +603,7 @@ func (siw *ServerInterfaceWrapper) CreateProduct(w http.ResponseWriter, r *http.
 
 // DeleteProduct operation middleware
 func (siw *ServerInterfaceWrapper) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -625,6 +629,7 @@ func (siw *ServerInterfaceWrapper) DeleteProduct(w http.ResponseWriter, r *http.
 
 // UpdateProduct operation middleware
 func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -650,6 +655,7 @@ func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.
 
 // AttachImage operation middleware
 func (siw *ServerInterfaceWrapper) AttachImage(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -675,6 +681,7 @@ func (siw *ServerInterfaceWrapper) AttachImage(w http.ResponseWriter, r *http.Re
 
 // DetachImage operation middleware
 func (siw *ServerInterfaceWrapper) DetachImage(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -709,6 +716,7 @@ func (siw *ServerInterfaceWrapper) DetachImage(w http.ResponseWriter, r *http.Re
 
 // CreateSKU operation middleware
 func (siw *ServerInterfaceWrapper) CreateSKU(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -734,6 +742,7 @@ func (siw *ServerInterfaceWrapper) CreateSKU(w http.ResponseWriter, r *http.Requ
 
 // AddVariant operation middleware
 func (siw *ServerInterfaceWrapper) AddVariant(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -759,6 +768,7 @@ func (siw *ServerInterfaceWrapper) AddVariant(w http.ResponseWriter, r *http.Req
 
 // DeleteSKU operation middleware
 func (siw *ServerInterfaceWrapper) DeleteSKU(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -784,6 +794,7 @@ func (siw *ServerInterfaceWrapper) DeleteSKU(w http.ResponseWriter, r *http.Requ
 
 // UpdateSKU operation middleware
 func (siw *ServerInterfaceWrapper) UpdateSKU(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -809,6 +820,7 @@ func (siw *ServerInterfaceWrapper) UpdateSKU(w http.ResponseWriter, r *http.Requ
 
 // GetCategoryTree operation middleware
 func (siw *ServerInterfaceWrapper) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCategoryTree(w, r)
 	}))
@@ -822,6 +834,7 @@ func (siw *ServerInterfaceWrapper) GetCategoryTree(w http.ResponseWriter, r *htt
 
 // BrowseProducts operation middleware
 func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -906,6 +919,7 @@ func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http
 
 // GetProduct operation middleware
 func (siw *ServerInterfaceWrapper) GetProduct(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -931,6 +945,7 @@ func (siw *ServerInterfaceWrapper) GetProduct(w http.ResponseWriter, r *http.Req
 
 // GetSKU operation middleware
 func (siw *ServerInterfaceWrapper) GetSKU(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -956,6 +971,7 @@ func (siw *ServerInterfaceWrapper) GetSKU(w http.ResponseWriter, r *http.Request
 
 // ListPublicSuppliers operation middleware
 func (siw *ServerInterfaceWrapper) ListPublicSuppliers(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListPublicSuppliers(w, r)
 	}))
@@ -969,6 +985,7 @@ func (siw *ServerInterfaceWrapper) ListPublicSuppliers(w http.ResponseWriter, r 
 
 // ListSuppliers operation middleware
 func (siw *ServerInterfaceWrapper) ListSuppliers(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -1027,6 +1044,7 @@ func (siw *ServerInterfaceWrapper) ListSuppliers(w http.ResponseWriter, r *http.
 
 // CreateSupplier operation middleware
 func (siw *ServerInterfaceWrapper) CreateSupplier(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateSupplier(w, r)
 	}))
@@ -1040,6 +1058,7 @@ func (siw *ServerInterfaceWrapper) CreateSupplier(w http.ResponseWriter, r *http
 
 // DeleteSupplier operation middleware
 func (siw *ServerInterfaceWrapper) DeleteSupplier(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -1065,6 +1084,7 @@ func (siw *ServerInterfaceWrapper) DeleteSupplier(w http.ResponseWriter, r *http
 
 // GetSupplier operation middleware
 func (siw *ServerInterfaceWrapper) GetSupplier(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -1090,6 +1110,7 @@ func (siw *ServerInterfaceWrapper) GetSupplier(w http.ResponseWriter, r *http.Re
 
 // UpdateSupplier operation middleware
 func (siw *ServerInterfaceWrapper) UpdateSupplier(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -1309,6 +1330,7 @@ type CreateCategoryResponseObject interface {
 type CreateCategory201JSONResponse Category
 
 func (response CreateCategory201JSONResponse) VisitCreateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1324,6 +1346,7 @@ type CreateCategory400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateCategory400ApplicationProblemPlusJSONResponse) VisitCreateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1337,6 +1360,7 @@ func (response CreateCategory400ApplicationProblemPlusJSONResponse) VisitCreateC
 type CreateCategory409ApplicationProblemPlusJSONResponse Problem
 
 func (response CreateCategory409ApplicationProblemPlusJSONResponse) VisitCreateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1355,7 +1379,8 @@ type DeleteCategoryResponseObject interface {
 	VisitDeleteCategoryResponse(w http.ResponseWriter) error
 }
 
-type DeleteCategory204Response struct{}
+type DeleteCategory204Response struct {
+}
 
 func (response DeleteCategory204Response) VisitDeleteCategoryResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1367,6 +1392,7 @@ type DeleteCategory404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteCategory404ApplicationProblemPlusJSONResponse) VisitDeleteCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1380,6 +1406,7 @@ func (response DeleteCategory404ApplicationProblemPlusJSONResponse) VisitDeleteC
 type DeleteCategory409ApplicationProblemPlusJSONResponse Problem
 
 func (response DeleteCategory409ApplicationProblemPlusJSONResponse) VisitDeleteCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1402,6 +1429,7 @@ type UpdateCategoryResponseObject interface {
 type UpdateCategory200JSONResponse Category
 
 func (response UpdateCategory200JSONResponse) VisitUpdateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1417,6 +1445,7 @@ type UpdateCategory400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateCategory400ApplicationProblemPlusJSONResponse) VisitUpdateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1430,6 +1459,7 @@ func (response UpdateCategory400ApplicationProblemPlusJSONResponse) VisitUpdateC
 type UpdateCategory404ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateCategory404ApplicationProblemPlusJSONResponse) VisitUpdateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1443,6 +1473,7 @@ func (response UpdateCategory404ApplicationProblemPlusJSONResponse) VisitUpdateC
 type UpdateCategory409ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateCategory409ApplicationProblemPlusJSONResponse) VisitUpdateCategoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1464,6 +1495,7 @@ type CreateProductResponseObject interface {
 type CreateProduct201JSONResponse Product
 
 func (response CreateProduct201JSONResponse) VisitCreateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1479,6 +1511,7 @@ type CreateProduct400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateProduct400ApplicationProblemPlusJSONResponse) VisitCreateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1492,6 +1525,7 @@ func (response CreateProduct400ApplicationProblemPlusJSONResponse) VisitCreatePr
 type CreateProduct403ApplicationProblemPlusJSONResponse Problem
 
 func (response CreateProduct403ApplicationProblemPlusJSONResponse) VisitCreateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1510,7 +1544,8 @@ type DeleteProductResponseObject interface {
 	VisitDeleteProductResponse(w http.ResponseWriter) error
 }
 
-type DeleteProduct204Response struct{}
+type DeleteProduct204Response struct {
+}
 
 func (response DeleteProduct204Response) VisitDeleteProductResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1522,6 +1557,7 @@ type DeleteProduct404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteProduct404ApplicationProblemPlusJSONResponse) VisitDeleteProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1544,6 +1580,7 @@ type UpdateProductResponseObject interface {
 type UpdateProduct200JSONResponse Product
 
 func (response UpdateProduct200JSONResponse) VisitUpdateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1559,6 +1596,7 @@ type UpdateProduct400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateProduct400ApplicationProblemPlusJSONResponse) VisitUpdateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1572,6 +1610,7 @@ func (response UpdateProduct400ApplicationProblemPlusJSONResponse) VisitUpdatePr
 type UpdateProduct404ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateProduct404ApplicationProblemPlusJSONResponse) VisitUpdateProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1594,6 +1633,7 @@ type AttachImageResponseObject interface {
 type AttachImage201JSONResponse ProductImage
 
 func (response AttachImage201JSONResponse) VisitAttachImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1609,6 +1649,7 @@ type AttachImage400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AttachImage400ApplicationProblemPlusJSONResponse) VisitAttachImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1622,6 +1663,7 @@ func (response AttachImage400ApplicationProblemPlusJSONResponse) VisitAttachImag
 type AttachImage404ApplicationProblemPlusJSONResponse Problem
 
 func (response AttachImage404ApplicationProblemPlusJSONResponse) VisitAttachImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1641,7 +1683,8 @@ type DetachImageResponseObject interface {
 	VisitDetachImageResponse(w http.ResponseWriter) error
 }
 
-type DetachImage204Response struct{}
+type DetachImage204Response struct {
+}
 
 func (response DetachImage204Response) VisitDetachImageResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1653,6 +1696,7 @@ type DetachImage404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DetachImage404ApplicationProblemPlusJSONResponse) VisitDetachImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1675,6 +1719,7 @@ type CreateSKUResponseObject interface {
 type CreateSKU201JSONResponse SKU
 
 func (response CreateSKU201JSONResponse) VisitCreateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1690,6 +1735,7 @@ type CreateSKU400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateSKU400ApplicationProblemPlusJSONResponse) VisitCreateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1703,6 +1749,7 @@ func (response CreateSKU400ApplicationProblemPlusJSONResponse) VisitCreateSKURes
 type CreateSKU404ApplicationProblemPlusJSONResponse Problem
 
 func (response CreateSKU404ApplicationProblemPlusJSONResponse) VisitCreateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1716,6 +1763,7 @@ func (response CreateSKU404ApplicationProblemPlusJSONResponse) VisitCreateSKURes
 type CreateSKU409ApplicationProblemPlusJSONResponse Problem
 
 func (response CreateSKU409ApplicationProblemPlusJSONResponse) VisitCreateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1738,6 +1786,7 @@ type AddVariantResponseObject interface {
 type AddVariant201JSONResponse Variant
 
 func (response AddVariant201JSONResponse) VisitAddVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1753,6 +1802,7 @@ type AddVariant400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AddVariant400ApplicationProblemPlusJSONResponse) VisitAddVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1766,6 +1816,7 @@ func (response AddVariant400ApplicationProblemPlusJSONResponse) VisitAddVariantR
 type AddVariant404ApplicationProblemPlusJSONResponse Problem
 
 func (response AddVariant404ApplicationProblemPlusJSONResponse) VisitAddVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1779,6 +1830,7 @@ func (response AddVariant404ApplicationProblemPlusJSONResponse) VisitAddVariantR
 type AddVariant409ApplicationProblemPlusJSONResponse Problem
 
 func (response AddVariant409ApplicationProblemPlusJSONResponse) VisitAddVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1797,7 +1849,8 @@ type DeleteSKUResponseObject interface {
 	VisitDeleteSKUResponse(w http.ResponseWriter) error
 }
 
-type DeleteSKU204Response struct{}
+type DeleteSKU204Response struct {
+}
 
 func (response DeleteSKU204Response) VisitDeleteSKUResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1809,6 +1862,7 @@ type DeleteSKU404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteSKU404ApplicationProblemPlusJSONResponse) VisitDeleteSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1831,6 +1885,7 @@ type UpdateSKUResponseObject interface {
 type UpdateSKU200JSONResponse SKU
 
 func (response UpdateSKU200JSONResponse) VisitUpdateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1846,6 +1901,7 @@ type UpdateSKU400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateSKU400ApplicationProblemPlusJSONResponse) VisitUpdateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1859,6 +1915,7 @@ func (response UpdateSKU400ApplicationProblemPlusJSONResponse) VisitUpdateSKURes
 type UpdateSKU404ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateSKU404ApplicationProblemPlusJSONResponse) VisitUpdateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1872,6 +1929,7 @@ func (response UpdateSKU404ApplicationProblemPlusJSONResponse) VisitUpdateSKURes
 type UpdateSKU409ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateSKU409ApplicationProblemPlusJSONResponse) VisitUpdateSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1882,7 +1940,8 @@ func (response UpdateSKU409ApplicationProblemPlusJSONResponse) VisitUpdateSKURes
 	return err
 }
 
-type GetCategoryTreeRequestObject struct{}
+type GetCategoryTreeRequestObject struct {
+}
 
 type GetCategoryTreeResponseObject interface {
 	VisitGetCategoryTreeResponse(w http.ResponseWriter) error
@@ -1893,6 +1952,7 @@ type GetCategoryTree200JSONResponse struct {
 }
 
 func (response GetCategoryTree200JSONResponse) VisitGetCategoryTreeResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1914,6 +1974,7 @@ type BrowseProductsResponseObject interface {
 type BrowseProducts200JSONResponse ProductList
 
 func (response BrowseProducts200JSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1929,6 +1990,7 @@ type BrowseProducts400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response BrowseProducts400ApplicationProblemPlusJSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1950,6 +2012,7 @@ type GetProductResponseObject interface {
 type GetProduct200JSONResponse Product
 
 func (response GetProduct200JSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1965,6 +2028,7 @@ type GetProduct404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetProduct404ApplicationProblemPlusJSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1986,6 +2050,7 @@ type GetSKUResponseObject interface {
 type GetSKU200JSONResponse SKU
 
 func (response GetSKU200JSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2001,6 +2066,7 @@ type GetSKU404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetSKU404ApplicationProblemPlusJSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2011,7 +2077,8 @@ func (response GetSKU404ApplicationProblemPlusJSONResponse) VisitGetSKUResponse(
 	return err
 }
 
-type ListPublicSuppliersRequestObject struct{}
+type ListPublicSuppliersRequestObject struct {
+}
 
 type ListPublicSuppliersResponseObject interface {
 	VisitListPublicSuppliersResponse(w http.ResponseWriter) error
@@ -2022,6 +2089,7 @@ type ListPublicSuppliers200JSONResponse struct {
 }
 
 func (response ListPublicSuppliers200JSONResponse) VisitListPublicSuppliersResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2043,6 +2111,7 @@ type ListSuppliersResponseObject interface {
 type ListSuppliers200JSONResponse SupplierList
 
 func (response ListSuppliers200JSONResponse) VisitListSuppliersResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2058,6 +2127,7 @@ type ListSuppliers400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ListSuppliers400ApplicationProblemPlusJSONResponse) VisitListSuppliersResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2079,6 +2149,7 @@ type CreateSupplierResponseObject interface {
 type CreateSupplier201JSONResponse Supplier
 
 func (response CreateSupplier201JSONResponse) VisitCreateSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2094,6 +2165,7 @@ type CreateSupplier400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateSupplier400ApplicationProblemPlusJSONResponse) VisitCreateSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2112,7 +2184,8 @@ type DeleteSupplierResponseObject interface {
 	VisitDeleteSupplierResponse(w http.ResponseWriter) error
 }
 
-type DeleteSupplier204Response struct{}
+type DeleteSupplier204Response struct {
+}
 
 func (response DeleteSupplier204Response) VisitDeleteSupplierResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -2124,6 +2197,7 @@ type DeleteSupplier404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteSupplier404ApplicationProblemPlusJSONResponse) VisitDeleteSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2137,6 +2211,7 @@ func (response DeleteSupplier404ApplicationProblemPlusJSONResponse) VisitDeleteS
 type DeleteSupplier409ApplicationProblemPlusJSONResponse Problem
 
 func (response DeleteSupplier409ApplicationProblemPlusJSONResponse) VisitDeleteSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2158,6 +2233,7 @@ type GetSupplierResponseObject interface {
 type GetSupplier200JSONResponse Supplier
 
 func (response GetSupplier200JSONResponse) VisitGetSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2173,6 +2249,7 @@ type GetSupplier404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetSupplier404ApplicationProblemPlusJSONResponse) VisitGetSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2195,6 +2272,7 @@ type UpdateSupplierResponseObject interface {
 type UpdateSupplier200JSONResponse Supplier
 
 func (response UpdateSupplier200JSONResponse) VisitUpdateSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2210,6 +2288,7 @@ type UpdateSupplier400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateSupplier400ApplicationProblemPlusJSONResponse) VisitUpdateSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2223,6 +2302,7 @@ func (response UpdateSupplier400ApplicationProblemPlusJSONResponse) VisitUpdateS
 type UpdateSupplier404ApplicationProblemPlusJSONResponse Problem
 
 func (response UpdateSupplier404ApplicationProblemPlusJSONResponse) VisitUpdateSupplierResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -2303,10 +2383,8 @@ type StrictServerInterface interface {
 	UpdateSupplier(ctx context.Context, request UpdateSupplierRequestObject) (UpdateSupplierResponseObject, error)
 }
 
-type (
-	StrictHandlerFunc    func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
-	StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
-)
+type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
+type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
 
 type StrictHTTPServerOptions struct {
 	RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)

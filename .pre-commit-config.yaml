@@ -20,12 +20,15 @@ repos:
         language: system
         entry: gofumpt -w
         files: \.go$
+        # Generated code must match its generator byte for byte (CI checks it).
+        exclude: (/api/generated/|^libs/yc-events/types_gen\.go$)
 
       - id: goimports
         name: goimports
         language: system
         entry: goimports -w -local github.com/slaghuis/yc-platform
         files: \.go$
+        exclude: (/api/generated/|^libs/yc-events/types_gen\.go$)
 
       - id: golangci-lint
         name: golangci-lint (all modules)

@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	money "github.com/slaghuis/yc-platform/libs/yc-money"
 )
@@ -468,6 +467,7 @@ type MiddlewareFunc func(http.Handler) http.Handler
 
 // ListPrices operation middleware
 func (siw *ServerInterfaceWrapper) ListPrices(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -513,6 +513,7 @@ func (siw *ServerInterfaceWrapper) ListPrices(w http.ResponseWriter, r *http.Req
 
 // RemovePrice operation middleware
 func (siw *ServerInterfaceWrapper) RemovePrice(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -538,6 +539,7 @@ func (siw *ServerInterfaceWrapper) RemovePrice(w http.ResponseWriter, r *http.Re
 
 // GetPriceHistory operation middleware
 func (siw *ServerInterfaceWrapper) GetPriceHistory(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -563,6 +565,7 @@ func (siw *ServerInterfaceWrapper) GetPriceHistory(w http.ResponseWriter, r *htt
 
 // SetPrice operation middleware
 func (siw *ServerInterfaceWrapper) SetPrice(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -588,6 +591,7 @@ func (siw *ServerInterfaceWrapper) SetPrice(w http.ResponseWriter, r *http.Reque
 
 // GetPricingConfig operation middleware
 func (siw *ServerInterfaceWrapper) GetPricingConfig(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetPricingConfig(w, r)
 	}))
@@ -601,6 +605,7 @@ func (siw *ServerInterfaceWrapper) GetPricingConfig(w http.ResponseWriter, r *ht
 
 // PutPricingConfig operation middleware
 func (siw *ServerInterfaceWrapper) PutPricingConfig(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutPricingConfig(w, r)
 	}))
@@ -614,6 +619,7 @@ func (siw *ServerInterfaceWrapper) PutPricingConfig(w http.ResponseWriter, r *ht
 
 // ListTaxClasses operation middleware
 func (siw *ServerInterfaceWrapper) ListTaxClasses(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListTaxClasses(w, r)
 	}))
@@ -627,6 +633,7 @@ func (siw *ServerInterfaceWrapper) ListTaxClasses(w http.ResponseWriter, r *http
 
 // DeleteTaxClass operation middleware
 func (siw *ServerInterfaceWrapper) DeleteTaxClass(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -652,6 +659,7 @@ func (siw *ServerInterfaceWrapper) DeleteTaxClass(w http.ResponseWriter, r *http
 
 // GetTaxClass operation middleware
 func (siw *ServerInterfaceWrapper) GetTaxClass(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -677,6 +685,7 @@ func (siw *ServerInterfaceWrapper) GetTaxClass(w http.ResponseWriter, r *http.Re
 
 // PutTaxClass operation middleware
 func (siw *ServerInterfaceWrapper) PutTaxClass(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -702,6 +711,7 @@ func (siw *ServerInterfaceWrapper) PutTaxClass(w http.ResponseWriter, r *http.Re
 
 // EvaluatePrices operation middleware
 func (siw *ServerInterfaceWrapper) EvaluatePrices(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -755,6 +765,7 @@ func (siw *ServerInterfaceWrapper) EvaluatePrices(w http.ResponseWriter, r *http
 
 // GetSKUPrice operation middleware
 func (siw *ServerInterfaceWrapper) GetSKUPrice(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -994,6 +1005,7 @@ type ListPricesResponseObject interface {
 type ListPrices200JSONResponse BasePriceList
 
 func (response ListPrices200JSONResponse) VisitListPricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1009,6 +1021,7 @@ type ListPrices400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ListPrices400ApplicationProblemPlusJSONResponse) VisitListPricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1022,6 +1035,7 @@ func (response ListPrices400ApplicationProblemPlusJSONResponse) VisitListPricesR
 type ListPrices403ApplicationProblemPlusJSONResponse Problem
 
 func (response ListPrices403ApplicationProblemPlusJSONResponse) VisitListPricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1040,7 +1054,8 @@ type RemovePriceResponseObject interface {
 	VisitRemovePriceResponse(w http.ResponseWriter) error
 }
 
-type RemovePrice204Response struct{}
+type RemovePrice204Response struct {
+}
 
 func (response RemovePrice204Response) VisitRemovePriceResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1052,6 +1067,7 @@ type RemovePrice403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RemovePrice403ApplicationProblemPlusJSONResponse) VisitRemovePriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1065,6 +1081,7 @@ func (response RemovePrice403ApplicationProblemPlusJSONResponse) VisitRemovePric
 type RemovePrice404ApplicationProblemPlusJSONResponse Problem
 
 func (response RemovePrice404ApplicationProblemPlusJSONResponse) VisitRemovePriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1086,6 +1103,7 @@ type GetPriceHistoryResponseObject interface {
 type GetPriceHistory200JSONResponse PriceHistory
 
 func (response GetPriceHistory200JSONResponse) VisitGetPriceHistoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1101,6 +1119,7 @@ type GetPriceHistory403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetPriceHistory403ApplicationProblemPlusJSONResponse) VisitGetPriceHistoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1114,6 +1133,7 @@ func (response GetPriceHistory403ApplicationProblemPlusJSONResponse) VisitGetPri
 type GetPriceHistory404ApplicationProblemPlusJSONResponse Problem
 
 func (response GetPriceHistory404ApplicationProblemPlusJSONResponse) VisitGetPriceHistoryResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1136,6 +1156,7 @@ type SetPriceResponseObject interface {
 type SetPrice200JSONResponse BasePrice
 
 func (response SetPrice200JSONResponse) VisitSetPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1151,6 +1172,7 @@ type SetPrice400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response SetPrice400ApplicationProblemPlusJSONResponse) VisitSetPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1164,6 +1186,7 @@ func (response SetPrice400ApplicationProblemPlusJSONResponse) VisitSetPriceRespo
 type SetPrice403ApplicationProblemPlusJSONResponse Problem
 
 func (response SetPrice403ApplicationProblemPlusJSONResponse) VisitSetPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1177,6 +1200,7 @@ func (response SetPrice403ApplicationProblemPlusJSONResponse) VisitSetPriceRespo
 type SetPrice409ApplicationProblemPlusJSONResponse Problem
 
 func (response SetPrice409ApplicationProblemPlusJSONResponse) VisitSetPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1187,7 +1211,8 @@ func (response SetPrice409ApplicationProblemPlusJSONResponse) VisitSetPriceRespo
 	return err
 }
 
-type GetPricingConfigRequestObject struct{}
+type GetPricingConfigRequestObject struct {
+}
 
 type GetPricingConfigResponseObject interface {
 	VisitGetPricingConfigResponse(w http.ResponseWriter) error
@@ -1196,6 +1221,7 @@ type GetPricingConfigResponseObject interface {
 type GetPricingConfig200JSONResponse PricingConfig
 
 func (response GetPricingConfig200JSONResponse) VisitGetPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1211,6 +1237,7 @@ type GetPricingConfig403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetPricingConfig403ApplicationProblemPlusJSONResponse) VisitGetPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1224,6 +1251,7 @@ func (response GetPricingConfig403ApplicationProblemPlusJSONResponse) VisitGetPr
 type GetPricingConfig404ApplicationProblemPlusJSONResponse Problem
 
 func (response GetPricingConfig404ApplicationProblemPlusJSONResponse) VisitGetPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1245,6 +1273,7 @@ type PutPricingConfigResponseObject interface {
 type PutPricingConfig200JSONResponse PricingConfig
 
 func (response PutPricingConfig200JSONResponse) VisitPutPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1260,6 +1289,7 @@ type PutPricingConfig400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response PutPricingConfig400ApplicationProblemPlusJSONResponse) VisitPutPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1273,6 +1303,7 @@ func (response PutPricingConfig400ApplicationProblemPlusJSONResponse) VisitPutPr
 type PutPricingConfig403ApplicationProblemPlusJSONResponse Problem
 
 func (response PutPricingConfig403ApplicationProblemPlusJSONResponse) VisitPutPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1286,6 +1317,7 @@ func (response PutPricingConfig403ApplicationProblemPlusJSONResponse) VisitPutPr
 type PutPricingConfig409ApplicationProblemPlusJSONResponse Problem
 
 func (response PutPricingConfig409ApplicationProblemPlusJSONResponse) VisitPutPricingConfigResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1296,7 +1328,8 @@ func (response PutPricingConfig409ApplicationProblemPlusJSONResponse) VisitPutPr
 	return err
 }
 
-type ListTaxClassesRequestObject struct{}
+type ListTaxClassesRequestObject struct {
+}
 
 type ListTaxClassesResponseObject interface {
 	VisitListTaxClassesResponse(w http.ResponseWriter) error
@@ -1305,6 +1338,7 @@ type ListTaxClassesResponseObject interface {
 type ListTaxClasses200JSONResponse TaxClassList
 
 func (response ListTaxClasses200JSONResponse) VisitListTaxClassesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1320,6 +1354,7 @@ type ListTaxClasses403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ListTaxClasses403ApplicationProblemPlusJSONResponse) VisitListTaxClassesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1338,7 +1373,8 @@ type DeleteTaxClassResponseObject interface {
 	VisitDeleteTaxClassResponse(w http.ResponseWriter) error
 }
 
-type DeleteTaxClass204Response struct{}
+type DeleteTaxClass204Response struct {
+}
 
 func (response DeleteTaxClass204Response) VisitDeleteTaxClassResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -1350,6 +1386,7 @@ type DeleteTaxClass403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteTaxClass403ApplicationProblemPlusJSONResponse) VisitDeleteTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1363,6 +1400,7 @@ func (response DeleteTaxClass403ApplicationProblemPlusJSONResponse) VisitDeleteT
 type DeleteTaxClass404ApplicationProblemPlusJSONResponse Problem
 
 func (response DeleteTaxClass404ApplicationProblemPlusJSONResponse) VisitDeleteTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1376,6 +1414,7 @@ func (response DeleteTaxClass404ApplicationProblemPlusJSONResponse) VisitDeleteT
 type DeleteTaxClass409ApplicationProblemPlusJSONResponse Problem
 
 func (response DeleteTaxClass409ApplicationProblemPlusJSONResponse) VisitDeleteTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1397,6 +1436,7 @@ type GetTaxClassResponseObject interface {
 type GetTaxClass200JSONResponse TaxClass
 
 func (response GetTaxClass200JSONResponse) VisitGetTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1412,6 +1452,7 @@ type GetTaxClass403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetTaxClass403ApplicationProblemPlusJSONResponse) VisitGetTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1425,6 +1466,7 @@ func (response GetTaxClass403ApplicationProblemPlusJSONResponse) VisitGetTaxClas
 type GetTaxClass404ApplicationProblemPlusJSONResponse Problem
 
 func (response GetTaxClass404ApplicationProblemPlusJSONResponse) VisitGetTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1447,6 +1489,7 @@ type PutTaxClassResponseObject interface {
 type PutTaxClass200JSONResponse TaxClass
 
 func (response PutTaxClass200JSONResponse) VisitPutTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1460,6 +1503,7 @@ func (response PutTaxClass200JSONResponse) VisitPutTaxClassResponse(w http.Respo
 type PutTaxClass201JSONResponse TaxClass
 
 func (response PutTaxClass201JSONResponse) VisitPutTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1475,6 +1519,7 @@ type PutTaxClass400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response PutTaxClass400ApplicationProblemPlusJSONResponse) VisitPutTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1488,6 +1533,7 @@ func (response PutTaxClass400ApplicationProblemPlusJSONResponse) VisitPutTaxClas
 type PutTaxClass403ApplicationProblemPlusJSONResponse Problem
 
 func (response PutTaxClass403ApplicationProblemPlusJSONResponse) VisitPutTaxClassResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1510,6 +1556,7 @@ type EvaluatePricesResponseObject interface {
 type EvaluatePrices200JSONResponse PricingResult
 
 func (response EvaluatePrices200JSONResponse) VisitEvaluatePricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1525,6 +1572,7 @@ type EvaluatePrices400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response EvaluatePrices400ApplicationProblemPlusJSONResponse) VisitEvaluatePricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1538,6 +1586,7 @@ func (response EvaluatePrices400ApplicationProblemPlusJSONResponse) VisitEvaluat
 type EvaluatePrices409ApplicationProblemPlusJSONResponse Problem
 
 func (response EvaluatePrices409ApplicationProblemPlusJSONResponse) VisitEvaluatePricesResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1560,6 +1609,7 @@ type GetSKUPriceResponseObject interface {
 type GetSKUPrice200JSONResponse PricingResult
 
 func (response GetSKUPrice200JSONResponse) VisitGetSKUPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1575,6 +1625,7 @@ type GetSKUPrice400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetSKUPrice400ApplicationProblemPlusJSONResponse) VisitGetSKUPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1588,6 +1639,7 @@ func (response GetSKUPrice400ApplicationProblemPlusJSONResponse) VisitGetSKUPric
 type GetSKUPrice404ApplicationProblemPlusJSONResponse Problem
 
 func (response GetSKUPrice404ApplicationProblemPlusJSONResponse) VisitGetSKUPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1601,6 +1653,7 @@ func (response GetSKUPrice404ApplicationProblemPlusJSONResponse) VisitGetSKUPric
 type GetSKUPrice409ApplicationProblemPlusJSONResponse Problem
 
 func (response GetSKUPrice409ApplicationProblemPlusJSONResponse) VisitGetSKUPriceResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -1651,10 +1704,8 @@ type StrictServerInterface interface {
 	GetSKUPrice(ctx context.Context, request GetSKUPriceRequestObject) (GetSKUPriceResponseObject, error)
 }
 
-type (
-	StrictHandlerFunc    func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
-	StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
-)
+type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
+type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
 
 type StrictHTTPServerOptions struct {
 	RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)

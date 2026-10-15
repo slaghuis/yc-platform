@@ -291,6 +291,7 @@ type MiddlewareFunc func(http.Handler) http.Handler
 
 // UploadImage operation middleware
 func (siw *ServerInterfaceWrapper) UploadImage(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UploadImage(w, r)
 	}))
@@ -304,6 +305,7 @@ func (siw *ServerInterfaceWrapper) UploadImage(w http.ResponseWriter, r *http.Re
 
 // RequestUploadURL operation middleware
 func (siw *ServerInterfaceWrapper) RequestUploadURL(w http.ResponseWriter, r *http.Request) {
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RequestUploadURL(w, r)
 	}))
@@ -317,6 +319,7 @@ func (siw *ServerInterfaceWrapper) RequestUploadURL(w http.ResponseWriter, r *ht
 
 // DeleteImage operation middleware
 func (siw *ServerInterfaceWrapper) DeleteImage(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -342,6 +345,7 @@ func (siw *ServerInterfaceWrapper) DeleteImage(w http.ResponseWriter, r *http.Re
 
 // FinalizeUpload operation middleware
 func (siw *ServerInterfaceWrapper) FinalizeUpload(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -367,6 +371,7 @@ func (siw *ServerInterfaceWrapper) FinalizeUpload(w http.ResponseWriter, r *http
 
 // GetImage operation middleware
 func (siw *ServerInterfaceWrapper) GetImage(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -392,6 +397,7 @@ func (siw *ServerInterfaceWrapper) GetImage(w http.ResponseWriter, r *http.Reque
 
 // GetImageVariant operation middleware
 func (siw *ServerInterfaceWrapper) GetImageVariant(w http.ResponseWriter, r *http.Request) {
+
 	var err error
 	_ = err
 
@@ -588,6 +594,7 @@ type UploadImageResponseObject interface {
 type UploadImage202JSONResponse Image
 
 func (response UploadImage202JSONResponse) VisitUploadImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -603,6 +610,7 @@ type UploadImage400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UploadImage400ApplicationProblemPlusJSONResponse) VisitUploadImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -616,6 +624,7 @@ func (response UploadImage400ApplicationProblemPlusJSONResponse) VisitUploadImag
 type UploadImage403ApplicationProblemPlusJSONResponse Problem
 
 func (response UploadImage403ApplicationProblemPlusJSONResponse) VisitUploadImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -637,6 +646,7 @@ type RequestUploadURLResponseObject interface {
 type RequestUploadURL201JSONResponse UploadURL
 
 func (response RequestUploadURL201JSONResponse) VisitRequestUploadURLResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -652,6 +662,7 @@ type RequestUploadURL400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RequestUploadURL400ApplicationProblemPlusJSONResponse) VisitRequestUploadURLResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -665,6 +676,7 @@ func (response RequestUploadURL400ApplicationProblemPlusJSONResponse) VisitReque
 type RequestUploadURL403ApplicationProblemPlusJSONResponse Problem
 
 func (response RequestUploadURL403ApplicationProblemPlusJSONResponse) VisitRequestUploadURLResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -683,7 +695,8 @@ type DeleteImageResponseObject interface {
 	VisitDeleteImageResponse(w http.ResponseWriter) error
 }
 
-type DeleteImage204Response struct{}
+type DeleteImage204Response struct {
+}
 
 func (response DeleteImage204Response) VisitDeleteImageResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
@@ -695,6 +708,7 @@ type DeleteImage403ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteImage403ApplicationProblemPlusJSONResponse) VisitDeleteImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -708,6 +722,7 @@ func (response DeleteImage403ApplicationProblemPlusJSONResponse) VisitDeleteImag
 type DeleteImage404ApplicationProblemPlusJSONResponse Problem
 
 func (response DeleteImage404ApplicationProblemPlusJSONResponse) VisitDeleteImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -729,6 +744,7 @@ type FinalizeUploadResponseObject interface {
 type FinalizeUpload202JSONResponse Image
 
 func (response FinalizeUpload202JSONResponse) VisitFinalizeUploadResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -744,6 +760,7 @@ type FinalizeUpload400ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response FinalizeUpload400ApplicationProblemPlusJSONResponse) VisitFinalizeUploadResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -757,6 +774,7 @@ func (response FinalizeUpload400ApplicationProblemPlusJSONResponse) VisitFinaliz
 type FinalizeUpload403ApplicationProblemPlusJSONResponse Problem
 
 func (response FinalizeUpload403ApplicationProblemPlusJSONResponse) VisitFinalizeUploadResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -770,6 +788,7 @@ func (response FinalizeUpload403ApplicationProblemPlusJSONResponse) VisitFinaliz
 type FinalizeUpload404ApplicationProblemPlusJSONResponse Problem
 
 func (response FinalizeUpload404ApplicationProblemPlusJSONResponse) VisitFinalizeUploadResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -783,6 +802,7 @@ func (response FinalizeUpload404ApplicationProblemPlusJSONResponse) VisitFinaliz
 type FinalizeUpload409ApplicationProblemPlusJSONResponse Problem
 
 func (response FinalizeUpload409ApplicationProblemPlusJSONResponse) VisitFinalizeUploadResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -804,6 +824,7 @@ type GetImageResponseObject interface {
 type GetImage200JSONResponse Image
 
 func (response GetImage200JSONResponse) VisitGetImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -819,6 +840,7 @@ type GetImage404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetImage404ApplicationProblemPlusJSONResponse) VisitGetImageResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -858,6 +880,7 @@ type GetImageVariant404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetImageVariant404ApplicationProblemPlusJSONResponse) VisitGetImageVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -871,6 +894,7 @@ func (response GetImageVariant404ApplicationProblemPlusJSONResponse) VisitGetIma
 type GetImageVariant409ApplicationProblemPlusJSONResponse Problem
 
 func (response GetImageVariant409ApplicationProblemPlusJSONResponse) VisitGetImageVariantResponse(w http.ResponseWriter) error {
+
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
@@ -903,10 +927,8 @@ type StrictServerInterface interface {
 	GetImageVariant(ctx context.Context, request GetImageVariantRequestObject) (GetImageVariantResponseObject, error)
 }
 
-type (
-	StrictHandlerFunc    func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
-	StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
-)
+type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
+type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
 
 type StrictHTTPServerOptions struct {
 	RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)
