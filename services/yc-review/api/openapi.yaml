@@ -1,0 +1,467 @@
+openapi: 3.1.0
+info:
+  title: yc-review
+  version: 0.1.0
+  description: |
+    Product reviews, likes and moderation (docs/services/yc-review.md,
+    ADR-024). Phase 7 subset: one review per customer per product with a
+    1-5 rating, verified purchase through yc-orders, manual or automatic
+    moderation, one shop response per review, likes, product stats and
+    review prompts after delivery. Google reviews and review images come
+    later.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). Reading reviews is open to any caller of the
+    shop; writing them, and likes, need a signed-in customer. Errors are
+    application/problem+json (error-handling.md).
+
+paths:
+  /reviews:
+    get:
+      summary: List a product's reviews
+      description: Approved reviews, newest first.
+      operationId: listProductReviews
+      parameters:
+        - $ref: '#/components/parameters/ProductIDQuery'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of reviews.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewList' }
+        '400': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Review a product
+      description: |
+        One review per customer per product. When the shop requires a
+        purchase (the default) yc-orders must confirm the customer bought
+        the product: if it says no the request fails with 409; if it cannot
+        answer, the review waits pending and is checked again for 24 hours.
+        The review is pending until a shop admin approves it, unless the
+        shop auto-approves.
+      operationId: submitReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewInput' }
+      responses:
+        '201':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /reviews/stats:
+    get:
+      summary: A product's rating summary
+      operationId: getReviewStats
+      parameters:
+        - $ref: '#/components/parameters/ProductIDQuery'
+      responses:
+        '200':
+          description: Approved-review counts, average, distribution and likes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewStats' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /reviews/mine:
+    get:
+      summary: List my reviews
+      description: The calling customer's reviews in any status.
+      operationId: listMyReviews
+      parameters:
+        - name: product_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of reviews, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /reviews/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Edit my review
+      description: Goes back to moderation unless the shop auto-approves.
+      operationId: editReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewContent' }
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete my review
+      operationId: deleteReview
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /likes:
+    get:
+      summary: List the products I like
+      operationId: listMyLikes
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of likes, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LikeList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /likes/{product_id}:
+    parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      summary: Like a product
+      description: Liking a product again changes nothing.
+      operationId: likeProduct
+      responses:
+        '200':
+          description: The product's stats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductStats' }
+        '403': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Unlike a product
+      operationId: unlikeProduct
+      responses:
+        '200':
+          description: The product's stats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductStats' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/reviews:
+    get:
+      summary: List the shop's reviews
+      operationId: adminListReviews
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ReviewStatus' }
+        - name: product_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of reviews, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/reviews/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get a review
+      operationId: adminGetReview
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/reviews/{id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Approve a review
+      description: Shows it on the product. Not while its purchase is unconfirmed (409).
+      operationId: approveReview
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/reviews/{id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Reject a review
+      description: Hides a pending or approved review; the reason is kept for the author.
+      operationId: rejectReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/reviews/{id}/response:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Respond to a review
+      description: The shop's one response; a new one replaces it.
+      operationId: respondToReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Review' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/review-settings:
+    get:
+      summary: Get the shop's review settings
+      operationId: getReviewSettings
+      responses:
+        '200':
+          description: The settings; the platform defaults until the shop sets its own.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSettings' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Set the shop's review settings
+      description: They apply to reviews submitted or edited from now on.
+      operationId: putReviewSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewSettingsInput' }
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSettings' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProductIDQuery:
+      name: product_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    ReviewStatus:
+      type: string
+      enum: [pending, approved, rejected]
+    ModerationMode:
+      type: string
+      enum: [manual, auto]
+    ReviewContent:
+      type: object
+      required: [rating]
+      additionalProperties: false
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 5000 }
+    ReviewInput:
+      type: object
+      required: [product_id, rating]
+      additionalProperties: false
+      properties:
+        product_id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        title: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 5000 }
+    Review:
+      type: object
+      required: [review_id, product_id, rating, status, verified_purchase, purchase_pending, created_at, updated_at]
+      properties:
+        review_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        user_id: { type: string, description: The author; not shown on a product's public list. }
+        rating: { type: integer }
+        title: { type: string }
+        body: { type: string }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        rejection_reason: { type: string }
+        verified_purchase: { type: boolean }
+        purchase_pending: { type: boolean, description: yc-orders has not confirmed the purchase yet. }
+        shop_response: { type: string }
+        shop_response_at: { type: string, format: date-time }
+        approved_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ReviewList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Review' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ProductStats:
+      type: object
+      required: [product_id, rating_count, rating_average, like_count]
+      properties:
+        product_id: { type: string, format: uuid }
+        rating_count: { type: integer, format: int64, description: Approved reviews. }
+        rating_average: { type: number, format: double, description: Mean approved rating; 0 without reviews. }
+        like_count: { type: integer, format: int64 }
+    ReviewStats:
+      type: object
+      required: [product_id, rating_count, rating_average, like_count, distribution]
+      properties:
+        product_id: { type: string, format: uuid }
+        rating_count: { type: integer, format: int64 }
+        rating_average: { type: number, format: double }
+        like_count: { type: integer, format: int64 }
+        distribution:
+          type: array
+          description: Approved reviews by rating, one star first.
+          minItems: 5
+          maxItems: 5
+          items: { type: integer, format: int64 }
+    Like:
+      type: object
+      required: [product_id, liked_at]
+      properties:
+        product_id: { type: string, format: uuid }
+        liked_at: { type: string, format: date-time }
+    LikeList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Like' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ReviewSettingsInput:
+      type: object
+      required: [moderation_mode, require_purchase, allow_edit]
+      additionalProperties: false
+      properties:
+        moderation_mode: { $ref: '#/components/schemas/ModerationMode' }
+        require_purchase: { type: boolean, description: Only customers yc-orders confirms bought the product may review it. }
+        allow_edit: { type: boolean }
+    ReviewSettings:
+      type: object
+      required: [moderation_mode, require_purchase, allow_edit]
+      properties:
+        moderation_mode: { $ref: '#/components/schemas/ModerationMode' }
+        require_purchase: { type: boolean }
+        allow_edit: { type: boolean }
+        updated_at: { type: string, format: date-time, description: Absent while the shop uses the defaults. }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

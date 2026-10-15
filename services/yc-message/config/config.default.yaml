@@ -1,11 +1,52 @@
 service: yc-message
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_MESSAGE_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_MESSAGE_ADVERTISE_URL:-http://yc-message:8080}
+  interval: 30s
+# Calls to yc-preference and yc-orders through the gateway (ADR-021).
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_MESSAGE_SERVICE_SECRET}
+  timeout: 10s
+# Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
+idempotency:
+  retention: 24h
+  purge_interval: 1h
+# Platform SMTP for email (MailHog in development).
+smtp:
+  addr: ${SMTP_ADDR:-localhost:1025}
+  from: ${YC_MESSAGE_SMTP_FROM:-shop@yourcommerce.test}
+  from_name: ${YC_MESSAGE_SMTP_FROM_NAME:-YourCommerce}
+  username: ${YC_MESSAGE_SMTP_USERNAME}
+  password: ${YC_MESSAGE_SMTP_PASSWORD}
+  starttls: false
+  timeout: 10s
+# SMS driver: "fake" mails each SMS to <number>@sms.test through SMTP
+# (development only); "none" sends no SMS.
+sms:
+  driver: ${YC_MESSAGE_SMS_DRIVER:-fake}
+  # POST /webhooks/fake-sms marks fake messages delivered or bounced.
+  fake_webhook: true
+messages:
+  locale: en
+  # Links in messages; {tenant} is the shop's tenant ID.
+  shop_url: ${YC_MESSAGE_SHOP_URL:-http://localhost:8080}
+  max_attempts: 5
+  retry_backoff: 30s
+  batch_size: 50
+  dispatch_interval: 2s
+verification:
+  ttl: 15m

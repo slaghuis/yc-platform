@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.rejected.v1.json",
+  "title": "review.rejected.v1",
+  "description": "A review was rejected, or an approved one taken down. It is hidden from the product.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "reason",
+    "rejected_at",
+    "product_stats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "rejected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_stats": {
+      "$ref": "../common/product_review_stats.v1.json"
+    }
+  }
+}

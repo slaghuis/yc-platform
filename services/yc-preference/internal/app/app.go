@@ -14,6 +14,7 @@ import (
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/services/yc-preference/internal/integration"
 	"github.com/slaghuis/yc-platform/services/yc-preference/internal/service"
 	subscribers "github.com/slaghuis/yc-platform/services/yc-preference/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-preference/internal/transport/http"
@@ -94,7 +95,8 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		DB:          db,
 		Validator:   validator,
 		Streams: []eventbus.StreamConfig{
-			eventbus.PreferenceStream(), eventbus.IdentityStream(), eventbus.PlatformStream(), eventbus.DLQStream(),
+			eventbus.PreferenceStream(), eventbus.IdentityStream(), eventbus.PlatformStream(),
+			eventbus.MessageStream(), eventbus.DLQStream(),
 		},
 	})
 	if err != nil {
@@ -102,7 +104,8 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	svc := service.New(db, bus, cfg.Defaults.domain())
+	messages := integration.NewMessages(httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls))
+	svc := service.New(db, bus, messages, cfg.Defaults.domain())
 	for _, sub := range subscribers.Subscriptions(svc) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
 			return nil, err

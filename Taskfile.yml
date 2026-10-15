@@ -126,7 +126,7 @@ tasks:
       - ./scripts/wait-for-stack.sh
 
   devstack:app:
-    desc: Build and start the application services (gateway, identity, monitor, product, pricing, image) on the dev stack
+    desc: Build and start the application services on the dev stack
     cmds:
       - ./scripts/gen-dev-jwt-keys.sh
       - docker compose --profile app up -d --build
@@ -161,6 +161,11 @@ tasks:
     desc: Run the Phase 6 fulfilment demo (zones, shipping, packaging, delivery, returns) against the running stack (see scripts/demo-phase6.sh)
     cmds:
       - ./scripts/demo-phase6.sh
+
+  demo:phase7:
+    desc: Run the Phase 7 messaging, reviews and abandoned-cart demo against the running stack (see scripts/demo-phase7.sh)
+    cmds:
+      - ./scripts/demo-phase7.sh
 
   devstack:down:
     desc: Stop local dev stack

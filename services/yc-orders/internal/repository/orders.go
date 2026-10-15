@@ -146,6 +146,31 @@ func (Orders) UpdateOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 	return nil
 }
 
+// Purchase is a customer's latest placed order containing a product.
+type Purchase struct {
+	OrderID     string
+	OrderNumber string
+	PlacedAt    time.Time
+}
+
+// LatestPurchase returns the customer's latest placed, uncancelled order
+// with a line of productID, or false.
+func (Orders) LatestPurchase(ctx context.Context, tx pgx.Tx, tenantID, userID, productID string) (Purchase, bool, error) {
+	var p Purchase
+	err := tx.QueryRow(ctx, `SELECT id::text, order_number, placed_at FROM orders
+		WHERE tenant_id = $1 AND user_id = $2 AND user_type = 'customer' AND placed_at IS NOT NULL
+		  AND status NOT IN ('pending_payment', 'abandoned', 'cancelled')
+		  AND items @> jsonb_build_array(jsonb_build_object('product_id', $3::text))
+		ORDER BY placed_at DESC LIMIT 1`, tenantID, userID, productID).Scan(&p.OrderID, &p.OrderNumber, &p.PlacedAt)
+	if dbkit.IsNoRows(err) {
+		return Purchase{}, false, nil
+	}
+	if err != nil {
+		return Purchase{}, false, fmt.Errorf("latest purchase: %w", err)
+	}
+	return p, true, nil
+}
+
 // NextNumber takes the shop's next order number; the counter row's lock
 // serialises concurrent confirmations.
 func (Orders) NextNumber(ctx context.Context, tx pgx.Tx, tenantID string) (int64, error) {

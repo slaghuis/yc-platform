@@ -126,6 +126,17 @@ func (Preferences) PutChannel(ctx context.Context, tx pgx.Tx, tenantID, userID s
 	return nil
 }
 
+// SetVerified marks a channel verified at verifiedAt, or unverified.
+func (Preferences) SetVerified(ctx context.Context, tx pgx.Tx, tenantID, userID string, c domain.Channel, verified bool, verifiedAt *time.Time, now time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE messaging_channels SET verified = $4, verified_at = $5, updated_at = $6
+		WHERE tenant_id = $1 AND user_id = $2 AND channel = $3`,
+		tenantID, userID, string(c), verified, verifiedAt, now)
+	if err != nil {
+		return fmt.Errorf("set verified: %w", err)
+	}
+	return nil
+}
+
 // DeleteChannel removes a channel.
 func (Preferences) DeleteChannel(ctx context.Context, tx pgx.Tx, tenantID, userID string, c domain.Channel) error {
 	_, err := tx.Exec(ctx, `DELETE FROM messaging_channels WHERE tenant_id = $1 AND user_id = $2 AND channel = $3`,

@@ -116,6 +116,14 @@ type Problem struct {
 	Type   string `json:"type"`
 }
 
+// ChannelParam defines model for ChannelParam.
+type ChannelParam = Channel
+
+// VerifyMyChannelJSONBody defines parameters for VerifyMyChannel.
+type VerifyMyChannelJSONBody struct {
+	Code string `json:"code"`
+}
+
 // PutDefaultsJSONRequestBody defines body for PutDefaults for application/json ContentType.
 type PutDefaultsJSONRequestBody = DefaultsInput
 
@@ -125,6 +133,9 @@ type UpdateMyPreferencesJSONRequestBody = PreferencesPatch
 // PutMyChannelJSONRequestBody defines body for PutMyChannel for application/json ContentType.
 type PutMyChannelJSONRequestBody = ChannelInput
 
+// VerifyMyChannelJSONRequestBody defines body for VerifyMyChannel for application/json ContentType.
+type VerifyMyChannelJSONRequestBody VerifyMyChannelJSONBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetDefaults Get the shop's default preferences
@@ -133,6 +144,9 @@ type ServerInterface interface {
 	// PutDefaults Set the shop's default preferences
 	// (PUT /admin/preferences/defaults)
 	PutDefaults(w http.ResponseWriter, r *http.Request)
+	// GetUserPreferences Get a user's preferences
+	// (GET /internal/preferences/{user_id})
+	GetUserPreferences(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID)
 	// GetMyPreferences Get my preferences
 	// (GET /preferences/me)
 	GetMyPreferences(w http.ResponseWriter, r *http.Request)
@@ -148,6 +162,12 @@ type ServerInterface interface {
 	// DeleteMyChannel Remove a messaging channel
 	// (DELETE /preferences/me/channels/{channel})
 	DeleteMyChannel(w http.ResponseWriter, r *http.Request, channel Channel)
+	// ResendMyChannelCode Send a new verification code
+	// (POST /preferences/me/channels/{channel}/resend)
+	ResendMyChannelCode(w http.ResponseWriter, r *http.Request, channel ChannelParam)
+	// VerifyMyChannel Verify a channel with the code sent to it
+	// (POST /preferences/me/channels/{channel}/verify)
+	VerifyMyChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -163,6 +183,12 @@ func (_ Unimplemented) GetDefaults(w http.ResponseWriter, r *http.Request) {
 // PutDefaults Set the shop's default preferences
 // (PUT /admin/preferences/defaults)
 func (_ Unimplemented) PutDefaults(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetUserPreferences Get a user's preferences
+// (GET /internal/preferences/{user_id})
+func (_ Unimplemented) GetUserPreferences(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -196,6 +222,18 @@ func (_ Unimplemented) DeleteMyChannel(w http.ResponseWriter, r *http.Request, c
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ResendMyChannelCode Send a new verification code
+// (POST /preferences/me/channels/{channel}/resend)
+func (_ Unimplemented) ResendMyChannelCode(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// VerifyMyChannel Verify a channel with the code sent to it
+// (POST /preferences/me/channels/{channel}/verify)
+func (_ Unimplemented) VerifyMyChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ServerInterfaceWrapper converts contexts to parameters.
 type ServerInterfaceWrapper struct {
 	Handler            ServerInterface
@@ -224,6 +262,32 @@ func (siw *ServerInterfaceWrapper) PutDefaults(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutDefaults(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserPreferences operation middleware
+func (siw *ServerInterfaceWrapper) GetUserPreferences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", chi.URLParam(r, "user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserPreferences(w, r, userID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -306,6 +370,58 @@ func (siw *ServerInterfaceWrapper) DeleteMyChannel(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteMyChannel(w, r, channel)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendMyChannelCode operation middleware
+func (siw *ServerInterfaceWrapper) ResendMyChannelCode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", chi.URLParam(r, "channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendMyChannelCode(w, r, channel)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyMyChannel operation middleware
+func (siw *ServerInterfaceWrapper) VerifyMyChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", chi.URLParam(r, "channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyMyChannel(w, r, channel)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -444,6 +560,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Delete(options.BaseURL+"/preferences/me/channels/{channel}", wrapper.DeleteMyChannel)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/preferences/me/channels/{channel}/verify", wrapper.VerifyMyChannel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/preferences/me/channels/{channel}/resend", wrapper.ResendMyChannelCode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/preferences/{user_id}", wrapper.GetUserPreferences)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/preferences/defaults", wrapper.GetDefaults)
 	})
 	r.Group(func(r chi.Router) {
@@ -540,6 +665,58 @@ func (response PutDefaults403ApplicationProblemPlusJSONResponse) VisitPutDefault
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserPreferencesRequestObject struct {
+	UserID openapi_types.UUID `json:"user_id"`
+}
+
+type GetUserPreferencesResponseObject interface {
+	VisitGetUserPreferencesResponse(w http.ResponseWriter) error
+}
+
+type GetUserPreferences200JSONResponse Preferences
+
+func (response GetUserPreferences200JSONResponse) VisitGetUserPreferencesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserPreferences403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetUserPreferences403ApplicationProblemPlusJSONResponse) VisitGetUserPreferencesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserPreferences404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetUserPreferences404ApplicationProblemPlusJSONResponse) VisitGetUserPreferencesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -796,6 +973,183 @@ func (response DeleteMyChannel409ApplicationProblemPlusJSONResponse) VisitDelete
 	return err
 }
 
+type ResendMyChannelCodeRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+}
+
+type ResendMyChannelCodeResponseObject interface {
+	VisitResendMyChannelCodeResponse(w http.ResponseWriter) error
+}
+
+type ResendMyChannelCode202JSONResponse struct {
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (response ResendMyChannelCode202JSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendMyChannelCode400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ResendMyChannelCode400ApplicationProblemPlusJSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendMyChannelCode403ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendMyChannelCode403ApplicationProblemPlusJSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendMyChannelCode404ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendMyChannelCode404ApplicationProblemPlusJSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendMyChannelCode409ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendMyChannelCode409ApplicationProblemPlusJSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendMyChannelCode429ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendMyChannelCode429ApplicationProblemPlusJSONResponse) VisitResendMyChannelCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyMyChannelRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Body    *VerifyMyChannelJSONRequestBody
+}
+
+type VerifyMyChannelResponseObject interface {
+	VisitVerifyMyChannelResponse(w http.ResponseWriter) error
+}
+
+type VerifyMyChannel200JSONResponse MessagingChannel
+
+func (response VerifyMyChannel200JSONResponse) VisitVerifyMyChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyMyChannel400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyMyChannel400ApplicationProblemPlusJSONResponse) VisitVerifyMyChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyMyChannel403ApplicationProblemPlusJSONResponse Problem
+
+func (response VerifyMyChannel403ApplicationProblemPlusJSONResponse) VisitVerifyMyChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyMyChannel404ApplicationProblemPlusJSONResponse Problem
+
+func (response VerifyMyChannel404ApplicationProblemPlusJSONResponse) VisitVerifyMyChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyMyChannel409ApplicationProblemPlusJSONResponse Problem
+
+func (response VerifyMyChannel409ApplicationProblemPlusJSONResponse) VisitVerifyMyChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetDefaults Get the shop's default preferences
@@ -804,6 +1158,9 @@ type StrictServerInterface interface {
 	// PutDefaults Set the shop's default preferences
 	// (PUT /admin/preferences/defaults)
 	PutDefaults(ctx context.Context, request PutDefaultsRequestObject) (PutDefaultsResponseObject, error)
+	// GetUserPreferences Get a user's preferences
+	// (GET /internal/preferences/{user_id})
+	GetUserPreferences(ctx context.Context, request GetUserPreferencesRequestObject) (GetUserPreferencesResponseObject, error)
 	// GetMyPreferences Get my preferences
 	// (GET /preferences/me)
 	GetMyPreferences(ctx context.Context, request GetMyPreferencesRequestObject) (GetMyPreferencesResponseObject, error)
@@ -819,6 +1176,12 @@ type StrictServerInterface interface {
 	// DeleteMyChannel Remove a messaging channel
 	// (DELETE /preferences/me/channels/{channel})
 	DeleteMyChannel(ctx context.Context, request DeleteMyChannelRequestObject) (DeleteMyChannelResponseObject, error)
+	// ResendMyChannelCode Send a new verification code
+	// (POST /preferences/me/channels/{channel}/resend)
+	ResendMyChannelCode(ctx context.Context, request ResendMyChannelCodeRequestObject) (ResendMyChannelCodeResponseObject, error)
+	// VerifyMyChannel Verify a channel with the code sent to it
+	// (POST /preferences/me/channels/{channel}/verify)
+	VerifyMyChannel(ctx context.Context, request VerifyMyChannelRequestObject) (VerifyMyChannelResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -908,6 +1271,32 @@ func (sh *strictHandler) PutDefaults(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PutDefaultsResponseObject); ok {
 		if err := validResponse.VisitPutDefaultsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUserPreferences operation middleware
+func (sh *strictHandler) GetUserPreferences(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID) {
+	var request GetUserPreferencesRequestObject
+
+	request.UserID = userID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUserPreferences(ctx, request.(GetUserPreferencesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUserPreferences")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUserPreferencesResponseObject); ok {
+		if err := validResponse.VisitGetUserPreferencesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1044,6 +1433,65 @@ func (sh *strictHandler) DeleteMyChannel(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteMyChannelResponseObject); ok {
 		if err := validResponse.VisitDeleteMyChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResendMyChannelCode operation middleware
+func (sh *strictHandler) ResendMyChannelCode(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	var request ResendMyChannelCodeRequestObject
+
+	request.Channel = channel
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResendMyChannelCode(ctx, request.(ResendMyChannelCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResendMyChannelCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResendMyChannelCodeResponseObject); ok {
+		if err := validResponse.VisitResendMyChannelCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyMyChannel operation middleware
+func (sh *strictHandler) VerifyMyChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	var request VerifyMyChannelRequestObject
+
+	request.Channel = channel
+
+	var body VerifyMyChannelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyMyChannel(ctx, request.(VerifyMyChannelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyMyChannel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyMyChannelResponseObject); ok {
+		if err := validResponse.VisitVerifyMyChannelResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

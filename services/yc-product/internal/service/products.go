@@ -293,13 +293,20 @@ func (s *Service) Browse(ctx context.Context, f domain.BrowseFilter, after *repo
 	if after != nil && after.Sort != cursorSort(f.Sort) {
 		return domain.Browse{}, nil, ycerrors.Validation().Field("cursor", "invalid", "Cursor is for another sort").Build()
 	}
-	res := domain.Browse{Sort: f.Sort}
-	if a.ActorType == authctx.ActorCustomer {
-		res.Favourites = &domain.FavouritesFacet{}
+	customer := a.ActorType == authctx.ActorCustomer
+	if f.FavouritesOf != "" && (!customer || f.FavouritesOf != a.ActorID) {
+		return domain.Browse{}, nil, ycerrors.Validation().Field("favourites", "invalid", "Favourites are for customers").Build()
 	}
+	res := domain.Browse{Sort: f.Sort}
 	err := s.read(ctx, func(tx pgx.Tx) error {
 		var err error
-		res.Items, err = s.cat.Browse(ctx, tx, f, after, limit+1)
+		if res.Items, err = s.cat.Browse(ctx, tx, f, after, limit+1); err != nil {
+			return err
+		}
+		if customer {
+			res.Favourites = &domain.FavouritesFacet{}
+			res.Favourites.ProductCount, err = s.cat.FavouriteCount(ctx, tx, a.ActorID)
+		}
 		return err
 	})
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	money "github.com/slaghuis/yc-platform/libs/yc-money"
 	api "github.com/slaghuis/yc-platform/services/yc-cart/api/generated"
 	"github.com/slaghuis/yc-platform/services/yc-cart/internal/domain"
+	"github.com/slaghuis/yc-platform/services/yc-cart/internal/repository"
 	"github.com/slaghuis/yc-platform/services/yc-cart/internal/service"
 )
 
@@ -26,6 +27,7 @@ type Carts interface {
 	MoveItem(ctx context.Context, from, skuID, to string, quantity int, displayCurrency string) (domain.View, error)
 	Clear(ctx context.Context, cartType string) error
 	InternalCart(ctx context.Context, userID, cartType string) (domain.Cart, domain.CartType, error)
+	AbandonedCarts(ctx context.Context, after *repository.AbandonedCursor, limit int) ([]repository.Abandoned, *repository.AbandonedCursor, error)
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -50,7 +52,38 @@ func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/carts", Roles: []string{string(authctx.ActorVisitor), string(authctx.ActorCustomer)}},
 		{Prefix: "/internal/carts", Methods: []string{http.MethodGet}},
+		{Prefix: "/admin/abandoned-carts", Methods: []string{http.MethodGet}, Roles: []string{string(authctx.ActorShopAdmin)}},
 	}
+}
+
+func (h handlers) ListAbandonedCarts(ctx context.Context, req api.ListAbandonedCartsRequestObject) (api.ListAbandonedCartsResponseObject, error) {
+	page, err := httpkit.ParsePage(req.Params.PageSize, req.Params.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	var after *repository.AbandonedCursor
+	if page.Cursor != "" {
+		after = &repository.AbandonedCursor{}
+		if err := httpkit.DecodeCursor(page.Cursor, after); err != nil {
+			return nil, err
+		}
+	}
+	rows, next, err := h.svc.AbandonedCarts(ctx, after, page.Size)
+	if err != nil {
+		return nil, err
+	}
+	info := httpkit.PageInfo{Size: page.Size, Cursor: page.Cursor}
+	if next != nil {
+		info.NextCursor = httpkit.EncodeCursor(next)
+	}
+	out := api.ListAbandonedCarts200JSONResponse{Items: make([]api.AbandonedCart, len(rows)), Page: info}
+	for i, c := range rows {
+		out.Items[i] = api.AbandonedCart{
+			CartID: uuid.MustParse(c.CartID), UserID: uuid.MustParse(c.UserID), CartType: c.CartType,
+			ItemCount: c.Lines, Quantity: c.Quantity, LastActivityAt: c.LastActivityAt.UTC(), AbandonedAt: c.AbandonedAt.UTC(),
+		}
+	}
+	return out, nil
 }
 
 func (h handlers) GetInternalCart(ctx context.Context, req api.GetInternalCartRequestObject) (api.GetInternalCartResponseObject, error) {

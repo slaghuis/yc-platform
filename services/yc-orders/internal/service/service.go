@@ -247,6 +247,22 @@ func (s *Service) Order(ctx context.Context, id string) (Detail, error) {
 	return s.detail(ctx, id, func(domain.Order) bool { return true })
 }
 
+// LatestPurchase finds a customer's latest placed order containing a
+// product, for a service caller such as yc-review checking a verified
+// purchase.
+func (s *Service) LatestPurchase(ctx context.Context, userID, productID string) (repository.Purchase, bool, error) {
+	var (
+		p  repository.Purchase
+		ok bool
+	)
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		p, ok, err = s.repo.LatestPurchase(ctx, tx, tenantID, userID, productID)
+		return err
+	})
+	return p, ok, err
+}
+
 // AdminOrder returns one of the shop admin's orders.
 func (s *Service) AdminOrder(ctx context.Context, id string) (Detail, error) {
 	if err := requireActor(ctx, authctx.ActorShopAdmin); err != nil {

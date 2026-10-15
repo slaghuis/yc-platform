@@ -86,3 +86,20 @@ func TestBuildTree(t *testing.T) {
 	assert.Equal(t, []string{"Books", "Apparel", "Orphan"}, names(roots))
 	assert.Equal(t, []string{"Alpha", "Zeta"}, names(roots[1].Children))
 }
+
+func TestReviewStats(t *testing.T) {
+	none := domain.ReviewStats{LikeCount: 3}
+	assert.Nil(t, none.Average())
+	assert.Equal(t, int64(-1), none.RatingKey(), "unrated sorts last")
+	require.NoError(t, none.Validate())
+
+	s := domain.ReviewStats{RatingCount: 3, RatingSum: 13}
+	require.NotNil(t, s.Average())
+	assert.InDelta(t, 4.333, *s.Average(), 0.001)
+	assert.Equal(t, int64(4333), s.RatingKey())
+	require.NoError(t, s.Validate())
+
+	assert.Equal(t, []string{"product_stats:invalid"}, fields(t, domain.ReviewStats{RatingCount: 1, RatingSum: 6}.Validate()))
+	assert.Equal(t, []string{"product_stats:invalid"}, fields(t, domain.ReviewStats{RatingCount: 2, RatingSum: 1}.Validate()))
+	assert.Equal(t, []string{"product_stats:invalid"}, fields(t, domain.ReviewStats{LikeCount: -1}.Validate()))
+}

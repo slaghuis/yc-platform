@@ -40,9 +40,18 @@ type Config struct {
 	ServiceClients map[string]string
 	// OAuth holds the enabled providers by name.
 	OAuth map[string]OAuthProvider
-	// LogResetLinks logs reset tokens until yc-message can deliver them.
-	// Development only.
+	// ResetURL is the shop's reset page; "{host}" is the shop's host and
+	// "{token}" the reset token.
+	ResetURL string
+	// Messages emails reset links. Nil leaves them undelivered.
+	Messages Messages
+	// LogResetLinks logs reset tokens. Development only.
 	LogResetLinks bool
+}
+
+// Messages is yc-message's send API.
+type Messages interface {
+	SendPasswordReset(ctx context.Context, reference, userID, email, resetURL, expiresAt string) error
 }
 
 // OAuthProvider is an enabled provider and the callback page it redirects

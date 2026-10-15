@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	config "github.com/slaghuis/yc-platform/libs/yc-config"
@@ -29,6 +30,9 @@ type Config struct {
 	// with an empty secret are left out.
 	ServiceClients map[string]string `koanf:"service_clients"`
 	OAuth          OAuthConfig       `koanf:"oauth"`
+	// InternalCalls reaches yc-message for reset links. Without a gateway
+	// URL reset links are not sent.
+	InternalCalls httpkit.InternalConfig `koanf:"internal_calls"`
 }
 
 // OAuthConfig is the `oauth:` block.
@@ -97,8 +101,10 @@ type JWTConfig struct {
 type PasswordConfig struct {
 	Argon2   password.Params `koanf:"argon2"`
 	ResetTTL time.Duration   `koanf:"reset_ttl"`
-	// LogResetLinks logs reset tokens until yc-message delivers them.
-	// Refused in production.
+	// ResetURL is the shop's reset page emailed to the user; "{host}" is
+	// the shop's host and "{token}" the reset token.
+	ResetURL string `koanf:"reset_url"`
+	// LogResetLinks logs reset tokens. Refused in production.
 	LogResetLinks bool `koanf:"log_reset_links"`
 }
 
@@ -146,6 +152,14 @@ func (c *Config) Validate() error {
 		}
 		if p.Fake && c.Environment == "production" {
 			errs = append(errs, fmt.Errorf("oauth.%s.fake is not allowed in production", name))
+		}
+	}
+	if c.InternalCalls.GatewayURL != "" {
+		if c.InternalCalls.ClientSecret == "" {
+			errs = append(errs, errors.New("internal_calls.client_secret is required with a gateway_url (YC_IDENTITY_SERVICE_SECRET)"))
+		}
+		if !strings.Contains(c.Password.ResetURL, "{token}") {
+			errs = append(errs, errors.New("password.reset_url must contain {token}"))
 		}
 	}
 	if c.Password.LogResetLinks && c.Environment == "production" {

@@ -276,6 +276,10 @@ func (h handlers) BrowseProducts(ctx context.Context, req api.BrowseProductsRequ
 		f.Sort = domain.Sort(*p.Sort)
 	}
 	f.InStock = deref(p.InStock)
+	if deref(p.Favourites) {
+		a, _ := authctx.FromContext(ctx)
+		f.FavouritesOf = a.ActorID
+	}
 	res, next, err := h.svc.Browse(ctx, f, after, page.Size)
 	if err != nil {
 		return nil, err
@@ -430,6 +434,9 @@ func summary(p domain.ProductSummary) api.ProductSummary {
 		ProductID: parseUUID(p.ID), SupplierID: optionalUUID(p.SupplierID), Name: p.Name,
 		Description: p.Description, IsDigital: p.IsDigital, InStock: p.InStock, CategoryIds: uuids(p.CategoryIDs),
 		PrimaryImageID: optionalUUID(p.PrimaryImageID), Skus: make([]api.SKUSummary, len(p.SKUs)),
+		Reviews: api.ReviewStats{
+			RatingCount: int(p.Reviews.RatingCount), RatingAverage: p.Reviews.Average(), LikeCount: int(p.Reviews.LikeCount),
+		},
 	}
 	for i, s := range p.SKUs {
 		out.Skus[i] = api.SKUSummary{SkuID: parseUUID(s.ID), SkuCode: s.Code, VariantValues: s.VariantValues}

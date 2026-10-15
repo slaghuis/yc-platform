@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.like.added.v1.json",
+  "title": "review.like.added.v1",
+  "description": "A customer liked a product.",
+  "type": "object",
+  "required": [
+    "product_id",
+    "user_id",
+    "liked_at",
+    "product_stats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "liked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_stats": {
+      "$ref": "../common/product_review_stats.v1.json"
+    }
+  }
+}

@@ -193,7 +193,7 @@ func TestOrders(t *testing.T) {
 	admin := as(t, srv, "shop-a", uuid.NewString(), "shop_admin")
 	customerID := uuid.NewString()
 	customer := as(t, srv, "shop-a", customerID, "customer")
-	mug, ebook := uuid.New(), uuid.New()
+	mug, ebook, mugProduct := uuid.New(), uuid.New(), uuid.New()
 	tx, rateID := uuid.New(), uuid.New()
 	newOrder := func(userID, userType string) api.CreateOrderInput {
 		digital := true
@@ -202,7 +202,10 @@ func TestOrders(t *testing.T) {
 			CheckoutSessionID: uuid.New(), UserID: userID, UserType: api.CreateOrderInputUserType(userType),
 			RequiresShipping: true, DeliveryAddress: &map[string]any{"line1": "1 Long St", "city": "Cape Town"},
 			Items: []api.OrderItemInput{
-				{SkuID: mug, SkuCode: &code, NameSnapshot: "Mug", Quantity: 2, UnitPriceMinor: 5000, LineTotalMinor: 10000},
+				{
+					SkuID: mug, ProductID: &mugProduct, SkuCode: &code, NameSnapshot: "Mug", Quantity: 2,
+					UnitPriceMinor: 5000, LineTotalMinor: 10000,
+				},
 				{SkuID: ebook, NameSnapshot: "E-book", Quantity: 1, UnitPriceMinor: 500, LineTotalMinor: 500, IsDigital: &digital},
 			},
 			Currency: "ZAR", ItemsTotalMinor: 10500, ShippingMinor: 1000, TaxTotalMinor: 1370, TotalMinor: 11500,
@@ -291,6 +294,24 @@ func TestOrders(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, other.code("GET", "/orders/"+first.OrderID.String(), nil))
 		shopB := checkout(t, srv, "shop-b")
 		assert.Equal(t, http.StatusNotFound, shopB.code("GET", "/internal/orders/"+first.OrderID.String(), nil))
+	})
+
+	t.Run("services check a customer's purchase of a product", func(t *testing.T) {
+		purchase := func(userID string, productID uuid.UUID) api.Purchase {
+			t.Helper()
+			var p api.Purchase
+			code, _ := svc.do("GET", "/internal/purchases?user_id="+userID+"&product_id="+productID.String(), nil, &p)
+			require.Equal(t, http.StatusOK, code)
+			return p
+		}
+		p := purchase(customerID, mugProduct)
+		assert.True(t, p.Purchased)
+		require.NotNil(t, p.OrderID)
+		assert.Equal(t, first.OrderID, *p.OrderID)
+		assert.Equal(t, "SHOP-A-000001", *p.OrderNumber)
+		assert.False(t, purchase(customerID, uuid.New()).Purchased, "another product")
+		assert.False(t, purchase(uuid.NewString(), mugProduct).Purchased, "another customer")
+		assert.Equal(t, http.StatusBadRequest, svc.code("GET", "/internal/purchases?user_id=x&product_id=y", nil))
 	})
 
 	t.Run("compensation abandons a pending order", func(t *testing.T) {

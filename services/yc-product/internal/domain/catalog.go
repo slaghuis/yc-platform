@@ -382,24 +382,63 @@ type ProductSummary struct {
 	MinBasePrice *int64
 	// InStock: an active SKU has stock, or is not tracked by yc-inventory.
 	InStock bool
+	Reviews ReviewStats
+}
+
+// ReviewStats are a product's approved reviews and likes, as last
+// published by yc-review.
+type ReviewStats struct {
+	RatingCount int64
+	RatingSum   int64
+	LikeCount   int64
+	// Version orders the stats of one product: older ones are ignored.
+	Version int64
+}
+
+// Average is the mean rating, or nil without approved reviews.
+func (s ReviewStats) Average() *float64 {
+	if s.RatingCount == 0 {
+		return nil
+	}
+	avg := float64(s.RatingSum) / float64(s.RatingCount)
+	return &avg
+}
+
+// RatingKey orders products by average rating in thousandths; unrated
+// products get -1 so they sort last.
+func (s ReviewStats) RatingKey() int64 {
+	if s.RatingCount == 0 {
+		return -1
+	}
+	return s.RatingSum * 1000 / s.RatingCount
+}
+
+// Validate rejects stats no reviews could produce.
+func (s ReviewStats) Validate() error {
+	if s.RatingCount < 0 || s.LikeCount < 0 || s.RatingSum < s.RatingCount || s.RatingSum > 5*s.RatingCount {
+		return ycerrors.Validation().Field("product_stats", "invalid", "Counts must be non-negative with ratings of 1 to 5").Build()
+	}
+	return nil
 }
 
 // Sort orders a browse result.
 type Sort string
 
 // Browse sorts. Price sorts use base prices, which may be net or gross
-// (ADR-016); unpriced products come last.
+// (ADR-016); unpriced products come last. Rating sorts by the average of
+// the approved reviews; unrated products come last.
 const (
 	SortPopular   Sort = "popular"
 	SortNewest    Sort = "newest"
 	SortPriceAsc  Sort = "price_asc"
 	SortPriceDesc Sort = "price_desc"
+	SortRating    Sort = "rating"
 )
 
 // Valid reports whether s is a known sort.
 func (s Sort) Valid() bool {
 	switch s {
-	case SortPopular, SortNewest, SortPriceAsc, SortPriceDesc:
+	case SortPopular, SortNewest, SortPriceAsc, SortPriceDesc, SortRating:
 		return true
 	}
 	return false
@@ -412,7 +451,9 @@ type BrowseFilter struct {
 	SupplierID string
 	// InStock keeps only products with an active SKU in stock.
 	InStock bool
-	Sort    Sort
+	// FavouritesOf keeps only products this customer has ordered.
+	FavouritesOf string
+	Sort         Sort
 }
 
 // SKUDetail is a SKU with the product facts yc-checkout snapshots.
@@ -435,7 +476,7 @@ func (f *BrowseFilter) Validate() error {
 		return ycerrors.Validation().Field("q", "too_long", fmt.Sprintf("At most %d characters", MaxQueryLen)).Build()
 	}
 	if f.Sort != "" && !f.Sort.Valid() {
-		return ycerrors.Validation().Field("sort", "invalid", "Use popular, newest, price_asc or price_desc").Build()
+		return ycerrors.Validation().Field("sort", "invalid", "Use popular, newest, price_asc, price_desc or rating").Build()
 	}
 	return nil
 }
@@ -445,8 +486,8 @@ func (f *BrowseFilter) Validate() error {
 type Browse struct {
 	Items []ProductSummary
 	Sort  Sort
-	// Favourites is shown to customers only: products they buy most. It is
-	// empty until order history arrives.
+	// Favourites is shown to customers only: the active products they have
+	// ordered.
 	Favourites *FavouritesFacet
 }
 

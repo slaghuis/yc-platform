@@ -22,7 +22,8 @@ type Cursor struct {
 	CreatedAt time.Time `json:"c"`
 	ID        string    `json:"i"`
 	// Sort and Key position a browse cursor under a sort other than
-	// newest: Key is the popularity or price key of the last product.
+	// newest: Key is the popularity, price or rating key of the last
+	// product.
 	Sort string `json:"s,omitempty"`
 	Key  int64  `json:"k,omitempty"`
 }

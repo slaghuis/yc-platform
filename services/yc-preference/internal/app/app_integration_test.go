@@ -70,13 +70,19 @@ func TestPreference(t *testing.T) {
 		}
 	})
 
+	messages := &fakeMessages{}
+	gw := httptest.NewServer(messages)
+	t.Cleanup(gw.Close)
 	dbURL := testkit.Postgres(t)
 	natsURL := testkit.NATS(t)
 	t.Setenv("YC_PREFERENCE_DB_URL", dbURL)
 	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
+	t.Setenv("YC_PREFERENCE_SERVICE_SECRET", "preference-secret")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
+	cfg.Gateway.InternalURL = ""
 	require.NoError(t, cfg.Validate())
 	a, err := app.New(ctx, cfg, httpkit.BuildInfo{Service: "yc-preference", Version: "test"})
 	require.NoError(t, err)
@@ -108,7 +114,7 @@ func TestPreference(t *testing.T) {
 	require.NoError(t, err)
 	upstream, err := eventbus.NewClient(ctx, eventbus.Config{
 		NATSURL: natsURL, ServiceName: "yc-identity", Validator: validator,
-		Streams: []eventbus.StreamConfig{eventbus.PlatformStream(), eventbus.IdentityStream()},
+		Streams: []eventbus.StreamConfig{eventbus.PlatformStream(), eventbus.IdentityStream(), eventbus.MessageStream()},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = upstream.Close(context.Background()) })
@@ -232,6 +238,77 @@ func TestPreference(t *testing.T) {
 		require.Equal(t, http.StatusOK, as(t, srv, "shop-b", alice, "customer").do("GET", "/preferences/me", nil, &other))
 		assert.False(t, other.Stored, "preferences belong to one shop")
 		assert.Equal(t, "ZAR", other.DisplayCurrency, "the platform fallback")
+	})
+
+	t.Run("services read a user's preferences", func(t *testing.T) {
+		svc := as(t, srv, "shop-a", "yc-message", "service")
+		svc.hdr[authctx.HeaderCallerService] = "yc-message"
+		var p api.Preferences
+		require.Equal(t, http.StatusOK, svc.do("GET", "/internal/preferences/"+alice, nil, &p))
+		assert.Equal(t, "EUR", p.DisplayCurrency)
+		require.NotNil(t, p.PrimaryChannel)
+		assert.Equal(t, http.StatusNotFound, svc.do("GET", "/internal/preferences/"+uuid.NewString(), nil, nil))
+		assert.Equal(t, http.StatusUnauthorized, aliceC.do("GET", "/internal/preferences/"+alice, nil, nil), "services only")
+	})
+
+	t.Run("customers verify channels with yc-message's codes", func(t *testing.T) {
+		var resent struct {
+			ExpiresAt time.Time `json:"expires_at"`
+		}
+		require.Equal(t, http.StatusAccepted, aliceC.do("POST", "/preferences/me/channels/email/resend", nil, &resent))
+		assert.WithinDuration(t, time.Now().Add(15*time.Minute), resent.ExpiresAt, time.Minute)
+		assert.Equal(t, 1, messages.startCount())
+		assert.Equal(t, http.StatusNotFound, aliceC.do("POST", "/preferences/me/channels/sms/resend", nil, nil))
+		require.Equal(t, http.StatusCreated, aliceC.do("POST", "/preferences/me/channels",
+			map[string]any{"channel": "telegram", "address": "@alice_shop"}, nil))
+		assert.Equal(t, http.StatusBadRequest, aliceC.do("POST", "/preferences/me/channels/telegram/resend", nil, nil),
+			"no telegram codes yet")
+
+		assert.Equal(t, http.StatusBadRequest, aliceC.do("POST", "/preferences/me/channels/email/verify",
+			map[string]any{"code": "000000"}, nil))
+		var c api.MessagingChannel
+		require.Equal(t, http.StatusOK, aliceC.do("POST", "/preferences/me/channels/email/verify",
+			map[string]any{"code": goodCode}, &c))
+		assert.True(t, c.Verified)
+		require.NotNil(t, c.VerifiedAt)
+		require.Equal(t, http.StatusOK, aliceC.do("POST", "/preferences/me/channels/email/verify",
+			map[string]any{"code": "anything"}, &c), "already verified")
+		assert.Equal(t, http.StatusConflict, aliceC.do("POST", "/preferences/me/channels/email/resend", nil, nil))
+
+		verified := outbox("shop-a", events.TypePreferenceChannelVerifiedV1)
+		require.Len(t, verified, 1)
+		assert.Equal(t, "alice@example.com", verified[0]["address"])
+	})
+
+	t.Run("confirmations and bounces from yc-message", func(t *testing.T) {
+		bobC := as(t, srv, "shop-a", bob, "customer")
+		require.Equal(t, http.StatusCreated, bobC.do("POST", "/preferences/me/channels",
+			map[string]any{"channel": "sms", "address": "+27830000001"}, nil))
+		publish("shop-a", events.TypeMessageVerificationConfirmedV1, events.MessageVerificationConfirmedV1{
+			VerificationID: uuid.NewString(), UserID: bob, Channel: "sms", Address: "+27830000001", ConfirmedAt: time.Now().UTC(),
+		})
+		publish("shop-a", events.TypeMessageVerificationConfirmedV1, events.MessageVerificationConfirmedV1{
+			VerificationID: uuid.NewString(), UserID: bob, Channel: "sms", Address: "+27839999999", ConfirmedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePreferenceChannelVerifiedV1)) == 2 },
+			10*time.Second, 50*time.Millisecond)
+		require.Equal(t, http.StatusOK, bobC.do("PATCH", "/preferences/me", map[string]any{"primary_channel": "sms"}, nil))
+		changed := len(outbox("shop-a", events.TypePreferenceChannelChangedV1))
+
+		publish("shop-a", events.TypeMessageBouncedV1, events.MessageBouncedV1{
+			MessageID: uuid.NewString(), MessageType: "cart_abandoned", Channel: "sms", UserID: &bob,
+			Address: "+27830000001", Reason: "unreachable", BouncedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePreferenceChannelChangedV1)) == changed+1 },
+			10*time.Second, 50*time.Millisecond)
+		var p api.Preferences
+		require.Equal(t, http.StatusOK, bobC.do("GET", "/preferences/me", nil, &p))
+		assert.Equal(t, api.Channel("email"), *p.PrimaryChannel, "falls back to email")
+		for _, c := range p.Channels {
+			if c.Channel == "sms" {
+				assert.False(t, c.Verified)
+			}
+		}
 	})
 
 	t.Run("roles", func(t *testing.T) {

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.edited.v1.json",
+  "title": "review.edited.v1",
+  "description": "The author edited a review. It is pending again unless the shop auto-approves.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "rating",
+    "status",
+    "edited_at",
+    "product_stats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rating": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "edited_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_stats": {
+      "$ref": "../common/product_review_stats.v1.json"
+    }
+  }
+}

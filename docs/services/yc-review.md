@@ -98,6 +98,16 @@ submitted ─▶ pending ──▶ approved
 | GET | `/internal/reviews/stats/{product_id}` | Aggregate stats | service |
 | GET | `/internal/user/{user_id}/has_purchased/{product_id}` | Not used — called OUT to yc-orders instead | — |
 
+### Phase 7 Implementation Notes
+
+The contract is `services/yc-review/api/openapi.yaml`; the design is ADR-024. Implemented: reviews with verified purchase, manual and automatic moderation, one shop response, likes, product stats and review prompts after delivery. Google reviews, review images, the internal stats endpoint and the GDPR cascade come later.
+
+- **Paths differ from the table above:** `GET /reviews?product_id=` (approved, public), `GET /reviews/stats?product_id=` (count, average, likes and the 1–5 distribution), `POST /reviews` (body has `product_id`), `GET /reviews/mine`, `PUT` and `DELETE /reviews/{id}`; `GET /likes`, `PUT` and `DELETE /likes/{product_id}`; admin `GET /admin/reviews?status&product_id`, `GET /admin/reviews/{id}`, `POST .../approve`, `POST .../reject` (reason required), `PUT .../response`, and `GET`/`PUT /admin/review-settings` (`moderation_mode`, `require_purchase`, `allow_edit`).
+- **Defaults** (`defaults` in configuration): manual moderation, purchase required, editing allowed.
+- **Purchase checks** call yc-orders `GET /internal/purchases`; an unanswered check is retried every `purchase_check.retry_interval` (15m) for `purchase_check.window` (24h).
+- **Prompts** are due `prompts.delay` (72h, `YC_REVIEW_PROMPT_DELAY`) after `order.delivered.v1`; purchase checks and prompts run every `sweep_interval` (1m).
+- **Stats** (`product_stats`: rating count, rating sum, like count, version) ride on every review and like event for yc-product. Like events are `review.like.added.v1` and `review.like.removed.v1`.
+
 ## Database Schema
 
 Database: **`yc_review`**

@@ -15,6 +15,8 @@ import (
 type Handlers interface {
 	InitShop(ctx context.Context, tenantID, storeCurrency string) error
 	SeedUser(ctx context.Context, tenantID, userID, email string) error
+	ChannelVerified(ctx context.Context, tenantID string, p ycevents.MessageVerificationConfirmedV1) error
+	ChannelBounced(ctx context.Context, tenantID string, p ycevents.MessageBouncedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -50,6 +52,32 @@ func Subscriptions(h Handlers) []Subscription {
 					return err
 				}
 				return poisonInvalid(h.SeedUser(ctx, evt.Envelope.TenantID, p.UserID, p.Email))
+			},
+		},
+		{
+			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeMessageVerificationConfirmedV1,
+				DurableName: "yc-preference-verification-confirmed",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.MessageVerificationConfirmedV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				return poisonInvalid(h.ChannelVerified(ctx, evt.Envelope.TenantID, p))
+			},
+		},
+		{
+			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeMessageBouncedV1,
+				DurableName: "yc-preference-message-bounced",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.MessageBouncedV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				return poisonInvalid(h.ChannelBounced(ctx, evt.Envelope.TenantID, p))
 			},
 		},
 	}

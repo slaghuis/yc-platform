@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.submitted.v1.json",
+  "title": "review.submitted.v1",
+  "description": "A customer submitted a review. It is pending moderation, or approved at once when the shop auto-approves.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "rating",
+    "status",
+    "verified_purchase",
+    "submitted_at",
+    "product_stats"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rating": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "verified_purchase": {
+      "type": "boolean"
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_stats": {
+      "$ref": "../common/product_review_stats.v1.json"
+    }
+  }
+}

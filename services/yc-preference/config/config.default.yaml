@@ -16,6 +16,11 @@ gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_PREFERENCE_ADVERTISE_URL:-http://yc-preference:8080}
   interval: 30s
+# Calls to yc-message through the gateway for verification codes (ADR-021).
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_PREFERENCE_SERVICE_SECRET}
+  timeout: 10s
 # For shops without defaults of their own. A provisioned shop's default
 # display currency is its store currency.
 defaults:

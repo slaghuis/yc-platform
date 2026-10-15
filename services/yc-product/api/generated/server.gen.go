@@ -45,6 +45,7 @@ const (
 	Popular   Sort = "popular"
 	PriceAsc  Sort = "price_asc"
 	PriceDesc Sort = "price_desc"
+	Rating    Sort = "rating"
 )
 
 // Valid indicates whether the value is a known member of the Sort enum.
@@ -57,6 +58,8 @@ func (e Sort) Valid() bool {
 	case PriceAsc:
 		return true
 	case PriceDesc:
+		return true
+	case Rating:
 		return true
 	default:
 		return false
@@ -136,8 +139,8 @@ type Dimensions struct {
 
 // Facets Facets beyond the filters; which appear depends on the caller.
 type Facets struct {
-	// Favourites Customers only: the products they buy most. Empty until order
-	// history arrives (yc-orders).
+	// Favourites Customers only: how many active products they have ordered
+	// (order.placed.v1), regardless of the other filters.
 	Favourites *struct {
 		ProductCount int `json:"product_count"`
 	} `json:"favourites,omitempty"`
@@ -221,9 +224,21 @@ type ProductSummary struct {
 	PrimaryImageID *openapi_types.UUID `json:"primary_image_id,omitempty"`
 	ProductID      openapi_types.UUID  `json:"product_id"`
 
+	// Reviews Approved reviews and likes (yc-review).
+	Reviews ReviewStats `json:"reviews"`
+
 	// Skus Active SKUs; pass their IDs to POST /prices/evaluate.
 	Skus       []SKUSummary        `json:"skus"`
 	SupplierID *openapi_types.UUID `json:"supplier_id,omitempty"`
+}
+
+// ReviewStats Approved reviews and likes (yc-review).
+type ReviewStats struct {
+	LikeCount int `json:"like_count"`
+
+	// RatingAverage Absent until the product has an approved review.
+	RatingAverage *float64 `json:"rating_average,omitempty"`
+	RatingCount   int      `json:"rating_count"`
 }
 
 // SKU defines model for SKU.
@@ -381,10 +396,14 @@ type BrowseProductsParams struct {
 	// InStock true keeps only products with an active SKU in stock.
 	InStock *bool `form:"in_stock,omitempty" json:"in_stock,omitempty"`
 
-	// Sort popular (adds to cart, shop-wide), newest, or price_asc and
+	// Favourites Customers only. true keeps only products the customer has ordered.
+	Favourites *bool `form:"favourites,omitempty" json:"favourites,omitempty"`
+
+	// Sort popular (orders placed, shop-wide), newest, price_asc and
 	// price_desc by the lowest base price of the active SKUs, unpriced
-	// products last. Base prices are net or gross per the shop's tax
-	// setting (ADR-016).
+	// products last, or rating by the average of the approved reviews,
+	// unrated products last. Base prices are net or gross per the
+	// shop's tax setting (ADR-016).
 	Sort     *Sort     `form:"sort,omitempty" json:"sort,omitempty"`
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -1052,6 +1071,19 @@ func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "in_stock"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "in_stock", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "favourites" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "favourites", r.URL.Query(), &params.Favourites, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "favourites"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "favourites", Err: err})
 		}
 		return
 	}

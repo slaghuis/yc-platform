@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/review/review.responded.v1.json",
+  "title": "review.responded.v1",
+  "description": "The shop responded to a review.",
+  "type": "object",
+  "required": [
+    "review_id",
+    "product_id",
+    "user_id",
+    "responded_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "responded_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

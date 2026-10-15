@@ -25,8 +25,8 @@ paths:
 
         The view depends on the caller (role-contextualised search): visitors
         and customers get popular products first, shop admins the newest;
-        customers also get a "My favourites" facet. A cursor is valid only
-        with the sort it was issued for.
+        customers also get a "My favourites" facet and filter. A cursor is
+        valid only with the sort it was issued for.
       operationId: browseProducts
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
@@ -36,13 +36,18 @@ paths:
           in: query
           description: true keeps only products with an active SKU in stock.
           schema: { type: boolean }
+        - name: favourites
+          in: query
+          description: Customers only. true keeps only products the customer has ordered.
+          schema: { type: boolean }
         - name: sort
           in: query
           description: |
-            popular (adds to cart, shop-wide), newest, or price_asc and
+            popular (orders placed, shop-wide), newest, price_asc and
             price_desc by the lowest base price of the active SKUs, unpriced
-            products last. Base prices are net or gross per the shop's tax
-            setting (ADR-016).
+            products last, or rating by the average of the approved reviews,
+            unrated products last. Base prices are net or gross per the
+            shop's tax setting (ADR-016).
           schema: { $ref: '#/components/schemas/Sort' }
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/Cursor'
@@ -549,7 +554,7 @@ components:
         updated_at: { type: string, format: date-time }
     ProductSummary:
       type: object
-      required: [product_id, name, description, is_digital, in_stock, category_ids, skus]
+      required: [product_id, name, description, is_digital, in_stock, category_ids, skus, reviews]
       properties:
         product_id: { type: string, format: uuid }
         supplier_id: { type: string, format: uuid }
@@ -569,6 +574,18 @@ components:
           type: array
           description: Active SKUs; pass their IDs to POST /prices/evaluate.
           items: { $ref: '#/components/schemas/SKUSummary' }
+        reviews: { $ref: '#/components/schemas/ReviewStats' }
+    ReviewStats:
+      type: object
+      description: Approved reviews and likes (yc-review).
+      required: [rating_count, like_count]
+      properties:
+        rating_count: { type: integer }
+        rating_average:
+          type: number
+          format: double
+          description: Absent until the product has an approved review.
+        like_count: { type: integer }
     SKUSummary:
       type: object
       required: [sku_id, sku_code, variant_values]
@@ -589,7 +606,7 @@ components:
 
     Sort:
       type: string
-      enum: [popular, newest, price_asc, price_desc]
+      enum: [popular, newest, price_asc, price_desc, rating]
 
     Facets:
       type: object
@@ -598,8 +615,8 @@ components:
         favourites:
           type: object
           description: |
-            Customers only: the products they buy most. Empty until order
-            history arrives (yc-orders).
+            Customers only: how many active products they have ordered
+            (order.placed.v1), regardless of the other filters.
           required: [product_count]
           properties:
             product_count: { type: integer }

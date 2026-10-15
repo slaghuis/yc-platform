@@ -3,14 +3,16 @@ info:
   title: yc-preference
   version: 0.1.0
   description: |
-    Per-customer preferences (docs/services/yc-preference.md). Phase 3
-    subset: display currency, locale, messaging channels and the primary
-    channel, and shop defaults.
+    Per-customer preferences (docs/services/yc-preference.md). Display
+    currency, locale, messaging channels and the primary channel, shop
+    defaults, and channel verification with codes yc-message sends
+    (ADR-023).
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
     (api-conventions.md §9). /preferences/me is for signed-in customers and
-    shop admins; /admin/ requires shop_admin and acts on the caller's shop.
+    shop admins; /admin/ requires shop_admin and acts on the caller's shop;
+    /internal/ is for service callers (ADR-021).
     Errors are application/problem+json (error-handling.md).
 
 paths:
@@ -93,6 +95,79 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  /preferences/me/channels/{channel}/verify:
+    parameters:
+      - $ref: '#/components/parameters/ChannelParam'
+    post:
+      summary: Verify a channel with the code sent to it
+      description: |
+        yc-message sends a code when a channel is added and on resend. A
+        wrong code is 400; an expired one, or one tried five times, is 409.
+        Only email and sms can be verified for now.
+      operationId: verifyMyChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              additionalProperties: false
+              properties:
+                code: { type: string, maxLength: 16 }
+      responses:
+        '200':
+          description: The verified channel.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessagingChannel' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /preferences/me/channels/{channel}/resend:
+    parameters:
+      - $ref: '#/components/parameters/ChannelParam'
+    post:
+      summary: Send a new verification code
+      description: Earlier codes stop working. 429 within a minute of the last code; 409 when already verified.
+      operationId: resendMyChannelCode
+      responses:
+        '202':
+          description: A code was sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [expires_at]
+                properties:
+                  expires_at: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
+  /internal/preferences/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get a user's preferences
+      description: For services, e.g. yc-message choosing where to send. 404 when the user has none stored.
+      operationId: getUserPreferences
+      responses:
+        '200':
+          description: The preferences.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
   /admin/preferences/defaults:
     get:
       summary: Get the shop's default preferences
@@ -123,6 +198,13 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
 
 components:
+  parameters:
+    ChannelParam:
+      name: channel
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/Channel' }
+
   schemas:
     Channel:
       type: string

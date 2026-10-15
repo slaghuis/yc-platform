@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	config "github.com/slaghuis/yc-platform/libs/yc-config"
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
@@ -24,6 +25,13 @@ type Config struct {
 	Gateway       httpkit.GatewayConfig     `koanf:"gateway"`
 	InternalCalls httpkit.InternalConfig    `koanf:"internal_calls"`
 	CartTypes     map[string]CartTypeConfig `koanf:"cart_types"`
+	Abandoned     AbandonedConfig           `koanf:"abandoned"`
+}
+
+// AbandonedConfig is the `abandoned:` block.
+type AbandonedConfig struct {
+	After         time.Duration `koanf:"after"`
+	SweepInterval time.Duration `koanf:"sweep_interval"`
 }
 
 // LogConfig is the `log:` block.
@@ -45,6 +53,7 @@ type TelemetryConfig struct {
 type CartTypeConfig struct {
 	Convertible  bool `koanf:"convertible"`
 	MergeOnLogin bool `koanf:"merge_on_login"`
+	Abandonable  bool `koanf:"abandonable"`
 	MaxItems     int  `koanf:"max_items"`
 	MaxQuantity  int  `koanf:"max_quantity"`
 }
@@ -53,7 +62,7 @@ func (c *Config) types() domain.Types {
 	out := make(domain.Types, len(c.CartTypes))
 	for name, t := range c.CartTypes {
 		out[name] = domain.CartType{
-			Name: name, Convertible: t.Convertible, MergeOnLogin: t.MergeOnLogin,
+			Name: name, Convertible: t.Convertible, MergeOnLogin: t.MergeOnLogin, Abandonable: t.Abandonable,
 			MaxItems: t.MaxItems, MaxQuantity: t.MaxQuantity,
 		}
 	}
@@ -92,6 +101,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.types().Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("cart_types: %w", err))
+	}
+	if c.Abandoned.After <= 0 || c.Abandoned.SweepInterval <= 0 {
+		errs = append(errs, errors.New("abandoned.after and abandoned.sweep_interval must be positive"))
 	}
 	return errors.Join(errs...)
 }

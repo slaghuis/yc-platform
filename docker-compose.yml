@@ -83,9 +83,8 @@ services:
 
   # ─── Application services (profile "app") ─────────────────
   # `task devstack:app` builds and starts them; `task devstack:up` does not.
-  # Host ports match the local `task run` ports in .env.example. Product,
-  # pricing, image, preference, cart, inventory, payment, orders and checkout
-  # register their routes with the
+  # Host ports match the local `task run` ports in .env.example. Every
+  # service but identity and monitor registers its routes with the
   # gateway's internal listener (:8091, not published to the host), which
   # also carries service-to-service calls (ADR-021).
   yc-identity:
@@ -105,9 +104,17 @@ services:
       YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET:-dev-cart-service-secret-32-chars!!}
       YC_ORDERS_SERVICE_SECRET: ${YC_ORDERS_SERVICE_SECRET:-dev-orders-service-secret-32-chars!}
       YC_CHECKOUT_SERVICE_SECRET: ${YC_CHECKOUT_SERVICE_SECRET:-dev-checkout-service-secret-32chars}
-      # Dev only: fake Google/Facebook sign-in and reset links in the log.
+      YC_IDENTITY_SERVICE_SECRET: ${YC_IDENTITY_SERVICE_SECRET:-dev-identity-service-secret-32chars}
+      YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
+      YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET:-dev-preference-service-secret-32ch}
+      YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET:-dev-review-service-secret-32-chars!}
+      # Password reset links go out through yc-message (gateway internal
+      # listener); the dev shops are plain HTTP on the gateway's port.
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_IDENTITY__PASSWORD__RESET_URL: http://{host}/account/reset-password?token={token}
+      # Dev only: fake Google/Facebook sign-in; reset links in the log too.
       YC_IDENTITY_OAUTH_FAKE: ${YC_IDENTITY_OAUTH_FAKE:-true}
-      YC_IDENTITY_LOG_RESET_LINKS: ${YC_IDENTITY_LOG_RESET_LINKS:-true}
+      YC_IDENTITY_LOG_RESET_LINKS: ${YC_IDENTITY_LOG_RESET_LINKS:-false}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -235,6 +242,7 @@ services:
     environment:
       YC_PREFERENCE_DB_URL: postgres://yc_preference_app:devpass@postgres:5432/yc_preference?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET:-dev-preference-service-secret-32ch}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -256,6 +264,9 @@ services:
       YC_CART_DB_URL: postgres://yc_cart_app:devpass@postgres:5432/yc_cart?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET:-dev-cart-service-secret-32-chars!!}
+      # A customer's cart idle this long is announced as abandoned.
+      YC_CART_ABANDONED_AFTER: ${YC_CART_ABANDONED_AFTER:-24h}
+      YC_CART_ABANDONED_SWEEP_INTERVAL: ${YC_CART_ABANDONED_SWEEP_INTERVAL:-1m}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -376,6 +387,55 @@ services:
       OTEL_METRICS_EXPORTER: none
     ports:
       - "8093:8080"
+    depends_on: *infra
+
+  # Turns events into customer emails and SMS (ADR-023): email through
+  # MailHog, SMS through the fake driver, which mails each one to
+  # <number>@sms.test. Links point at http://<tenant>.localhost:8090.
+  yc-message:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-message }
+    image: yc-platform/yc-message:dev
+    container_name: yc-message
+    restart: unless-stopped
+    environment:
+      YC_MESSAGE_DB_URL: postgres://yc_message_app:devpass@postgres:5432/yc_message?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
+      SMTP_ADDR: mailhog:1025
+      YC_MESSAGE_SHOP_URL: http://{tenant}.localhost:8090
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8095:8080"
+    depends_on:
+      <<: *infra
+      mailhog: { condition: service_started }
+
+  # Reviews, moderation and likes (ADR-024); checks purchases with
+  # yc-orders and asks for reviews YC_REVIEW_PROMPT_DELAY after delivery.
+  yc-review:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-review }
+    image: yc-platform/yc-review:dev
+    container_name: yc-review
+    restart: unless-stopped
+    environment:
+      YC_REVIEW_DB_URL: postgres://yc_review_app:devpass@postgres:5432/yc_review?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET:-dev-review-service-secret-32-chars!}
+      YC_REVIEW_PROMPT_DELAY: ${YC_REVIEW_PROMPT_DELAY:-72h}
+      YC_REVIEW_SWEEP_INTERVAL: ${YC_REVIEW_SWEEP_INTERVAL:-1m}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8096:8080"
     depends_on: *infra
 
 volumes:

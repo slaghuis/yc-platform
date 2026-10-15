@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/message/message.verification_confirmed.v1.json",
+  "title": "message.verification_confirmed.v1",
+  "description": "A user entered the right verification code. yc-preference marks the channel verified if it still has this address.",
+  "type": "object",
+  "required": [
+    "verification_id",
+    "user_id",
+    "channel",
+    "address",
+    "confirmed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "verification_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "sms",
+        "whatsapp",
+        "telegram"
+      ]
+    },
+    "address": {
+      "type": "string",
+      "description": "The verified address. PII (event-conventions \u00a718)."
+    },
+    "confirmed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

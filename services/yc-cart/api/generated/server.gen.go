@@ -15,8 +15,32 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	money "github.com/slaghuis/yc-platform/libs/yc-money"
 )
+
+// AbandonedCart defines model for AbandonedCart.
+type AbandonedCart struct {
+	AbandonedAt time.Time          `json:"abandoned_at"`
+	CartID      openapi_types.UUID `json:"cart_id"`
+	CartType    string             `json:"cart_type"`
+
+	// ItemCount Lines in the cart.
+	ItemCount      int       `json:"item_count"`
+	LastActivityAt time.Time `json:"last_activity_at"`
+
+	// Quantity Units across all lines.
+	Quantity int                `json:"quantity"`
+	UserID   openapi_types.UUID `json:"user_id"`
+}
+
+// AbandonedCartList defines model for AbandonedCartList.
+type AbandonedCartList struct {
+	Items []AbandonedCart `json:"items"`
+
+	// Page Cursor pagination (api-conventions.md §7).
+	Page PageInfo `json:"page"`
+}
 
 // AddItemInput defines model for AddItemInput.
 type AddItemInput struct {
@@ -140,6 +164,9 @@ type MoveInput struct {
 	ToCartType string `json:"to_cart_type"`
 }
 
+// PageInfo Cursor pagination (api-conventions.md §7).
+type PageInfo = httpkit.PageInfo
+
 // Problem RFC 9457 problem details (docs/standards/error-handling.md).
 type Problem struct {
 	Code          string  `json:"code"`
@@ -171,6 +198,12 @@ type DisplayCurrencyQuery = string
 
 // SKUID defines model for SKUID.
 type SKUID = openapi_types.UUID
+
+// ListAbandonedCartsParams defines parameters for ListAbandonedCarts.
+type ListAbandonedCartsParams struct {
+	PageSize *int    `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
 
 // GetCartParams defines parameters for GetCart.
 type GetCartParams struct {
@@ -207,6 +240,9 @@ type MoveItemJSONRequestBody = MoveInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListAbandonedCarts List abandoned carts
+	// (GET /admin/abandoned-carts)
+	ListAbandonedCarts(w http.ResponseWriter, r *http.Request, params ListAbandonedCartsParams)
 	// ListCarts List my carts
 	// (GET /carts)
 	ListCarts(w http.ResponseWriter, r *http.Request)
@@ -236,6 +272,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// ListAbandonedCarts List abandoned carts
+// (GET /admin/abandoned-carts)
+func (_ Unimplemented) ListAbandonedCarts(w http.ResponseWriter, r *http.Request, params ListAbandonedCartsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // ListCarts List my carts
 // (GET /carts)
@@ -293,6 +335,52 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAbandonedCarts operation middleware
+func (siw *ServerInterfaceWrapper) ListAbandonedCarts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAbandonedCartsParams
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAbandonedCarts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListCarts operation middleware
 func (siw *ServerInterfaceWrapper) ListCarts(w http.ResponseWriter, r *http.Request) {
@@ -811,11 +899,66 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/carts/{user_id}/{cart_type}", wrapper.GetInternalCart)
 	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/abandoned-carts", wrapper.ListAbandonedCarts)
+	})
 
 	return r
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type ListAbandonedCartsRequestObject struct {
+	Params ListAbandonedCartsParams
+}
+
+type ListAbandonedCartsResponseObject interface {
+	VisitListAbandonedCartsResponse(w http.ResponseWriter) error
+}
+
+type ListAbandonedCarts200JSONResponse AbandonedCartList
+
+func (response ListAbandonedCarts200JSONResponse) VisitListAbandonedCartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAbandonedCarts400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListAbandonedCarts400ApplicationProblemPlusJSONResponse) VisitListAbandonedCartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAbandonedCarts403ApplicationProblemPlusJSONResponse Problem
+
+func (response ListAbandonedCarts403ApplicationProblemPlusJSONResponse) VisitListAbandonedCartsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListCartsRequestObject struct {
 }
@@ -1289,6 +1432,9 @@ func (response GetInternalCart404ApplicationProblemPlusJSONResponse) VisitGetInt
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ListAbandonedCarts List abandoned carts
+	// (GET /admin/abandoned-carts)
+	ListAbandonedCarts(ctx context.Context, request ListAbandonedCartsRequestObject) (ListAbandonedCartsResponseObject, error)
 	// ListCarts List my carts
 	// (GET /carts)
 	ListCarts(ctx context.Context, request ListCartsRequestObject) (ListCartsResponseObject, error)
@@ -1352,6 +1498,32 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAbandonedCarts operation middleware
+func (sh *strictHandler) ListAbandonedCarts(w http.ResponseWriter, r *http.Request, params ListAbandonedCartsParams) {
+	var request ListAbandonedCartsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAbandonedCarts(ctx, request.(ListAbandonedCartsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAbandonedCarts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAbandonedCartsResponseObject); ok {
+		if err := validResponse.VisitListAbandonedCartsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListCarts operation middleware

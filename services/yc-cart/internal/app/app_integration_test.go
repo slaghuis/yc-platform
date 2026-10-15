@@ -8,16 +8,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
 	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
@@ -203,6 +206,8 @@ func TestCart(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
 	t.Setenv("YC_CART_SERVICE_SECRET", "cart-secret")
+	t.Setenv("YC_CART_ABANDONED_AFTER", "1h")
+	t.Setenv("YC_CART_ABANDONED_SWEEP_INTERVAL", "1h")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -491,6 +496,71 @@ func TestCart(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, admin.do("GET", "/carts", nil, nil))
 		other := as(t, srv, "shop-b", alice, "customer")
 		assert.Empty(t, other.cart("shopping", "").Items)
+	})
+
+	t.Run("customers' idle shopping carts are announced as abandoned once", func(t *testing.T) {
+		bob, erin, carol := uuid.NewString(), uuid.NewString(), uuid.NewString()
+		bobC := as(t, srv, "shop-a", bob, "customer")
+		code, _ := add(bobC, "shopping", skuA, 2)
+		require.Equal(t, http.StatusOK, code)
+		code, _ = add(bobC, "wishlist", skuB, 1)
+		require.Equal(t, http.StatusOK, code)
+		code, _ = add(as(t, srv, "shop-a", erin, "customer"), "shopping", skuC, 1)
+		require.Equal(t, http.StatusOK, code)
+		code, _ = add(as(t, srv, "shop-a", carol, "visitor"), "shopping", skuC, 1)
+		require.Equal(t, http.StatusOK, code)
+		idle := func(users ...string) {
+			t.Helper()
+			require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `UPDATE carts SET updated_at = now() - interval '2 hours' WHERE user_id = ANY($1)`, users)
+				return err
+			}))
+		}
+		idle(bob, erin, carol)
+
+		n, err := a.Service.SweepAbandoned(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, n, "only customers' shopping carts; wishlists and visitors' carts are not")
+		abandoned := outbox("shop-a", events.TypeCartAbandonedV1)
+		require.Len(t, abandoned, 2)
+		byUser := map[string]map[string]any{}
+		for _, p := range abandoned {
+			byUser[p["user_id"].(string)] = p
+		}
+		require.Contains(t, byUser, bob)
+		assert.Equal(t, "shopping", byUser[bob]["cart_type"])
+		assert.Equal(t, float64(1), byUser[bob]["item_count"])
+		assert.Equal(t, float64(2), byUser[bob]["quantity"])
+
+		n, err = a.Service.SweepAbandoned(ctx)
+		require.NoError(t, err)
+		assert.Zero(t, n, "a cart is announced once per idle spell")
+
+		admin := as(t, srv, "shop-a", uuid.NewString(), "shop_admin")
+		var page api.AbandonedCartList
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/abandoned-carts?page_size=1", nil, &page))
+		require.Len(t, page.Items, 1)
+		require.NotEmpty(t, page.Page.NextCursor)
+		first, cursor := page.Items[0].UserID.String(), page.Page.NextCursor
+		page = api.AbandonedCartList{}
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/abandoned-carts?page_size=1&cursor="+url.QueryEscape(cursor), nil, &page))
+		require.Len(t, page.Items, 1)
+		assert.NotEqual(t, first, page.Items[0].UserID.String())
+		assert.Empty(t, page.Page.NextCursor)
+		assert.Equal(t, http.StatusForbidden, bobC.do("GET", "/admin/abandoned-carts", nil, nil))
+
+		code, _ = add(bobC, "shopping", skuC, 1)
+		require.Equal(t, http.StatusOK, code)
+		page = api.AbandonedCartList{}
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/abandoned-carts", nil, &page))
+		require.Len(t, page.Items, 1, "using the cart clears its abandonment")
+		assert.Equal(t, erin, page.Items[0].UserID.String())
+
+		idle(bob)
+		n, err = a.Service.SweepAbandoned(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, n, "a new idle spell is announced again")
+		assert.Len(t, outbox("shop-a", events.TypeCartAbandonedV1), 3)
 	})
 }
 
