@@ -38,6 +38,8 @@ if [ "${1:-}" = "--app" ]; then
     wait_until "yc-product"  curl -fsS http://localhost:8083/readyz
     wait_until "yc-pricing"  curl -fsS http://localhost:8084/readyz
     wait_until "yc-image"    curl -fsS http://localhost:8085/readyz
+    wait_until "yc-preference" curl -fsS http://localhost:8086/readyz
+    wait_until "yc-cart"     curl -fsS http://localhost:8087/readyz
 fi
 
 if [ $failed -gt 0 ]; then

@@ -84,8 +84,9 @@ services:
   # ─── Application services (profile "app") ─────────────────
   # `task devstack:app` builds and starts them; `task devstack:up` does not.
   # Host ports match the local `task run` ports in .env.example. Product,
-  # pricing and image register their routes with the gateway's internal
-  # listener (:8091, not published to the host).
+  # pricing, image, preference and cart register their routes with the
+  # gateway's internal listener (:8091, not published to the host), which
+  # also carries service-to-service calls (ADR-021).
   yc-identity:
     profiles: [app]
     build: &service-build
@@ -99,6 +100,11 @@ services:
       YC_IDENTITY_DB_URL: postgres://yc_identity_app:devpass@postgres:5432/yc_identity?sslmode=disable
       YC_IDENTITY_JWT_PRIVATE_KEY_FILE: /keys/jwt-private.pem
       YC_IDENTITY__NATS__DISABLE_RELAY: ${YC_IDENTITY__NATS__DISABLE_RELAY:-false}
+      # Service client secrets (ADR-021); each service presents its own.
+      YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET:-dev-cart-service-secret-32-chars!!}
+      # Dev only: fake Google/Facebook sign-in and reset links in the log.
+      YC_IDENTITY_OAUTH_FAKE: ${YC_IDENTITY_OAUTH_FAKE:-true}
+      YC_IDENTITY_LOG_RESET_LINKS: ${YC_IDENTITY_LOG_RESET_LINKS:-true}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -124,6 +130,7 @@ services:
       YC_GATEWAY_COOKIE_SECURE: "false"
       # admin.localhost resolves to _platform: system admins only.
       YC_GATEWAY__PLATFORM_HOSTS: admin.localhost
+      YC_GATEWAY_RATE_LIMIT: ${YC_GATEWAY_RATE_LIMIT:-true}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -213,6 +220,45 @@ services:
     depends_on:
       <<: *infra
       seaweedfs: { condition: service_healthy }
+
+  yc-preference:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-preference }
+    image: yc-platform/yc-preference:dev
+    container_name: yc-preference
+    restart: unless-stopped
+    environment:
+      YC_PREFERENCE_DB_URL: postgres://yc_preference_app:devpass@postgres:5432/yc_preference?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8086:8080"
+    depends_on: *infra
+
+  # Prices carts through the gateway's internal listener (ADR-021) with the
+  # client secret yc-identity knows it by.
+  yc-cart:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-cart }
+    image: yc-platform/yc-cart:dev
+    container_name: yc-cart
+    restart: unless-stopped
+    environment:
+      YC_CART_DB_URL: postgres://yc_cart_app:devpass@postgres:5432/yc_cart?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET:-dev-cart-service-secret-32-chars!!}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8087:8080"
+    depends_on: *infra
 
 volumes:
   pgdata:

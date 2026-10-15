@@ -1246,11 +1246,16 @@ YC_GATEWAY_DB_URL=postgres://yc_gateway_app:devpass@localhost:5432/yc_gateway?ss
 # OpenTelemetry
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
-# OAuth (dev)
-GOOGLE_OAUTH_CLIENT_ID=
-GOOGLE_OAUTH_CLIENT_SECRET=
-FACEBOOK_OAUTH_CLIENT_ID=
-FACEBOOK_OAUTH_CLIENT_SECRET=
+# OAuth (dev). YC_IDENTITY_OAUTH_FAKE=true replaces Google and Facebook
+# with a local fake provider (never in production).
+YC_IDENTITY_OAUTH_FAKE=true
+YC_IDENTITY_GOOGLE_CLIENT_ID=
+YC_IDENTITY_GOOGLE_CLIENT_SECRET=
+YC_IDENTITY_FACEBOOK_CLIENT_ID=
+YC_IDENTITY_FACEBOOK_CLIENT_SECRET=
+
+# Service-to-service client secrets (ADR-021), one per calling service
+YC_CART_SERVICE_SECRET=dev-cart-service-secret-32-chars!!
 
 # Payment gateways (dev / test keys)
 STRIPE_API_KEY=sk_test_...
