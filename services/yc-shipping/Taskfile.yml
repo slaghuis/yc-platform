@@ -23,6 +23,16 @@ tasks:
     cmds:
       - services/{{.SERVICE}}/bin/{{.SERVICE}}
 
+  gen:openapi:
+    desc: Generate server code from api/openapi.yaml
+    sources:
+      - api/openapi.yaml
+      - api/oapi-codegen.yaml
+    generates:
+      - api/generated/server.gen.go
+    cmds:
+      - ../../scripts/oapi-codegen.sh
+
   test:
     desc: Unit tests
     cmds:

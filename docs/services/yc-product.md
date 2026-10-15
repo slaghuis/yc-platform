@@ -162,6 +162,10 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **Stock.** `in_stock` follows `inventory.stock.depleted.v1` and `inventory.stock.restored.v1` only, not received or adjusted: yc-inventory publishes those two whenever availability crosses zero, including when a shop turns inventory on or off. `in_stock_at` keeps an older event from overwriting a newer one. Untracked SKUs, and shops without inventory, have no stock signal and count as in stock. Products show `in_stock` (an active SKU is in stock), and `GET /products?in_stock=true` filters on it.
 - **Popularity and favourites** still come from `cart.item.added.v1` and stay empty respectively; moving them to `order.placed.v1` is not done yet.
 
+### Phase 6 Implementation Notes
+
+- **Shipping attributes.** A SKU has `weight_grams` (per unit) and `dimensions_mm` (`{length, width, height}`, each 1 to 10 000 mm, all three or none; columns `length_mm`, `width_mm`, `height_mm`). Both are returned by the admin SKU endpoints and `GET /internal/skus/batch`. yc-checkout passes the weight to yc-shipping's quote: weight-tiered rates are offered only when every physical SKU has one (ADR-022 rule 3). Dimensions are stored for future carrier drivers and not used yet.
+
 ## Database Schema
 
 Database: **`yc_product`**
@@ -209,7 +213,9 @@ CREATE TABLE skus (
     inventory_tracked BOOLEAN NOT NULL DEFAULT TRUE,
     tax_class       TEXT NOT NULL,          -- references tenant tax config in yc-pricing
     weight_grams    INT,
-    dimensions      JSONB,                   -- {w,h,d} for shipping
+    length_mm       INT,                     -- dimensions for shipping, all or none
+    width_mm        INT,
+    height_mm       INT,
     status          TEXT NOT NULL DEFAULT 'active',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

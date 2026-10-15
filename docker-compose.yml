@@ -310,7 +310,28 @@ services:
       - "8089:8080"
     depends_on: *infra
 
-  # Refunds cancelled orders through yc-payment (ADR-021).
+  # Zones, rates and quotes; books shipments for yc-orders with the manual
+  # carrier driver, whose statuses the shop admin sets (ADR-022).
+  yc-shipping:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-shipping }
+    image: yc-platform/yc-shipping:dev
+    container_name: yc-shipping
+    restart: unless-stopped
+    environment:
+      YC_SHIPPING_DB_URL: postgres://yc_shipping_app:devpass@postgres:5432/yc_shipping?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8094:8080"
+    depends_on: *infra
+
+  # Refunds cancelled and returned orders through yc-payment and books
+  # shipments with yc-shipping when packaged (ADR-021, ADR-022).
   yc-orders:
     profiles: [app]
     build:
@@ -331,7 +352,7 @@ services:
     depends_on: *infra
 
   # Drives the checkout saga with internal calls to cart, product, pricing,
-  # inventory, payment and orders (ADR-019). YC_CHECKOUT_PAUSE_BEFORE and
+  # shipping, inventory, payment and orders (ADR-019). YC_CHECKOUT_PAUSE_BEFORE and
   # YC_CHECKOUT_PAUSE_FOR stall the saga for the resumption demo. Saga
   # leases are named after the host, so a fixed hostname lets a restarted
   # container take back its sessions at once rather than after lease_ttl.
@@ -348,7 +369,6 @@ services:
       YC_CHECKOUT_DB_URL: postgres://yc_checkout_app:devpass@postgres:5432/yc_checkout?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_CHECKOUT_SERVICE_SECRET: ${YC_CHECKOUT_SERVICE_SECRET:-dev-checkout-service-secret-32chars}
-      YC_CHECKOUT_SHIPPING_FEE_MINOR: ${YC_CHECKOUT_SHIPPING_FEE_MINOR:-10000}
       YC_CHECKOUT_PAUSE_BEFORE: ${YC_CHECKOUT_PAUSE_BEFORE:-}
       YC_CHECKOUT_PAUSE_FOR: ${YC_CHECKOUT_PAUSE_FOR:-0s}
       NATS_URL: nats://nats:4222

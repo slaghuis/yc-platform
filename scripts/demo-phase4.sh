@@ -128,10 +128,10 @@ recreate() {
 
 healthy() {
     step "0. Services are up"
-    for port in 8090 8081 8083 8084 8087 8088 8089 8092 8093; do
+    for port in 8090 8081 8083 8084 8087 8088 8089 8092 8093 8094; do
         readyz "$port" || fail "localhost:$port/readyz (task devstack:app)"
     done
-    ok "gateway, identity, product, pricing, cart, inventory, payment, orders and checkout are ready"
+    ok "gateway, identity, product, pricing, cart, inventory, payment, orders, checkout and shipping are ready"
 }
 
 payments() {
@@ -159,7 +159,7 @@ provision() {
         --store-currency ZAR --default-jurisdiction ZA --tax-inclusive=true | sed 's/^/    /'
     poll 15 sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $SHOP_HOST' $GATEWAY/me)\" = 200 ]" ||
         fail "gateway did not map $SHOP_HOST"
-    for path in /products /carts /checkout /orders/mine /admin/stock /admin/gateway-config; do
+    for path in /products /carts /checkout /orders/mine /admin/stock /admin/gateway-config /admin/zones; do
         poll 45 routed "$path" || fail "no gateway route for $path"
     done
     ok "checkout, orders, inventory and payment routes registered with the gateway"
@@ -203,7 +203,7 @@ shop_admin() {
         expect 201 "create $1"
         local id; id=$(jq -r .product_id <<<"$BODY")
         call "$SHOP_HOST" "$ADMIN" POST "/admin/products/$id/skus" \
-            "{\"sku_code\":\"$(tr '[:lower:]' '[:upper:]' <<<"$1")-$RUN\",\"tax_class\":\"za-standard\",\"inventory_tracked\":$4}"
+            "{\"sku_code\":\"$(tr '[:lower:]' '[:upper:]' <<<"$1")-$RUN\",\"tax_class\":\"za-standard\",\"inventory_tracked\":$4$([ "$3" = true ] || echo ',"weight_grams":1500')}"
         expect 201 "SKU $1"
         SKU=$(jq -r .sku_id <<<"$BODY")
         call "$SHOP_HOST" "$ADMIN" PUT "/admin/prices/sku/$SKU" "{\"price\":{\"amount_minor\":$2,\"currency\":\"ZAR\"}}"
@@ -220,6 +220,17 @@ shop_admin() {
     call "$SHOP_HOST" "$ADMIN" GET "/admin/stock/$EBOOK"
     expect 404 "the E-book is untracked and has no stock"
     ok "received 5 Kettles; the E-book has no stock record (unlimited)"
+
+    call "$SHOP_HOST" "$ADMIN" GET /admin/zones
+    expect 200 "shipping zones"
+    if ! jq -e '.items[] | select(.name == "South Africa")' <<<"$BODY" >/dev/null; then
+        call "$SHOP_HOST" "$ADMIN" POST /admin/zones '{"name":"South Africa","match_rules":[{"country_code":"ZA"}]}'
+        expect 201 "shipping zone"
+        call "$SHOP_HOST" "$ADMIN" POST /admin/rates "{\"zone_id\":\"$(jq -r .zone_id <<<"$BODY")\",\"method\":\"standard\",
+            \"display_name\":\"Standard\",\"pricing_type\":\"flat\",\"flat_amount_minor\":10000}"
+        expect 201 "shipping rate"
+    fi
+    ok "ships anywhere in South Africa: Standard R100 (yc-shipping)"
 
     local secret=""
     [ -z "${STRIPE_WEBHOOK_SECRET:-}" ] || secret=",\"webhook_secret\":\"$STRIPE_WEBHOOK_SECRET\""
@@ -264,14 +275,19 @@ fill_cart() {
     done
 }
 
-# start <auth>: start checkout from the shopping cart; sets SESSION.
+ADDRESS='{"country_code":"ZA","lines":["1 Long Street","Cape Town 8001"],"fields":{"street":"1 Long Street","city":"Cape Town","province":"Western Cape","postal_code":"8001"}}'
+
+# start <auth>: start checkout from the shopping cart and, for physical
+# items, choose shipping to ADDRESS; sets SESSION.
 start() {
     call "$SHOP_HOST" "$1" POST /checkout '{}'
     expect 201 "start checkout"
     SESSION=$(jq -r .session_id <<<"$BODY")
+    if [ "$(jq -r .requires_shipping <<<"$BODY")" = true ]; then
+        call "$SHOP_HOST" "$1" POST "/checkout/$SESSION/shipping" "{\"delivery_address\":$ADDRESS}"
+        expect 200 "choose shipping"
+    fi
 }
-
-ADDRESS='{"line1":"1 Long Street","city":"Cape Town","postal_code":"8001","country":"ZA"}'
 
 # confirm <auth> <key> <payment method> [extra json fields] [curl args...]
 confirm() {
@@ -294,7 +310,7 @@ happy() {
     jq -e '.state == "PRICING" and .requires_shipping and (.items | length) == 2' <<<"$BODY" >/dev/null ||
         fail "want a PRICING quote that needs shipping"
     info "shipping: $(jq -r "$JQ_MONEY"'[.shipping_options[] | "\(.name) \(.amount | amt)"] | join(", ")' <<<"$BODY")"
-    ok "PRICING: priced by yc-pricing, flat Standard shipping because the Kettle is physical"
+    ok "PRICING: priced by yc-pricing; the Kettle is physical, so shipping to the address was quoted by yc-shipping"
 
     step "2. Checkout: confirm with pm_card_visa"
     KEY=$(uuid)

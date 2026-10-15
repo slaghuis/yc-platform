@@ -22,7 +22,7 @@ import (
 type Checkout interface {
 	Start(ctx context.Context, cartType string) (domain.Session, error)
 	Session(ctx context.Context, id string) (domain.Session, error)
-	SelectShipping(ctx context.Context, id, optionID string) (domain.Session, error)
+	SelectShipping(ctx context.Context, id string, in domain.ShippingChoice) (domain.Session, error)
 	Confirm(ctx context.Context, id, key string, in domain.ConfirmInput) (domain.Session, error)
 	Cancel(ctx context.Context, id string) (domain.Session, error)
 	AdminSessions(ctx context.Context, state domain.State, after *repository.SessionCursor, limit int) ([]domain.Session, error)
@@ -88,7 +88,16 @@ func (h handlers) GetCheckout(ctx context.Context, req api.GetCheckoutRequestObj
 }
 
 func (h handlers) SelectShipping(ctx context.Context, req api.SelectShippingRequestObject) (api.SelectShippingResponseObject, error) {
-	s, err := h.svc.SelectShipping(ctx, req.ID.String(), req.Body.ShippingOptionID)
+	var in domain.ShippingChoice
+	if b := req.Body; b != nil {
+		if b.DeliveryAddress != nil {
+			in.DeliveryAddress = *b.DeliveryAddress
+		}
+		if b.ShippingOptionID != nil {
+			in.OptionID = *b.ShippingOptionID
+		}
+	}
+	s, err := h.svc.SelectShipping(ctx, req.ID.String(), in)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +205,10 @@ func session(s domain.Session, admin bool) api.Session {
 	}
 	options := make([]api.ShippingOption, len(s.ShippingOptions))
 	for i, o := range s.ShippingOptions {
-		options[i] = api.ShippingOption{ID: o.ID, Name: o.Name, Amount: m(o.AmountMinor)}
+		options[i] = api.ShippingOption{
+			ID: o.ID, Name: o.Name, Amount: m(o.AmountMinor),
+			EstimatedDaysMin: o.EstimatedDaysMin, EstimatedDaysMax: o.EstimatedDaysMax,
+		}
 	}
 	out := api.Session{
 		SessionID: parseUUID(s.ID), State: api.State(s.State), UserType: api.SessionUserType(s.UserType),

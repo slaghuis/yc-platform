@@ -168,7 +168,7 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 			failure_reason = NULLIF($21, ''), failure_detail = $22, end_state = NULLIF($23, ''),
 			compensation_log = $24, attempts = $25, next_attempt_at = $26, lease_owner = NULLIF($27, ''),
 			lease_until = $28, confirmed_at = $29, completed_at = $30, updated_at = $31, payment_variant = $32,
-			hosted_payment = $33, payment_public_key = NULLIF($34, '')
+			hosted_payment = $33, payment_public_key = NULLIF($34, ''), shipping_options = $35
 		WHERE tenant_id = $1 AND id = $2`,
 		tenantID, s.ID, string(s.State), s.ShippingMinor, s.TotalMinor,
 		s.ShippingOptionID, e.guest, e.address,
@@ -179,7 +179,7 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 		s.FailureReason, e.detail, string(s.EndState),
 		e.compensation, s.Attempts, s.NextAttemptAt, s.LeaseOwner,
 		s.LeaseUntil, s.ConfirmedAt, s.CompletedAt, s.UpdatedAt, string(s.Variant()),
-		s.HostedPayment, s.PaymentPublicKey)
+		s.HostedPayment, s.PaymentPublicKey, e.shipping)
 	if err != nil {
 		return fmt.Errorf("update session: %w", err)
 	}

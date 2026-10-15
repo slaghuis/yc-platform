@@ -17,6 +17,7 @@ import (
 
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/integration"
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/service"
+	subscribers "github.com/slaghuis/yc-platform/services/yc-orders/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-orders/internal/transport/http"
 	"github.com/slaghuis/yc-platform/services/yc-orders/migrations"
 )
@@ -65,7 +66,8 @@ type App struct {
 }
 
 // New migrates the database (when configured), connects to Postgres and
-// NATS, starts the idempotency purge and builds the HTTP handler.
+// NATS, subscribes to shipment progress, starts the idempotency purge and
+// builds the HTTP handler.
 func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err error) {
 	a := &App{}
 	defer func() {
@@ -94,15 +96,20 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams:     []eventbus.StreamConfig{eventbus.OrderStream(), eventbus.DLQStream()},
+		Streams:     []eventbus.StreamConfig{eventbus.OrderStream(), eventbus.ShippingStream(), eventbus.DLQStream()},
 	})
 	if err != nil {
 		return nil, err
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	payments := integration.NewPayment(httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls))
-	a.Service = service.New(db, bus, payments)
+	internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
+	a.Service = service.New(db, bus, integration.NewPayment(internal), integration.NewShipping(internal))
+	for _, sub := range subscribers.Subscriptions(a.Service) {
+		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
+			return nil, err
+		}
+	}
 
 	idem := httpkit.PGIdempotencyStore{DB: db}
 	bgCtx, stop := context.WithCancel(context.WithoutCancel(ctx))

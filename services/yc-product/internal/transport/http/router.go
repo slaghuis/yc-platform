@@ -99,7 +99,7 @@ func (h handlers) GetSKUsBatch(ctx context.Context, req api.GetSKUsBatchRequestO
 		out.Skus[i] = api.SKUDetail{
 			SkuID: parseUUID(d.ID), ProductID: parseUUID(d.ProductID), SkuCode: d.Code, ProductName: d.ProductName,
 			VariantValues: d.VariantValues, IsDigital: d.IsDigital, InventoryTracked: d.InventoryTracked,
-			TaxClass: d.TaxClass, WeightGrams: d.WeightGrams, Status: status,
+			TaxClass: d.TaxClass, WeightGrams: d.WeightGrams, DimensionsMm: dimensions(d.Dimensions), Status: status,
 		}
 	}
 	return out, nil
@@ -377,7 +377,17 @@ func skuInput(b *api.SKUInput) domain.SKUInput {
 	if b.InventoryTracked != nil {
 		in.InventoryTracked = *b.InventoryTracked
 	}
+	if d := b.DimensionsMm; d != nil {
+		in.Dimensions = &domain.Dimensions{LengthMM: d.Length, WidthMM: d.Width, HeightMM: d.Height}
+	}
 	return in
+}
+
+func dimensions(d *domain.Dimensions) *api.Dimensions {
+	if d == nil {
+		return nil
+	}
+	return &api.Dimensions{Length: d.LengthMM, Width: d.WidthMM, Height: d.HeightMM}
 }
 
 func categoryInput(b *api.CategoryInput) domain.CategoryInput {
@@ -435,7 +445,8 @@ func sku(s domain.SKU) api.SKU {
 	return api.SKU{
 		SkuID: parseUUID(s.ID), ProductID: parseUUID(s.ProductID), SkuCode: s.Code, VariantValues: s.VariantValues,
 		InventoryTracked: s.InventoryTracked, TaxClass: s.TaxClass, WeightGrams: s.WeightGrams,
-		Status: api.Status(s.Status), CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
+		DimensionsMm: dimensions(s.Dimensions),
+		Status:       api.Status(s.Status), CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
 	}
 }
 

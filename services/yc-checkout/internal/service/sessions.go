@@ -133,7 +133,7 @@ func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType str
 		sess.Items = append(sess.Items, domain.Item{
 			SKUID: l.SKUID, ProductID: k.ProductID, SKUCode: k.SKUCode, Name: k.ProductName,
 			VariantValues: k.VariantValues, Quantity: l.Quantity, IsDigital: k.IsDigital,
-			InventoryTracked: k.InventoryTracked, TaxClass: k.TaxClass,
+			InventoryTracked: k.InventoryTracked, TaxClass: k.TaxClass, WeightGrams: k.WeightGrams,
 			UnitPriceMinor: (p.Gross.AmountMinor + l.Quantity/2) / l.Quantity, LineTotalMinor: p.Gross.AmountMinor,
 			TaxMinor: p.Tax.AmountMinor,
 		})
@@ -143,10 +143,6 @@ func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType str
 	}
 	sess.TotalMinor = sess.ItemsTotalMinor
 	sess.Route(routing(route))
-	if sess.RequiresShipping {
-		sess.ShippingOptions = []domain.ShippingOption{s.cfg.Shipping}
-		sess.SelectShipping(s.cfg.Shipping.ID)
-	}
 	return sess, nil
 }
 
@@ -211,17 +207,50 @@ func (s *Service) requireQuote(sess domain.Session) error {
 	return nil
 }
 
-// SelectShipping chooses a shipping option before confirm.
-func (s *Service) SelectShipping(ctx context.Context, id, optionID string) (domain.Session, error) {
+// SelectShipping is the shipping step before confirm. A delivery address
+// is quoted with yc-shipping and replaces any earlier one and its options;
+// the named option, or the cheapest, is selected. Without an address the
+// option is chosen from the current address's options. An address the
+// shop does not ship to is 409 and leaves the session as it was.
+func (s *Service) SelectShipping(ctx context.Context, id string, in domain.ShippingChoice) (domain.Session, error) {
+	sess, err := s.Session(ctx, id)
+	if err != nil {
+		return sess, err
+	}
+	if err := s.requireQuote(sess); err != nil {
+		return sess, err
+	}
+	if !sess.RequiresShipping {
+		return sess, ycerrors.Validation().Field("delivery_address", "invalid", "Digital-only checkouts are not shipped").Build()
+	}
+	quoted := in.DeliveryAddress != nil
+	var options []domain.ShippingOption
+	switch {
+	case quoted:
+		if v := domain.ValidateAddress(in.DeliveryAddress); len(v) > 0 {
+			return sess, validationError(v)
+		}
+		if options, err = s.quoteShipping(ctx, sess, in.DeliveryAddress); err != nil {
+			return sess, err
+		}
+	case in.OptionID == "":
+		return sess, ycerrors.Validation().Field("delivery_address", "required", "Give a delivery address or a shipping option").Build()
+	case len(sess.DeliveryAddress) == 0:
+		return sess, ycerrors.Validation().Field("delivery_address", "required", "Give the delivery address to ship to first").Build()
+	}
+
 	var out domain.Session
-	err := s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, sess *domain.Session) error {
+	err = s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, sess *domain.Session) error {
 		if err := s.requireQuote(*sess); err != nil {
 			return err
 		}
-		if !sess.RequiresShipping {
-			return ycerrors.Validation().Field("shipping_option_id", "invalid", "Digital-only checkouts are not shipped").Build()
+		ok := false
+		if quoted {
+			ok = sess.ShipTo(in.DeliveryAddress, options, in.OptionID)
+		} else {
+			ok = sess.SelectShipping(in.OptionID)
 		}
-		if !sess.SelectShipping(optionID) {
+		if !ok {
 			return ycerrors.Validation().Field("shipping_option_id", "invalid", "Choose one of the session's shipping options").Build()
 		}
 		now := s.now().UTC()
@@ -229,16 +258,47 @@ func (s *Service) SelectShipping(ctx context.Context, id, optionID string) (doma
 		if err := s.repo.UpdateSession(ctx, tx, tenantID, *sess); err != nil {
 			return err
 		}
-		if err := s.history(ctx, tx, tenantID, sess.ID, "shipping_selected", "", "", map[string]any{"shipping_option_id": optionID}); err != nil {
+		if err := s.history(ctx, tx, tenantID, sess.ID, "shipping_selected", "", "", map[string]any{
+			"shipping_option_id": sess.ShippingOptionID, "options": len(sess.ShippingOptions), "address_quoted": quoted,
+		}); err != nil {
 			return err
 		}
 		out = *sess
 		return s.publish(ctx, tx, tenantID, events.TypeCheckoutShippingSelectedV1, events.CheckoutShippingSelectedV1{
-			SessionID: sess.ID, UserID: sess.UserID, ShippingOptionID: optionID,
+			SessionID: sess.ID, UserID: sess.UserID, ShippingOptionID: sess.ShippingOptionID,
 			Amount: events.Money{AmountMinor: sess.ShippingMinor, Currency: sess.Currency}, SelectedAt: now,
 		})
 	})
 	return out, err
+}
+
+// quoteShipping asks yc-shipping for the options to an address, weighing
+// the physical lines. No options means the shop does not ship there.
+func (s *Service) quoteShipping(ctx context.Context, sess domain.Session, address map[string]any) ([]domain.ShippingOption, error) {
+	req := integration.ShippingQuoteRequest{DeliveryAddress: address, SubtotalMinor: sess.ItemsTotalMinor}
+	for _, it := range sess.Items {
+		req.Items = append(req.Items, integration.ShippingQuoteItem{
+			SKUID: it.SKUID, Quantity: it.Quantity, WeightGrams: it.WeightGrams, IsDigital: it.IsDigital,
+		})
+	}
+	q, err := s.p.QuoteShipping(ctx, req)
+	if err != nil {
+		if r, ok := integration.Rejected(err); ok {
+			return nil, ycerrors.Conflict("Shipping cannot be quoted: " + r.Problem.Detail).Wrap(err)
+		}
+		return nil, err
+	}
+	if len(q.Options) == 0 {
+		return nil, ycerrors.Conflict("The shop does not ship to this address")
+	}
+	out := make([]domain.ShippingOption, len(q.Options))
+	for i, o := range q.Options {
+		out[i] = domain.ShippingOption{
+			ID: o.OptionID, RateID: o.RateID, Name: o.Name, AmountMinor: o.AmountMinor,
+			EstimatedDaysMin: o.EstimatedDaysMin, EstimatedDaysMax: o.EstimatedDaysMax,
+		}
+	}
+	return out, nil
 }
 
 // Confirm validates the customer's details (ADR-010) and runs the saga
@@ -266,6 +326,11 @@ func (s *Service) Confirm(ctx context.Context, id, key string, in domain.Confirm
 		}
 		if err := s.requireQuote(sess); err != nil {
 			return err
+		}
+		if sess.RequiresShipping && in.DeliveryAddress != nil && len(sess.DeliveryAddress) > 0 &&
+			sess.AddressDiffers(in.DeliveryAddress) {
+			return ycerrors.Conflict("The delivery address differs from the one shipping was chosen for; choose shipping again").
+				With("state", string(sess.State))
 		}
 		var violations []domain.Violation
 		if routeErr != nil {

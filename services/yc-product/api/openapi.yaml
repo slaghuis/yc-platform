@@ -642,8 +642,18 @@ components:
           type: string
           pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
           description: A tax class ID defined in yc-pricing, e.g. za-standard.
-        weight_grams: { type: integer, minimum: 0 }
+        weight_grams: { type: integer, minimum: 0, description: Per unit; weight-tiered shipping rates need it. }
+        dimensions_mm: { $ref: '#/components/schemas/Dimensions' }
         status: { $ref: '#/components/schemas/Status' }
+    Dimensions:
+      type: object
+      required: [length, width, height]
+      additionalProperties: false
+      description: Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
+      properties:
+        length: { type: integer, minimum: 1, maximum: 10000 }
+        width: { type: integer, minimum: 1, maximum: 10000 }
+        height: { type: integer, minimum: 1, maximum: 10000 }
     SKU:
       type: object
       required: [sku_id, product_id, sku_code, variant_values, inventory_tracked, tax_class, status, created_at, updated_at]
@@ -655,6 +665,7 @@ components:
         inventory_tracked: { type: boolean }
         tax_class: { type: string }
         weight_grams: { type: integer }
+        dimensions_mm: { $ref: '#/components/schemas/Dimensions' }
         status: { $ref: '#/components/schemas/Status' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -682,6 +693,7 @@ components:
         inventory_tracked: { type: boolean }
         tax_class: { type: string }
         weight_grams: { type: integer }
+        dimensions_mm: { $ref: '#/components/schemas/Dimensions' }
         status:
           type: string
           description: active only when both the SKU and its product are active.

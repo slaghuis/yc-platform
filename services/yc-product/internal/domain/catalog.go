@@ -200,9 +200,21 @@ type SKU struct {
 	InventoryTracked bool
 	TaxClass         string
 	WeightGrams      *int
+	Dimensions       *Dimensions
 	Status           Status
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+// MaxDimensionMM bounds each side of a parcel (10 m).
+const MaxDimensionMM = 10_000
+
+// Dimensions is a SKU's parcel size for carrier drivers. Stored only:
+// rates do not use it yet.
+type Dimensions struct {
+	LengthMM int
+	WidthMM  int
+	HeightMM int
 }
 
 // SKUInput is the settable part of a SKU. Updates replace every field.
@@ -212,6 +224,7 @@ type SKUInput struct {
 	InventoryTracked bool
 	TaxClass         string
 	WeightGrams      *int
+	Dimensions       *Dimensions
 	Status           Status // "" means active
 }
 
@@ -226,6 +239,16 @@ func (in *SKUInput) Validate() error {
 	}
 	if in.WeightGrams != nil && *in.WeightGrams < 0 {
 		v.Field("weight_grams", "invalid", "Must not be negative")
+	}
+	if d := in.Dimensions; d != nil {
+		for _, side := range []struct {
+			field string
+			mm    int
+		}{{"length", d.LengthMM}, {"width", d.WidthMM}, {"height", d.HeightMM}} {
+			if side.mm < 1 || side.mm > MaxDimensionMM {
+				v.Field("dimensions_mm."+side.field, "invalid", fmt.Sprintf("Must be 1 to %d millimetres", MaxDimensionMM))
+			}
+		}
 	}
 	checkStatus(v, &in.Status)
 	if in.VariantValues == nil {

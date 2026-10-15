@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.packaged.v1.json",
+  "title": "order.packaged.v1",
+  "description": "The shop admin packaged an order for the carrier; yc-shipping created its shipment.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "shipment_id",
+    "tracking_number",
+    "packaged_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "shipment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "packaged_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

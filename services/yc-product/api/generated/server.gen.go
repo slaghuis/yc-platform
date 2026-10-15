@@ -127,6 +127,13 @@ type CreateSupplierRequest struct {
 	TenantID string   `json:"tenant_id"`
 }
 
+// Dimensions Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
+type Dimensions struct {
+	Height int `json:"height"`
+	Length int `json:"length"`
+	Width  int `json:"width"`
+}
+
 // Facets Facets beyond the filters; which appear depends on the caller.
 type Facets struct {
 	// Favourites Customers only: the products they buy most. Empty until order
@@ -221,7 +228,10 @@ type ProductSummary struct {
 
 // SKU defines model for SKU.
 type SKU struct {
-	CreatedAt        time.Time          `json:"created_at"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DimensionsMm Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
+	DimensionsMm     *Dimensions        `json:"dimensions_mm,omitempty"`
 	InventoryTracked bool               `json:"inventory_tracked"`
 	ProductID        openapi_types.UUID `json:"product_id"`
 	SkuCode          string             `json:"sku_code"`
@@ -243,6 +253,8 @@ type SKUBatch struct {
 
 // SKUDetail defines model for SKUDetail.
 type SKUDetail struct {
+	// DimensionsMm Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
+	DimensionsMm     *Dimensions        `json:"dimensions_mm,omitempty"`
 	InventoryTracked bool               `json:"inventory_tracked"`
 	IsDigital        bool               `json:"is_digital"`
 	ProductID        openapi_types.UUID `json:"product_id"`
@@ -264,16 +276,20 @@ type SKUDetailStatus string
 
 // SKUInput defines model for SKUInput.
 type SKUInput struct {
-	InventoryTracked *bool   `json:"inventory_tracked,omitempty"`
-	SkuCode          string  `json:"sku_code"`
-	Status           *Status `json:"status,omitempty"`
+	// DimensionsMm Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
+	DimensionsMm     *Dimensions `json:"dimensions_mm,omitempty"`
+	InventoryTracked *bool       `json:"inventory_tracked,omitempty"`
+	SkuCode          string      `json:"sku_code"`
+	Status           *Status     `json:"status,omitempty"`
 
 	// TaxClass A tax class ID defined in yc-pricing, e.g. za-standard.
 	TaxClass string `json:"tax_class"`
 
 	// VariantValues Variant axis to value, e.g. {"color":"Red","size":"M"}.
 	VariantValues *VariantValues `json:"variant_values,omitempty"`
-	WeightGrams   *int           `json:"weight_grams,omitempty"`
+
+	// WeightGrams Per unit; weight-tiered shipping rates need it.
+	WeightGrams *int `json:"weight_grams,omitempty"`
 }
 
 // SKUSummary defines model for SKUSummary.

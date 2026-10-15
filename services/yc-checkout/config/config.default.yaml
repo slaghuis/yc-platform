@@ -32,13 +32,9 @@ checkout:
   # Asked of yc-inventory; shorter than the session (ADR-011, ADR-012).
   reservation_ttl: 15m
   # The payment gateway is the shop's choice: yc-payment routes each
-  # session by currency and priority (ADR-013).
-  # One flat-fee option for physical items, in store-currency minor units.
-  # It is untaxed; digital-only checkouts are not shipped.
-  shipping:
-    id: standard
-    name: Standard
-    fee_minor: ${YC_CHECKOUT_SHIPPING_FEE_MINOR:-0}
+  # session by currency and priority (ADR-013). Shipping options come from
+  # yc-shipping's zones and rates for the delivery address; shipping is
+  # untaxed and digital-only checkouts are not shipped.
 saga:
   # Confirm answers 202 after this and the sweeper carries on (ADR-019 rule 7).
   confirm_deadline: 60s

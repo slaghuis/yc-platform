@@ -176,17 +176,17 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `order.placed.v1` | yc-orders | yc-analytics, yc-message, yc-monitor, yc-product, yc-shipping | Order confirmed after payment (`POST /internal/orders/{id}/confirm`) |
-| `order.packaged.v1` | yc-orders | — | Shop admin marked ready |
-| `order.shipped.v1` | yc-orders | yc-message | Shipping confirmed |
-| `order.delivered.v1` | yc-orders | yc-analytics, yc-message, yc-review | Delivery confirmed |
+| `order.placed.v1` | yc-orders | yc-analytics, yc-message, yc-monitor, yc-product | Order confirmed after payment (`POST /internal/orders/{id}/confirm`) |
+| `order.packaged.v1` | yc-orders | — | Shop admin packaged the order; yc-shipping booked the shipment (ADR-022) |
+| `order.shipped.v1` | yc-orders | yc-message | `shipping.in_transit.v1` received |
+| `order.delivered.v1` | yc-orders | yc-analytics, yc-message, yc-review | `shipping.delivered.v1` received |
 | `order.cancelled.v1` | yc-orders | yc-analytics, yc-message, yc-shipping | Order cancelled |
-| `order.cancellation_failed.v1` | yc-orders | — | Cancellation blocked (already shipped) |
-| `order.refund_requested.v1` | yc-orders | — | Refund initiated |
-| `order.refunded.v1` | yc-orders | yc-analytics, yc-message | Refund completed |
+| `order.cancellation_failed.v1` | yc-orders | — | Cancellation blocked (already shipped) (future) |
+| `order.refunded.v1` | yc-orders | yc-analytics, yc-message | Refund recorded (cancellation, accepted return or admin refund) |
 | `order.return_requested.v1` | yc-orders | — | Customer requested return |
-| `order.return_accepted.v1` | yc-orders | — | Shop admin accepted return |
-| `order.return_received.v1` | yc-orders | — | Returned items received |
+| `order.return_accepted.v1` | yc-orders | — | Shop admin accepted return (and refunded it) |
+| `order.return_rejected.v1` | yc-orders | — | Shop admin rejected return |
+| `order.return_received.v1` | yc-orders | — | Returned items received (future, with return shipments) |
 | `order.disputed.v1` | yc-orders | — | Chargeback flagged |
 | `order.note_added.v1` | yc-orders | — | Note added (internal or customer-visible) |
 
@@ -194,15 +194,15 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `shipping.rate_quoted.v1` | yc-shipping | — | Quote returned to checkout (optional telemetry) |
-| `shipping.label_created.v1` | yc-shipping | yc-orders | Label created |
-| `shipping.label_failed.v1` | yc-shipping | — | Label creation failed |
-| `shipping.carrier_pickup.v1` | yc-shipping | — | Carrier collected the package |
+| `shipping.rate_quoted.v1` | yc-shipping | — | Quote returned to checkout (optional telemetry; future) |
+| `shipping.label_created.v1` | yc-shipping | — | Shipment booked (`POST /internal/shipments`): tracking number and label created |
+| `shipping.label_failed.v1` | yc-shipping | — | Label creation failed (future, carrier drivers) |
+| `shipping.carrier_pickup.v1` | yc-shipping | — | Carrier collected the package (future, carrier drivers) |
 | `shipping.in_transit.v1` | yc-shipping | yc-orders | Shipment is moving |
-| `shipping.out_for_delivery.v1` | yc-shipping | — | Final-mile started |
+| `shipping.out_for_delivery.v1` | yc-shipping | — | Final-mile started (future, carrier drivers) |
 | `shipping.delivered.v1` | yc-shipping | yc-orders | Delivered — triggers yc-orders transition |
 | `shipping.delivery_exception.v1` | yc-shipping | yc-message, yc-orders | Problem (failed delivery, address issue) |
-| `shipping.cancelled.v1` | yc-shipping | — | Shipment cancelled |
+| `shipping.cancelled.v1` | yc-shipping | — | Shipment cancelled (`order.cancelled.v1` before dispatch) |
 
 ## Message Domain
 

@@ -450,19 +450,20 @@ Shop admin can ship orders; customers see status. Shipping quote integrated into
 - Full lifecycle: `received` → `packaged` → `shipped` → `delivered`
 - Shop admin endpoints: `POST /admin/orders/{id}/package`
 - Subscribes to `shipping.*.v1` for status transitions
-- Return request workflow (customer-initiated, admin-approved)
-- Refund via yc-payment integration
+- Return request workflow (customer-initiated, admin-approved; accepting refunds at once, no return shipment or restock)
+- Refund via yc-payment integration, plus an admin partial refund
 
 **yc-checkout extensions**
-- Shipping quote step: call yc-shipping during PRICING
-- Shipping option selection: `POST /checkout/{id}/shipping`
+- Shipping step (ADR-022): `POST /checkout/{id}/shipping` takes the delivery address, quotes yc-shipping and selects an option; confirm must use the same address
 - `requires_shipping` detection: skip shipping if all items are digital
 - Shipping address validation per ADR-015 (format only; JSON structure)
 
 **yc-product extensions**
-- SKU weight and dimensions fields (used by yc-shipping for weight-tiered quotes)
+- SKU weight and dimensions fields (weight drives weight-tiered quotes; dimensions are stored for future carriers)
 
 ### Milestone
+
+`task demo:phase6` runs it against the fake Stripe (`scripts/demo-phase6.sh`). The decisions are in ADR-022.
 
 1. Shop admin configures zones (Gauteng, Western Cape, Rest of SA) and rates
 2. Customer with physical items checks out; shipping options displayed based on address

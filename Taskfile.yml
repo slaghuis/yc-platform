@@ -157,6 +157,11 @@ tasks:
     cmds:
       - ./scripts/demo-phase5.sh
 
+  demo:phase6:
+    desc: Run the Phase 6 fulfilment demo (zones, shipping, packaging, delivery, returns) against the running stack (see scripts/demo-phase6.sh)
+    cmds:
+      - ./scripts/demo-phase6.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:

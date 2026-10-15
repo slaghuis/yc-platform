@@ -4,9 +4,11 @@
 package domain
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/mail"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -126,6 +128,8 @@ type Item struct {
 	IsDigital        bool           `json:"is_digital"`
 	InventoryTracked bool           `json:"inventory_tracked"`
 	TaxClass         string         `json:"tax_class"`
+	// WeightGrams is the SKU's weight, when the shop recorded it.
+	WeightGrams *int64 `json:"weight_grams,omitempty"`
 	// UnitPriceMinor is gross per unit, rounded; LineTotalMinor is the
 	// line's gross, including TaxMinor.
 	UnitPriceMinor int64 `json:"unit_price_minor"`
@@ -133,11 +137,22 @@ type Item struct {
 	TaxMinor       int64 `json:"tax_minor"`
 }
 
-// ShippingOption is a way to deliver the physical items.
+// ShippingOption is a way to deliver the physical items, as yc-shipping
+// priced it for the delivery address. ID is the rate's method.
 type ShippingOption struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	AmountMinor int64  `json:"amount_minor"`
+	ID               string `json:"id"`
+	RateID           string `json:"rate_id,omitempty"`
+	Name             string `json:"name"`
+	AmountMinor      int64  `json:"amount_minor"`
+	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
+	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
+}
+
+// ShippingChoice is the shipping step: a delivery address to quote, an
+// option, or both.
+type ShippingChoice struct {
+	DeliveryAddress map[string]any
+	OptionID        string
 }
 
 // GuestContact is a visitor's contact details (ADR-010).
@@ -248,6 +263,55 @@ func (s *Session) SelectShipping(id string) bool {
 		}
 	}
 	return false
+}
+
+// ShipTo records the options yc-shipping quoted for an address and
+// selects optionID, or the cheapest when it is empty. A previous address's
+// options and choice are replaced. It reports whether optionID is one of
+// the options.
+func (s *Session) ShipTo(address map[string]any, options []ShippingOption, optionID string) bool {
+	s.DeliveryAddress, s.ShippingOptions = address, options
+	s.ShippingOptionID, s.ShippingMinor, s.TotalMinor = "", 0, s.ItemsTotalMinor
+	if optionID == "" && len(options) > 0 {
+		optionID = slices.MinFunc(options, func(a, b ShippingOption) int { return cmp.Compare(a.AmountMinor, b.AmountMinor) }).ID
+	}
+	return s.SelectShipping(optionID)
+}
+
+// AddressDiffers reports whether address is not the one shipping was
+// quoted for. Keys order and whitespace in values do not matter.
+func (s Session) AddressDiffers(address map[string]any) bool {
+	return !reflect.DeepEqual(normaliseAddress(address), normaliseAddress(s.DeliveryAddress))
+}
+
+func normaliseAddress(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = normaliseAddress(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = normaliseAddress(e)
+		}
+		return out
+	case []string:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = strings.TrimSpace(e)
+		}
+		return out
+	case string:
+		return strings.TrimSpace(x)
+	default:
+		b, _ := json.Marshal(x)
+		var out any
+		_ = json.Unmarshal(b, &out)
+		return out
+	}
 }
 
 // SelectedShipping returns the chosen option.
@@ -400,9 +464,22 @@ const (
 	maxAddressBytes    = 4096
 )
 
+// ValidateAddress checks a delivery address's format only (ADR-015): a
+// non-empty JSON object of reasonable size. Its fields are the shop's.
+func ValidateAddress(address map[string]any) []Violation {
+	if len(address) == 0 {
+		return []Violation{{"delivery_address", "required", "A delivery address is required for physical items"}}
+	}
+	if b, err := json.Marshal(address); err != nil || len(b) > maxAddressBytes {
+		return []Violation{{"delivery_address", "invalid", "Delivery address is too large"}}
+	}
+	return nil
+}
+
 // ValidateConfirm checks the confirm input against the session (ADR-010):
-// guests need an email and E.164 phone; physical items need a delivery
-// address and a shipping option.
+// guests need an email and E.164 phone; physical items need shipping
+// chosen for a delivery address first (the address given at confirm, if
+// any, must be that one: the caller checks with AddressDiffers).
 func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 	var out []Violation
 	add := func(field, code, msg string) { out = append(out, Violation{field, code, msg}) }
@@ -418,10 +495,9 @@ func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 		}
 	}
 	if s.RequiresShipping {
-		if len(in.DeliveryAddress) == 0 {
-			add("delivery_address", "required", "A delivery address is required for physical items")
-		} else if b, err := json.Marshal(in.DeliveryAddress); err != nil || len(b) > maxAddressBytes {
-			add("delivery_address", "invalid", "Delivery address is too large")
+		if len(s.DeliveryAddress) == 0 {
+			add("delivery_address", "required",
+				"Physical items need a delivery address: choose shipping for it first (POST /checkout/{id}/shipping)")
 		}
 		id := in.ShippingOptionID
 		if id == "" {
@@ -449,11 +525,8 @@ func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 // Confirm applies a valid confirm input and starts the saga.
 func (s *Session) Confirm(in ConfirmInput, key string, now time.Time) {
 	s.GuestContact = in.GuestContact
-	if s.RequiresShipping {
-		s.DeliveryAddress = in.DeliveryAddress
-		if in.ShippingOptionID != "" {
-			s.SelectShipping(in.ShippingOptionID)
-		}
+	if s.RequiresShipping && in.ShippingOptionID != "" {
+		s.SelectShipping(in.ShippingOptionID)
 	}
 	s.PaymentToken, s.ReturnURL = in.PaymentToken, in.ReturnURL
 	s.ConfirmKey = key

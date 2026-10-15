@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
@@ -80,26 +81,33 @@ func (c client) code(method, path string, body any, header ...string) int {
 }
 
 // fakePayment stands in for yc-gateway's internal listener in front of
-// yc-payment's refunds.
+// yc-payment's refunds and yc-shipping's shipments.
 type fakePayment struct {
-	mu      sync.Mutex
-	keys    map[string]int64 // Idempotency-Key → amount refunded
-	calls   int
-	refuses bool
+	mu        sync.Mutex
+	keys      map[string]int64 // Idempotency-Key → amount refunded
+	calls     int
+	refuses   bool
+	shipments map[string]map[string]any // order ID → shipment
+	booked    []map[string]any          // shipment requests
 }
 
 func (f *fakePayment) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path != "/internal/service-token" &&
+		(r.Header.Get("Authorization") != "Bearer svc-yc-orders" || r.Header.Get(authctx.HeaderTenantID) == "") {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	switch r.URL.Path {
 	case "/internal/service-token":
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "svc-yc-orders", "expires_at": time.Now().Add(time.Hour)})
 	case "/internal/refund":
-		if r.Header.Get("Authorization") != "Bearer svc-yc-orders" || r.Header.Get(authctx.HeaderTenantID) == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+		var in struct {
+			AmountMinor int64 `json:"amount_minor"`
 		}
-		f.mu.Lock()
-		defer f.mu.Unlock()
+		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.calls++
 		if f.refuses {
 			w.Header().Set("Content-Type", "application/problem+json")
@@ -110,10 +118,24 @@ func (f *fakePayment) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get(httpkit.HeaderIdempotencyKey)
 		if _, ok := f.keys[key]; !ok {
 			f.keys[key] = 11500
+			if in.AmountMinor > 0 {
+				f.keys[key] = in.AmountMinor
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "completed", "refund": map[string]any{"amount_minor": f.keys[key]},
 		})
+	case "/internal/shipments":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.booked = append(f.booked, in)
+		orderID, _ := in["order_id"].(string)
+		sh, ok := f.shipments[orderID]
+		if !ok {
+			sh = map[string]any{"shipment_id": uuid.NewString(), "tracking_number": "YC" + uuid.NewString()[:12], "status": "label_created"}
+			f.shipments[orderID] = sh
+		}
+		_ = json.NewEncoder(w).Encode(sh)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -128,12 +150,13 @@ func TestOrders(t *testing.T) {
 		}
 	})
 
-	pay := &fakePayment{keys: map[string]int64{}}
+	pay := &fakePayment{keys: map[string]int64{}, shipments: map[string]map[string]any{}}
 	gw := httptest.NewServer(pay)
 	t.Cleanup(gw.Close)
 	dbURL := testkit.Postgres(t)
 	t.Setenv("YC_ORDERS_DB_URL", dbURL)
-	t.Setenv("NATS_URL", testkit.NATS(t))
+	natsURL := testkit.NATS(t)
+	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
 	t.Setenv("YC_ORDERS_SERVICE_SECRET", "orders-secret")
@@ -171,7 +194,7 @@ func TestOrders(t *testing.T) {
 	customerID := uuid.NewString()
 	customer := as(t, srv, "shop-a", customerID, "customer")
 	mug, ebook := uuid.New(), uuid.New()
-	tx := uuid.New()
+	tx, rateID := uuid.New(), uuid.New()
 	newOrder := func(userID, userType string) api.CreateOrderInput {
 		digital := true
 		code := "MUG-1"
@@ -184,7 +207,7 @@ func TestOrders(t *testing.T) {
 			},
 			Currency: "ZAR", ItemsTotalMinor: 10500, ShippingMinor: 1000, TaxTotalMinor: 1370, TotalMinor: 11500,
 			PricingSnapshot: map[string]any{"quote_id": "q1"},
-			ShippingOption:  &map[string]any{"code": "standard", "amount_minor": 1000},
+			ShippingOption:  &map[string]any{"id": "standard", "rate_id": rateID.String(), "amount_minor": 1000},
 			Payment:         &api.Payment{Gateway: "stripe", TransactionID: &tx},
 		}
 	}
@@ -367,5 +390,211 @@ func TestOrders(t *testing.T) {
 		require.Len(t, page2.Items, 1)
 		assert.NotEqual(t, page.Items[0].OrderID, page2.Items[0].OrderID)
 		assert.Empty(t, page2.Page.NextCursor)
+	})
+
+	validator, err := events.NewValidator()
+	require.NoError(t, err)
+	shipping, err := eventbus.NewClient(ctx, eventbus.Config{
+		NATSURL: natsURL, ServiceName: "yc-shipping", Validator: validator,
+		Streams: []eventbus.StreamConfig{eventbus.ShippingStream()},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = shipping.Close(context.Background()) })
+	publish := func(eventType string, payload any) {
+		t.Helper()
+		require.NoError(t, shipping.PublishDirect(ctx, eventbus.Event{
+			EventType: eventType, TenantID: "shop-a", Actor: eventbus.Actor{Type: "shop_admin", ID: "admin"}, Payload: payload,
+		}))
+	}
+	get := func(id uuid.UUID) api.Order {
+		t.Helper()
+		var o api.Order
+		code, _ := admin.do("GET", "/admin/orders/"+id.String(), nil, &o)
+		require.Equal(t, http.StatusOK, code)
+		return o
+	}
+	waitFor := func(id uuid.UUID, status string) api.Order {
+		t.Helper()
+		require.Eventually(t, func() bool { return string(get(id).Status) == status }, 10*time.Second, 50*time.Millisecond)
+		return get(id)
+	}
+	placeAndPackage := func() api.Order {
+		t.Helper()
+		o := create(newOrder(customerID, "customer"))
+		code, _ := confirm(o.OrderID)
+		require.Equal(t, http.StatusOK, code)
+		var packaged api.Order
+		code, _ = admin.do("POST", "/admin/orders/"+o.OrderID.String()+"/package", nil, &packaged)
+		require.Equal(t, http.StatusOK, code)
+		return packaged
+	}
+
+	var parcel api.Order
+	t.Run("packaging books the shipment and shipping events move the order on", func(t *testing.T) {
+		parcel = placeAndPackage()
+		assert.Equal(t, api.OrderStatus("packaged"), parcel.Status)
+		require.NotNil(t, parcel.Shipment)
+		pay.mu.Lock()
+		sh := pay.shipments[parcel.OrderID.String()]
+		booked := len(pay.booked)
+		req := pay.booked[booked-1]
+		pay.mu.Unlock()
+		assert.Equal(t, sh["tracking_number"], parcel.Shipment.TrackingNumber)
+		assert.Equal(t, "standard", req["method"])
+		assert.Equal(t, rateID.String(), req["rate_id"])
+		assert.Equal(t, "Cape Town", req["delivery_address"].(map[string]any)["city"])
+
+		var again api.Order
+		code, _ := admin.do("POST", "/admin/orders/"+parcel.OrderID.String()+"/package", nil, &again)
+		require.Equal(t, http.StatusOK, code, "packaging again")
+		pay.mu.Lock()
+		assert.Len(t, pay.booked, booked, "booked once")
+		pay.mu.Unlock()
+		packaged := outbox(events.TypeOrderPackagedV1)
+		require.Len(t, packaged, 1)
+		assert.Equal(t, parcel.Shipment.TrackingNumber, packaged[0]["tracking_number"])
+
+		digital := newOrder(customerID, "customer")
+		digital.Items = digital.Items[1:]
+		digital.RequiresShipping, digital.DeliveryAddress, digital.ShippingOption = false, nil, nil
+		digital.ItemsTotalMinor, digital.ShippingMinor, digital.TaxTotalMinor, digital.TotalMinor = 500, 0, 65, 500
+		d := create(digital)
+		code, _ = confirm(d.OrderID)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, http.StatusConflict, admin.code("POST", "/admin/orders/"+d.OrderID.String()+"/package", nil),
+			"a digital order skips shipping")
+
+		shipmentID, tracking := parcel.Shipment.ShipmentID.String(), parcel.Shipment.TrackingNumber
+		carrier, ref := "The Courier Guy", "TCG-1"
+		publish(events.TypeShippingInTransitV1, events.ShippingInTransitV1{
+			ShipmentID: shipmentID, OrderID: parcel.OrderID.String(), TrackingNumber: tracking,
+			CarrierName: &carrier, CarrierReference: &ref, OccurredAt: time.Now().UTC(),
+		})
+		o := waitFor(parcel.OrderID, "shipped")
+		assert.Equal(t, carrier, *o.Shipment.CarrierName)
+		assert.NotNil(t, o.Shipment.ShippedAt)
+		assert.Len(t, outbox(events.TypeOrderShippedV1), 1)
+		assert.Equal(t, http.StatusConflict, admin.code("POST", "/admin/orders/"+parcel.OrderID.String()+"/cancel", nil),
+			"a shipped order is not cancelled")
+
+		publish(events.TypeShippingDeliveredV1, events.ShippingDeliveredV1{
+			ShipmentID: shipmentID, OrderID: parcel.OrderID.String(), TrackingNumber: tracking, OccurredAt: time.Now().UTC(),
+		})
+		o = waitFor(parcel.OrderID, "delivered")
+		assert.NotNil(t, o.Shipment.DeliveredAt)
+		delivered := outbox(events.TypeOrderDeliveredV1)
+		require.Len(t, delivered, 1)
+		assert.Len(t, delivered[0]["items"], 2)
+
+		var mine api.Order
+		code, _ = customer.do("GET", "/orders/"+parcel.OrderID.String(), nil, &mine)
+		require.Equal(t, http.StatusOK, code)
+		path := make([]string, 0, len(*mine.History))
+		for _, h := range *mine.History {
+			path = append(path, string(h.ToStatus))
+		}
+		assert.Equal(t, []string{"pending_payment", "received", "packaged", "shipped", "delivered"}, path)
+	})
+
+	t.Run("customers return delivered items and admins decide", func(t *testing.T) {
+		path := "/orders/" + parcel.OrderID.String() + "/returns"
+		one := api.ReturnInput{Items: []api.ReturnItem{{SkuID: mug, Quantity: 1}}}
+		assert.Equal(t, http.StatusBadRequest, customer.code("POST", path, api.ReturnInput{Items: []api.ReturnItem{{SkuID: ebook, Quantity: 1}}}),
+			"digital items are not returned")
+		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-a", uuid.NewString(), "customer").code("POST", path, one),
+			"only the customer's own order")
+		var r api.Return
+		code, _ := customer.do("POST", path, one, &r)
+		require.Equal(t, http.StatusCreated, code)
+		assert.Equal(t, api.ReturnStatus("requested"), r.Status)
+		assert.Equal(t, http.StatusConflict, customer.code("POST", path, one), "one request at a time")
+		assert.Len(t, outbox(events.TypeOrderReturnRequestedV1), 1)
+
+		var list api.ReturnList
+		code, _ = admin.do("GET", "/admin/returns?status=requested", nil, &list)
+		require.Equal(t, http.StatusOK, code)
+		require.Len(t, list.Items, 1)
+
+		reject := "/admin/returns/" + r.ReturnID.String() + "/reject"
+		assert.Equal(t, http.StatusBadRequest, admin.code("POST", reject, api.RejectReturnInput{}))
+		code, _ = admin.do("POST", reject, api.RejectReturnInput{Reason: "Used"}, &r)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, api.ReturnStatus("rejected"), r.Status)
+		assert.Len(t, outbox(events.TypeOrderReturnRejectedV1), 1)
+		assert.Equal(t, http.StatusConflict, admin.code("POST", "/admin/returns/"+r.ReturnID.String()+"/accept", nil),
+			"a rejected return stays rejected")
+
+		code, _ = customer.do("POST", path, api.ReturnInput{Items: []api.ReturnItem{{SkuID: mug, Quantity: 2}}}, &r)
+		require.Equal(t, http.StatusCreated, code)
+		refundShipping := true
+		code, _ = admin.do("POST", "/admin/returns/"+r.ReturnID.String()+"/accept",
+			api.AcceptReturnInput{RefundShipping: &refundShipping}, &r)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, api.ReturnStatus("accepted"), r.Status)
+		assert.EqualValues(t, 11000, r.Refund, "both mugs and shipping")
+		code, _ = admin.do("POST", "/admin/returns/"+r.ReturnID.String()+"/accept", nil, &r)
+		require.Equal(t, http.StatusOK, code, "accepting again")
+		pay.mu.Lock()
+		assert.EqualValues(t, 11000, pay.keys["order:"+parcel.OrderID.String()+":return:"+r.ReturnID.String()])
+		pay.mu.Unlock()
+
+		o := get(parcel.OrderID)
+		assert.Equal(t, api.OrderStatus("returned"), o.Status)
+		assert.EqualValues(t, 11000, o.Refunded.AmountMinor)
+		assert.Len(t, *o.Returns, 2)
+		require.Len(t, *o.Refunds, 1)
+		accepted := outbox(events.TypeOrderReturnAcceptedV1)
+		require.Len(t, accepted, 1)
+		refunded := outbox(events.TypeOrderRefundedV1)
+		assert.Equal(t, r.ReturnID.String(), refunded[len(refunded)-1]["return_id"])
+	})
+
+	t.Run("admins refund part of an order once per key", func(t *testing.T) {
+		path := "/admin/orders/" + parcel.OrderID.String() + "/refund"
+		assert.Equal(t, http.StatusBadRequest, admin.code("POST", path, api.RefundInput{AmountMinor: 100, Reason: "x"}),
+			"an Idempotency-Key is required")
+		assert.Equal(t, http.StatusBadRequest, admin.code("POST", path, api.RefundInput{AmountMinor: 501, Reason: "x"},
+			"Idempotency-Key", uuid.NewString()), "only 500 is left")
+		var o api.Order
+		key := uuid.NewString()
+		code, _ := admin.do("POST", path, api.RefundInput{AmountMinor: 300, Reason: "late delivery"}, &o, "Idempotency-Key", key)
+		require.Equal(t, http.StatusOK, code)
+		assert.EqualValues(t, 11300, o.Refunded.AmountMinor)
+		code, _ = admin.do("POST", path, api.RefundInput{AmountMinor: 300, Reason: "late delivery"}, &o, "Idempotency-Key", key)
+		require.Equal(t, http.StatusOK, code)
+		assert.EqualValues(t, 11300, get(parcel.OrderID).Refunded.AmountMinor, "refunded once")
+		assert.Equal(t, http.StatusBadRequest, admin.code("POST", path, api.RefundInput{AmountMinor: 300, Reason: "again"},
+			"Idempotency-Key", uuid.NewString()), "only 200 is left")
+	})
+
+	t.Run("a packaged order can be cancelled; exceptions recover", func(t *testing.T) {
+		o := placeAndPackage()
+		var cancelled api.Order
+		code, _ := admin.do("POST", "/admin/orders/"+o.OrderID.String()+"/cancel", nil, &cancelled)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, api.OrderStatus("cancelled"), cancelled.Status)
+
+		o = placeAndPackage()
+		shipmentID, orderID, tracking := o.Shipment.ShipmentID.String(), o.OrderID.String(), o.Shipment.TrackingNumber
+		publish(events.TypeShippingDeliveryExceptionV1, events.ShippingDeliveryExceptionV1{
+			ShipmentID: shipmentID, OrderID: orderID, TrackingNumber: tracking, Message: "Nobody home", OccurredAt: time.Now().UTC(),
+		})
+		waitFor(o.OrderID, "delivery_exception")
+		publish(events.TypeShippingDeliveredV1, events.ShippingDeliveredV1{
+			ShipmentID: shipmentID, OrderID: orderID, TrackingNumber: tracking, OccurredAt: time.Now().UTC(),
+		})
+		waitFor(o.OrderID, "delivered")
+
+		publish(events.TypeShippingInTransitV1, events.ShippingInTransitV1{
+			ShipmentID: uuid.NewString(), OrderID: orderID, TrackingNumber: "YC000000000000", OccurredAt: time.Now().UTC(),
+		})
+		var mine api.OrderList
+		code, _ = customer.do("GET", "/orders/mine?page_size=100", nil, &mine)
+		require.Equal(t, http.StatusOK, code)
+		statuses := map[string]bool{}
+		for _, it := range mine.Items {
+			statuses[string(it.Status)] = true
+		}
+		assert.True(t, statuses["delivered"] && statuses["returned"] && statuses["cancelled"], statuses)
 	})
 }

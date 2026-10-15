@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.refunded.v1.json",
+  "title": "order.refunded.v1",
+  "description": "Money was refunded on an order through yc-payment: an accepted return or an admin refund. Cancellations announce their refund in order.cancelled.v1.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "amount",
+    "total_refunded",
+    "reason",
+    "refunded_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json",
+      "description": "This refund."
+    },
+    "total_refunded": {
+      "$ref": "../common/money.v1.json",
+      "description": "Everything refunded on the order so far, this refund included."
+    },
+    "return_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The accepted return, when the refund is for one."
+    },
+    "reason": {
+      "type": "string"
+    },
+    "refunded_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
