@@ -55,16 +55,8 @@ type CallsConfig struct {
 
 // CheckoutConfig is the `checkout:` block.
 type CheckoutConfig struct {
-	SessionTTL     time.Duration  `koanf:"session_ttl"`
-	ReservationTTL time.Duration  `koanf:"reservation_ttl"`
-	Shipping       ShippingConfig `koanf:"shipping"`
-}
-
-// ShippingConfig is the flat-fee shipping option.
-type ShippingConfig struct {
-	ID       string `koanf:"id"`
-	Name     string `koanf:"name"`
-	FeeMinor int64  `koanf:"fee_minor"`
+	SessionTTL     time.Duration `koanf:"session_ttl"`
+	ReservationTTL time.Duration `koanf:"reservation_ttl"`
 }
 
 // SagaConfig is the `saga:` block.
@@ -120,9 +112,6 @@ func (c *Config) Validate() error {
 	if c.Checkout.ReservationTTL < time.Minute || c.Checkout.ReservationTTL > c.Checkout.SessionTTL {
 		errs = append(errs, errors.New("checkout.reservation_ttl must be at least 1m and at most the session TTL"))
 	}
-	if c.Checkout.Shipping.ID == "" || c.Checkout.Shipping.Name == "" || c.Checkout.Shipping.FeeMinor < 0 {
-		errs = append(errs, errors.New("checkout.shipping needs an id, a name and a non-negative fee_minor"))
-	}
 	s := c.Saga
 	if s.ConfirmDeadline <= 0 || s.SweeperInterval <= 0 || s.RetryBase <= 0 || s.RetryMax < s.RetryBase || s.PendingPoll <= 0 {
 		errs = append(errs, errors.New("saga durations must be positive, with retry_max at least retry_base"))
@@ -157,9 +146,6 @@ func (c *Config) validateDebug() error {
 func (c *Config) settings(host string) service.Settings {
 	return service.Settings{
 		SessionTTL: c.Checkout.SessionTTL, ReservationTTL: c.Checkout.ReservationTTL,
-		Shipping: domain.ShippingOption{
-			ID: c.Checkout.Shipping.ID, Name: c.Checkout.Shipping.Name, AmountMinor: c.Checkout.Shipping.FeeMinor,
-		},
 		ConfirmDeadline: c.Saga.ConfirmDeadline, LeaseTTL: c.Saga.LeaseTTL,
 		RetryBase: c.Saga.RetryBase, RetryMax: c.Saga.RetryMax, PendingPoll: c.Saga.PendingPoll,
 		AlertAfter: c.Saga.AlertAfter, PauseBefore: domain.State(c.Debug.PauseBefore), PauseFor: c.Debug.PauseFor,

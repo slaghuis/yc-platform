@@ -34,6 +34,12 @@ type Publisher interface {
 // Payments refunds captured payments.
 type Payments interface {
 	RefundAll(ctx context.Context, transactionID, orderID, reason, key string) (integration.Refund, error)
+	Refund(ctx context.Context, transactionID, orderID string, amountMinor int64, reason, key string) (integration.Refund, error)
+}
+
+// Shipments books shipments with yc-shipping.
+type Shipments interface {
+	CreateShipment(ctx context.Context, req integration.ShipmentRequest, key string) (integration.Shipment, error)
 }
 
 // Service implements the order use cases.
@@ -41,13 +47,22 @@ type Service struct {
 	db       *pgxpool.Pool
 	bus      Publisher
 	payments Payments
+	shipping Shipments
 	repo     repository.Orders
 	now      func() time.Time
 }
 
 // New returns a Service.
-func New(db *pgxpool.Pool, bus Publisher, payments Payments) *Service {
-	return &Service{db: db, bus: bus, payments: payments, now: time.Now}
+func New(db *pgxpool.Pool, bus Publisher, payments Payments, shipping Shipments) *Service {
+	return &Service{db: db, bus: bus, payments: payments, shipping: shipping, now: time.Now}
+}
+
+// Detail is an order with its status history, returns and refunds.
+type Detail struct {
+	Order   domain.Order
+	History []domain.HistoryEntry
+	Returns []domain.Return
+	Refunds []domain.Refund
 }
 
 // Create records checkout's pending_payment order. A session has one
@@ -205,7 +220,9 @@ func (s *Service) Cancel(ctx context.Context, id, reason string) (domain.Order, 
 		if err := o.Transition(domain.StatusCancelled, now); err != nil {
 			return err
 		}
-		o.RefundedMinor += refund.AmountMinor
+		if err := s.recordRefund(ctx, tx, tenantID, &o, refund, "", reasonOr(reason), "order:"+o.ID+":cancel"); err != nil {
+			return err
+		}
 		if err := s.repo.UpdateOrder(ctx, tx, tenantID, o); err != nil {
 			return err
 		}
@@ -226,43 +243,53 @@ func (s *Service) Cancel(ctx context.Context, id, reason string) (domain.Order, 
 }
 
 // Order returns an order for a service caller, whatever its status.
-func (s *Service) Order(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error) {
+func (s *Service) Order(ctx context.Context, id string) (Detail, error) {
 	return s.detail(ctx, id, func(domain.Order) bool { return true })
 }
 
 // AdminOrder returns one of the shop admin's orders.
-func (s *Service) AdminOrder(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error) {
+func (s *Service) AdminOrder(ctx context.Context, id string) (Detail, error) {
 	if err := requireActor(ctx, authctx.ActorShopAdmin); err != nil {
-		return domain.Order{}, nil, err
+		return Detail{}, err
 	}
 	return s.detail(ctx, id, func(domain.Order) bool { return true })
 }
 
 // CustomerOrder returns one of the caller's placed orders. A visitor sees
 // a guest order with the same visitor token (ADR-010).
-func (s *Service) CustomerOrder(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error) {
+func (s *Service) CustomerOrder(ctx context.Context, id string) (Detail, error) {
 	if err := requireActor(ctx, authctx.ActorCustomer, authctx.ActorVisitor); err != nil {
-		return domain.Order{}, nil, err
+		return Detail{}, err
 	}
-	a, _ := authctx.FromContext(ctx)
-	return s.detail(ctx, id, func(o domain.Order) bool { return o.UserID == a.ActorID && o.Status.Placed() })
+	return s.detail(ctx, id, ownedBy(ctx))
 }
 
-func (s *Service) detail(ctx context.Context, id string, visible func(domain.Order) bool) (domain.Order, []domain.HistoryEntry, error) {
-	var o domain.Order
-	var history []domain.HistoryEntry
+// ownedBy is whether the caller placed the order.
+func ownedBy(ctx context.Context) func(domain.Order) bool {
+	a, _ := authctx.FromContext(ctx)
+	return func(o domain.Order) bool { return o.UserID == a.ActorID && o.Status.Placed() }
+}
+
+func (s *Service) detail(ctx context.Context, id string, visible func(domain.Order) bool) (Detail, error) {
+	var d Detail
 	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		var err error
-		if o, err = s.get(ctx, tx, tenantID, id); err != nil {
+		if d.Order, err = s.get(ctx, tx, tenantID, id); err != nil {
 			return err
 		}
-		if !visible(o) {
+		if !visible(d.Order) {
 			return ycerrors.NotFound("order", id)
 		}
-		history, err = s.repo.History(ctx, tx, tenantID, id)
+		if d.History, err = s.repo.History(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		if d.Returns, err = s.repo.Returns(ctx, tx, tenantID, id); err != nil {
+			return err
+		}
+		d.Refunds, err = s.repo.Refunds(ctx, tx, tenantID, id)
 		return err
 	})
-	return o, history, err
+	return d, err
 }
 
 // Mine returns a page of the calling customer's placed orders.
@@ -344,6 +371,14 @@ func (s *Service) inShop(ctx context.Context, fn func(tx pgx.Tx, tenantID string
 		return err
 	}
 	return dbkit.WithTenantTx(ctx, s.db, a.TenantID, func(tx pgx.Tx) error { return fn(tx, a.TenantID) })
+}
+
+// inTenant runs fn in an event's shop.
+func (s *Service) inTenant(ctx context.Context, tenantID string, fn func(tx pgx.Tx, tenantID string) error) error {
+	if err := validateShopTenant(tenantID); err != nil {
+		return err
+	}
+	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error { return fn(tx, tenantID) })
 }
 
 func actorID(ctx context.Context) string {

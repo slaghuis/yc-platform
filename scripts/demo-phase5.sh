@@ -125,10 +125,10 @@ recreate() {
 
 healthy() {
     step "0. Services are up"
-    for port in 8090 8081 8083 8084 8087 8088 8089 8092 8093; do
+    for port in 8090 8081 8083 8084 8087 8088 8089 8092 8093 8094; do
         readyz "$port" || fail "localhost:$port/readyz (task devstack:app)"
     done
-    ok "gateway, identity, product, pricing, cart, inventory, payment, orders and checkout are ready"
+    ok "gateway, identity, product, pricing, cart, inventory, payment, orders, checkout and shipping are ready"
 }
 
 payments() {
@@ -211,7 +211,7 @@ shop() {
         expect 201 "create $1"
         local id; id=$(jq -r .product_id <<<"$BODY")
         call "$host" "$ADMIN" POST "/admin/products/$id/skus" \
-            "{\"sku_code\":\"$(tr '[:lower:]' '[:upper:]' <<<"$1")-$RUN\",\"tax_class\":\"za-standard\",\"inventory_tracked\":$4}"
+            "{\"sku_code\":\"$(tr '[:lower:]' '[:upper:]' <<<"$1")-$RUN\",\"tax_class\":\"za-standard\",\"inventory_tracked\":$4$([ "$3" = true ] || echo ',"weight_grams":1500')}"
         expect 201 "SKU $1"
         SKU=$(jq -r .sku_id <<<"$BODY")
         call "$host" "$ADMIN" PUT "/admin/prices/sku/$SKU" "{\"price\":{\"amount_minor\":$2,\"currency\":\"$cur\"}}"
@@ -223,6 +223,15 @@ shop() {
     poll 15 has_stock || fail "yc-inventory has no stock row for the Kettle"
     call "$host" "$ADMIN" POST "/admin/stock/$KETTLE/receive" '{"quantity":5,"reason":"Phase 5 demo"}'
     expect 200 "receive Kettles"
+    call "$host" "$ADMIN" GET /admin/zones
+    expect 200 "shipping zones"
+    if ! jq -e '.items[] | select(.name == "South Africa")' <<<"$BODY" >/dev/null; then
+        call "$host" "$ADMIN" POST /admin/zones '{"name":"South Africa","match_rules":[{"country_code":"ZA"}]}'
+        expect 201 "shipping zone"
+        call "$host" "$ADMIN" POST /admin/rates "{\"zone_id\":\"$(jq -r .zone_id <<<"$BODY")\",\"method\":\"standard\",
+            \"display_name\":\"Standard\",\"pricing_type\":\"flat\",\"flat_amount_minor\":10000}"
+        expect 201 "shipping rate"
+    fi
 
     call "$host" "$ADMIN" PUT /admin/gateway-config/stripe "{\"enabled\":true,\"api_key\":\"$STRIPE_API_KEY\",\"priority\":20}"
     expect 200 "Stripe credentials"
@@ -249,7 +258,7 @@ shops() {
     step "Two shops, each with Yoco (priority 10) and Stripe (priority 20)"
     provision demo-shop "$SHOP_HOST" ZAR
     provision demo-usd "$USD_HOST" USD
-    for path in /checkout /admin/gateway-config /webhooks/yoco; do
+    for path in /checkout /admin/gateway-config /webhooks/yoco /admin/zones; do
         poll 45 routed "$path" || fail "no gateway route for $path"
     done
     shop "$USD_HOST" USD false
@@ -277,13 +286,17 @@ fill_cart() {
     poll 15 added || { echo "$BODY"; fail "add to cart"; }
 }
 
-start() { # start <host> <auth>; sets SESSION
+ADDRESS='{"country_code":"ZA","lines":["1 Long Street","Cape Town 8001"],"fields":{"street":"1 Long Street","city":"Cape Town","province":"Western Cape","postal_code":"8001"}}'
+
+start() { # start <host> <auth>; sets SESSION, and ships physical items to ADDRESS
     call "$1" "$2" POST /checkout '{}'
     expect 201 "start checkout"
     SESSION=$(jq -r .session_id <<<"$BODY")
+    if [ "$(jq -r .requires_shipping <<<"$BODY")" = true ]; then
+        call "$1" "$2" POST "/checkout/$SESSION/shipping" "{\"delivery_address\":$ADDRESS}"
+        expect 200 "choose shipping"
+    fi
 }
-
-ADDRESS='{"line1":"1 Long Street","city":"Cape Town","postal_code":"8001","country":"ZA"}'
 
 # confirm_hosted <key> [curl args...]: confirm in the ZAR shop with no token.
 confirm_hosted() {

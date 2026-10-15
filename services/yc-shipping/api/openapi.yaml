@@ -1,0 +1,590 @@
+openapi: 3.1.0
+info:
+  title: yc-shipping
+  version: 0.1.0
+  description: |
+    Shipping zones, rates, quotes and shipments (docs/services/yc-shipping.md).
+    Phase 6 subset: zones and rates (flat, weight-tiered, price-tiered),
+    quotes for yc-checkout, shipments for yc-orders with the manual carrier
+    driver, shop-admin status updates and public tracking.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /internal routes are for service callers
+    (ADR-021). Addresses are free-form JSON (ADR-015): zones match the
+    address's country_code and, optionally, values under its fields object.
+    Amounts are minor units of the store currency (ADR-014). Errors are
+    application/problem+json (error-handling.md).
+
+paths:
+  /shipping/zones:
+    get:
+      summary: List the shop's shipping zones
+      description: For the storefront, e.g. to say where the shop delivers.
+      operationId: listPublicZones
+      responses:
+        '200':
+          description: The zones in matching order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicZoneList' }
+
+  /shipping/tracking/{tracking_number}:
+    parameters:
+      - name: tracking_number
+        in: path
+        required: true
+        schema: { type: string, maxLength: 64 }
+    get:
+      summary: Track a shipment
+      description: Status and history for anyone with the tracking number; no address or order.
+      operationId: trackShipment
+      responses:
+        '200':
+          description: The shipment's progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tracking' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/zones:
+    get:
+      summary: List zones
+      operationId: listZones
+      responses:
+        '200':
+          description: The zones in matching order (priority, then name).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZoneList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a zone
+      operationId: createZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ZoneInput' }
+      responses:
+        '201':
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Zone' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/zones/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Replace a zone
+      operationId: updateZone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ZoneInput' }
+      responses:
+        '200':
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Zone' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a zone and its rates
+      operationId: deleteZone
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/rates:
+    get:
+      summary: List rates
+      operationId: listRates
+      parameters:
+        - name: zone_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The rates, by zone and method.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a rate
+      description: A zone has one rate per method; another is 409.
+      operationId: createRate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RateInput' }
+      responses:
+        '201':
+          description: The rate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rate' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/rates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      summary: Replace a rate
+      operationId: updateRate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RateInput' }
+      responses:
+        '200':
+          description: The rate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rate' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a rate
+      operationId: deleteRate
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/shipments:
+    get:
+      summary: List shipments
+      operationId: listShipments
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ShipmentStatus' }
+      responses:
+        '200':
+          description: A page of shipments, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShipmentList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/shipments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get a shipment
+      operationId: getShipment
+      responses:
+        '200':
+          description: The shipment and its history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShipmentDetail' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/shipments/{id}/manual-update:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Report a manual shipment's progress
+      description: |
+        For the manual driver: in_transit (repeatable, e.g. with the
+        courier's name and reference), delivered, or exception (with a
+        message). Publishes shipping.in_transit.v1, shipping.delivered.v1 or
+        shipping.delivery_exception.v1; yc-orders follows. A status the
+        shipment cannot move to is 409.
+      operationId: updateShipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualUpdateInput' }
+      responses:
+        '200':
+          description: The shipment and its history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShipmentDetail' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/quote:
+    post:
+      summary: Quote shipping to an address
+      description: |
+        For yc-checkout. Resolves the first zone (by priority) covering the
+        address and prices its active rates, cheapest first. Weight-tiered
+        rates need a weight for every physical item; rates that do not apply
+        are left out. No zone means no options: the shop does not ship there.
+      operationId: quoteShipping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteInput' }
+      responses:
+        '200':
+          description: The options.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /internal/shipments:
+    post:
+      summary: Create an order's shipment
+      description: |
+        For yc-orders when the shop admin packages an order. The rate's
+        carrier driver books it (the manual driver issues a tracking number)
+        and shipping.label_created.v1 is published. An order has one
+        shipment: asking again returns it.
+      operationId: createShipment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShipmentInput' }
+      responses:
+        '200':
+          description: The shipment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shipment' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Address:
+      type: object
+      additionalProperties: true
+      description: Free-form (ADR-015); country_code and fields are used for zone matching.
+    MatchRule:
+      type: object
+      required: [country_code]
+      additionalProperties: false
+      properties:
+        country_code: { type: string, description: ISO 3166-1 alpha-2. }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+          description: Exact values (case-insensitive) the address's fields must have, e.g. {"province":"Gauteng"}.
+    ZoneInput:
+      type: object
+      required: [name, match_rules]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        match_rules:
+          type: array
+          items: { $ref: '#/components/schemas/MatchRule' }
+        priority:
+          type: integer
+          description: Zones are matched lowest first (0 to 1000, default 100).
+    Zone:
+      type: object
+      required: [zone_id, name, match_rules, priority, created_at, updated_at]
+      properties:
+        zone_id: { type: string, format: uuid }
+        name: { type: string }
+        match_rules:
+          type: array
+          items: { $ref: '#/components/schemas/MatchRule' }
+        priority: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ZoneList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Zone' }
+    PublicZone:
+      type: object
+      required: [zone_id, name, match_rules]
+      properties:
+        zone_id: { type: string, format: uuid }
+        name: { type: string }
+        match_rules:
+          type: array
+          items: { $ref: '#/components/schemas/MatchRule' }
+    PublicZoneList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicZone' }
+    PricingType:
+      type: string
+      enum: [flat, weight_tiered, price_tiered]
+    WeightTier:
+      type: object
+      required: [max_weight_g, amount_minor]
+      additionalProperties: false
+      properties:
+        max_weight_g: { type: integer, format: int64 }
+        amount_minor: { type: integer, format: int64 }
+    PriceTier:
+      type: object
+      required: [min_subtotal_minor, amount_minor]
+      additionalProperties: false
+      properties:
+        min_subtotal_minor: { type: integer, format: int64, description: Items total (gross) this tier starts at. }
+        amount_minor: { type: integer, format: int64 }
+    RateInput:
+      type: object
+      required: [zone_id, method, display_name, pricing_type]
+      additionalProperties: false
+      properties:
+        zone_id: { type: string, format: uuid }
+        method: { type: string, description: 'The option ID checkout shows, e.g. standard; one per zone.' }
+        display_name: { type: string }
+        pricing_type: { $ref: '#/components/schemas/PricingType' }
+        flat_amount_minor: { type: integer, format: int64 }
+        weight_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/WeightTier' }
+        price_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/PriceTier' }
+        estimated_days_min: { type: integer }
+        estimated_days_max: { type: integer }
+        carrier_driver: { type: string, default: manual }
+        active: { type: boolean, default: true }
+    Rate:
+      type: object
+      required: [rate_id, zone_id, method, display_name, pricing_type, flat_amount_minor, weight_tiers, price_tiers,
+        carrier_driver, active, created_at, updated_at]
+      properties:
+        rate_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        method: { type: string }
+        display_name: { type: string }
+        pricing_type: { $ref: '#/components/schemas/PricingType' }
+        flat_amount_minor: { type: integer, format: int64 }
+        weight_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/WeightTier' }
+        price_tiers:
+          type: array
+          items: { $ref: '#/components/schemas/PriceTier' }
+        estimated_days_min: { type: integer }
+        estimated_days_max: { type: integer }
+        carrier_driver: { type: string }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RateList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Rate' }
+    QuoteItem:
+      type: object
+      required: [sku_id, quantity]
+      additionalProperties: false
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64 }
+        weight_grams: { type: integer, format: int64, description: Per unit; absent when unknown. }
+        is_digital: { type: boolean }
+    QuoteInput:
+      type: object
+      required: [delivery_address, items, subtotal_minor]
+      additionalProperties: false
+      properties:
+        delivery_address: { $ref: '#/components/schemas/Address' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuoteItem' }
+        subtotal_minor: { type: integer, format: int64, description: Items total (gross), for price-tiered rates. }
+    QuoteZone:
+      type: object
+      required: [zone_id, name]
+      properties:
+        zone_id: { type: string, format: uuid }
+        name: { type: string }
+    ShippingOption:
+      type: object
+      required: [option_id, rate_id, name, amount_minor, carrier_driver]
+      properties:
+        option_id: { type: string, description: The rate's method. }
+        rate_id: { type: string, format: uuid }
+        name: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        estimated_days_min: { type: integer }
+        estimated_days_max: { type: integer }
+        carrier_driver: { type: string }
+    QuoteResult:
+      type: object
+      required: [options]
+      properties:
+        zone: { $ref: '#/components/schemas/QuoteZone' }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/ShippingOption' }
+    ShipmentInput:
+      type: object
+      required: [order_id, order_number, method, delivery_address]
+      additionalProperties: false
+      properties:
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        method: { type: string, description: The shipping option the customer chose. }
+        rate_id: { type: string, format: uuid }
+        delivery_address: { $ref: '#/components/schemas/Address' }
+    ShipmentStatus:
+      type: string
+      enum: [label_created, in_transit, delivered, exception, cancelled]
+    Shipment:
+      type: object
+      required: [shipment_id, order_id, order_number, method, carrier_driver, tracking_number, status,
+        delivery_address, created_at, updated_at]
+      properties:
+        shipment_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        method: { type: string }
+        rate_id: { type: string, format: uuid }
+        carrier_driver: { type: string }
+        tracking_number: { type: string }
+        label_url: { type: string }
+        status: { $ref: '#/components/schemas/ShipmentStatus' }
+        delivery_address: { $ref: '#/components/schemas/Address' }
+        carrier_name: { type: string }
+        carrier_reference: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TrackingEvent:
+      type: object
+      required: [status, occurred_at]
+      properties:
+        status: { $ref: '#/components/schemas/ShipmentStatus' }
+        message: { type: string }
+        occurred_at: { type: string, format: date-time }
+    ShipmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/Shipment'
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items: { $ref: '#/components/schemas/TrackingEvent' }
+    ShipmentList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Shipment' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ManualUpdateInput:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [in_transit, delivered, exception]
+        message: { type: string, description: Required for exception. }
+        carrier_name: { type: string }
+        carrier_reference: { type: string }
+        occurred_at: { type: string, format: date-time, description: Defaults to now. }
+    Tracking:
+      type: object
+      required: [tracking_number, status, method, events]
+      properties:
+        tracking_number: { type: string }
+        status: { $ref: '#/components/schemas/ShipmentStatus' }
+        method: { type: string }
+        carrier_name: { type: string }
+        carrier_reference: { type: string }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/TrackingEvent' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/shipping/shipping.in_transit.v1.json",
+  "title": "shipping.in_transit.v1",
+  "description": "A shipment left the shop and is on its way. For the manual driver, the shop admin reports it.",
+  "type": "object",
+  "required": [
+    "shipment_id",
+    "order_id",
+    "tracking_number",
+    "occurred_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "shipment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "carrier_name": {
+      "type": "string",
+      "description": "The courier carrying the parcel, when known."
+    },
+    "carrier_reference": {
+      "type": "string",
+      "description": "The courier's own tracking reference, when known."
+    },
+    "message": {
+      "type": "string"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

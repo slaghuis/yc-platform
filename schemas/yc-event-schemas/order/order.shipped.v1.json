@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.shipped.v1.json",
+  "title": "order.shipped.v1",
+  "description": "An order's shipment is in transit (from shipping.in_transit.v1).",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "tracking_number",
+    "shipped_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "carrier_name": {
+      "type": "string"
+    },
+    "carrier_reference": {
+      "type": "string"
+    },
+    "shipped_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

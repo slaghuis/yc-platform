@@ -75,10 +75,15 @@ func (e OrderUserType) Valid() bool {
 
 // Defines values for OrderStatus.
 const (
-	OrderStatusAbandoned      OrderStatus = "abandoned"
-	OrderStatusCancelled      OrderStatus = "cancelled"
-	OrderStatusPendingPayment OrderStatus = "pending_payment"
-	OrderStatusReceived       OrderStatus = "received"
+	OrderStatusAbandoned         OrderStatus = "abandoned"
+	OrderStatusCancelled         OrderStatus = "cancelled"
+	OrderStatusDelivered         OrderStatus = "delivered"
+	OrderStatusDeliveryException OrderStatus = "delivery_exception"
+	OrderStatusPackaged          OrderStatus = "packaged"
+	OrderStatusPendingPayment    OrderStatus = "pending_payment"
+	OrderStatusReceived          OrderStatus = "received"
+	OrderStatusReturned          OrderStatus = "returned"
+	OrderStatusShipped           OrderStatus = "shipped"
 )
 
 // Valid indicates whether the value is a known member of the OrderStatus enum.
@@ -88,9 +93,19 @@ func (e OrderStatus) Valid() bool {
 		return true
 	case OrderStatusCancelled:
 		return true
+	case OrderStatusDelivered:
+		return true
+	case OrderStatusDeliveryException:
+		return true
+	case OrderStatusPackaged:
+		return true
 	case OrderStatusPendingPayment:
 		return true
 	case OrderStatusReceived:
+		return true
+	case OrderStatusReturned:
+		return true
+	case OrderStatusShipped:
 		return true
 	default:
 		return false
@@ -115,6 +130,45 @@ func (e OrderSummaryUserType) Valid() bool {
 	}
 }
 
+// Defines values for RefundStatus.
+const (
+	Completed RefundStatus = "completed"
+	Pending   RefundStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the RefundStatus enum.
+func (e RefundStatus) Valid() bool {
+	switch e {
+	case Completed:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReturnStatus.
+const (
+	Accepted  ReturnStatus = "accepted"
+	Rejected  ReturnStatus = "rejected"
+	Requested ReturnStatus = "requested"
+)
+
+// Valid indicates whether the value is a known member of the ReturnStatus enum.
+func (e ReturnStatus) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Rejected:
+		return true
+	case Requested:
+		return true
+	default:
+		return false
+	}
+}
+
 // AbandonResult defines model for AbandonResult.
 type AbandonResult struct {
 	OrderID *openapi_types.UUID `json:"order_id,omitempty"`
@@ -123,6 +177,14 @@ type AbandonResult struct {
 
 // AbandonResultStatus defines model for AbandonResult.Status.
 type AbandonResultStatus string
+
+// AcceptReturnInput defines model for AcceptReturnInput.
+type AcceptReturnInput struct {
+	Note *string `json:"note,omitempty"`
+
+	// RefundShipping Refund the order's shipping too.
+	RefundShipping *bool `json:"refund_shipping,omitempty"`
+}
 
 // ConfirmInput defines model for ConfirmInput.
 type ConfirmInput struct {
@@ -190,14 +252,20 @@ type Order struct {
 	Payment           *Payment                `json:"payment,omitempty"`
 	PlacedAt          *time.Time              `json:"placed_at,omitempty"`
 	Refunded          Money                   `json:"refunded"`
+	Refunds           *[]Refund               `json:"refunds,omitempty"`
 	RequiresShipping  bool                    `json:"requires_shipping"`
+	Returns           *[]Return               `json:"returns,omitempty"`
+	Shipment          *OrderShipment          `json:"shipment,omitempty"`
 	Shipping          Money                   `json:"shipping"`
-	Status            OrderStatus             `json:"status"`
-	TaxTotal          Money                   `json:"tax_total"`
-	Total             Money                   `json:"total"`
-	UpdatedAt         time.Time               `json:"updated_at"`
-	UserID            string                  `json:"user_id"`
-	UserType          OrderUserType           `json:"user_type"`
+
+	// ShippingMethod The shipping option chosen at checkout.
+	ShippingMethod *string       `json:"shipping_method,omitempty"`
+	Status         OrderStatus   `json:"status"`
+	TaxTotal       Money         `json:"tax_total"`
+	Total          Money         `json:"total"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+	UserID         string        `json:"user_id"`
+	UserType       OrderUserType `json:"user_type"`
 }
 
 // OrderUserType defines model for Order.UserType.
@@ -243,6 +311,17 @@ type OrderList struct {
 
 	// Page Cursor pagination (api-conventions.md §7).
 	Page PageInfo `json:"page"`
+}
+
+// OrderShipment defines model for OrderShipment.
+type OrderShipment struct {
+	CarrierName      *string            `json:"carrier_name,omitempty"`
+	CarrierReference *string            `json:"carrier_reference,omitempty"`
+	DeliveredAt      *time.Time         `json:"delivered_at,omitempty"`
+	PackagedAt       *time.Time         `json:"packaged_at,omitempty"`
+	ShipmentID       openapi_types.UUID `json:"shipment_id"`
+	ShippedAt        *time.Time         `json:"shipped_at,omitempty"`
+	TrackingNumber   string             `json:"tracking_number"`
 }
 
 // OrderStatus defines model for OrderStatus.
@@ -293,6 +372,69 @@ type ReasonInput struct {
 	Reason *string `json:"reason,omitempty"`
 }
 
+// Refund defines model for Refund.
+type Refund struct {
+	Amount    Money               `json:"amount"`
+	CreatedAt time.Time           `json:"created_at"`
+	Reason    string              `json:"reason"`
+	RefundID  openapi_types.UUID  `json:"refund_id"`
+	ReturnID  *openapi_types.UUID `json:"return_id,omitempty"`
+	Status    RefundStatus        `json:"status"`
+}
+
+// RefundStatus defines model for Refund.Status.
+type RefundStatus string
+
+// RefundInput defines model for RefundInput.
+type RefundInput struct {
+	AmountMinor int64  `json:"amount_minor"`
+	Reason      string `json:"reason"`
+}
+
+// RejectReturnInput defines model for RejectReturnInput.
+type RejectReturnInput struct {
+	Reason string `json:"reason"`
+}
+
+// Return defines model for Return.
+type Return struct {
+	DecidedAt      *time.Time         `json:"decided_at,omitempty"`
+	DecisionReason *string            `json:"decision_reason,omitempty"`
+	Items          []ReturnItem       `json:"items"`
+	OrderID        openapi_types.UUID `json:"order_id"`
+	Reason         *string            `json:"reason,omitempty"`
+
+	// Refund Minor units refunded on acceptance.
+	Refund         int64              `json:"refund"`
+	RefundShipping bool               `json:"refund_shipping"`
+	RequestedAt    time.Time          `json:"requested_at"`
+	ReturnID       openapi_types.UUID `json:"return_id"`
+	Status         ReturnStatus       `json:"status"`
+}
+
+// ReturnInput defines model for ReturnInput.
+type ReturnInput struct {
+	Items  []ReturnItem `json:"items"`
+	Reason *string      `json:"reason,omitempty"`
+}
+
+// ReturnItem defines model for ReturnItem.
+type ReturnItem struct {
+	Quantity int64              `json:"quantity"`
+	SkuID    openapi_types.UUID `json:"sku_id"`
+}
+
+// ReturnList defines model for ReturnList.
+type ReturnList struct {
+	Items []Return `json:"items"`
+
+	// Page Cursor pagination (api-conventions.md §7).
+	Page PageInfo `json:"page"`
+}
+
+// ReturnStatus defines model for ReturnStatus.
+type ReturnStatus string
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -305,6 +447,9 @@ type OrderID = openapi_types.UUID
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// ReturnID defines model for ReturnID.
+type ReturnID = openapi_types.UUID
+
 // ListOrdersParams defines parameters for ListOrders.
 type ListOrdersParams struct {
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
@@ -312,6 +457,18 @@ type ListOrdersParams struct {
 
 	// Status Without it, placed orders (received and cancelled).
 	Status *OrderStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// RefundOrderParams defines parameters for RefundOrder.
+type RefundOrderParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListReturnsParams defines parameters for ListReturns.
+type ListReturnsParams struct {
+	PageSize *PageSize     `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Cursor   *Cursor       `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Status   *ReturnStatus `form:"status,omitempty" json:"status,omitempty"`
 }
 
 // CreateOrderParams defines parameters for CreateOrder.
@@ -338,6 +495,15 @@ type ListMyOrdersParams struct {
 // CancelOrderJSONRequestBody defines body for CancelOrder for application/json ContentType.
 type CancelOrderJSONRequestBody = ReasonInput
 
+// RefundOrderJSONRequestBody defines body for RefundOrder for application/json ContentType.
+type RefundOrderJSONRequestBody = RefundInput
+
+// AcceptReturnJSONRequestBody defines body for AcceptReturn for application/json ContentType.
+type AcceptReturnJSONRequestBody = AcceptReturnInput
+
+// RejectReturnJSONRequestBody defines body for RejectReturn for application/json ContentType.
+type RejectReturnJSONRequestBody = RejectReturnInput
+
 // CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
 type CreateOrderJSONRequestBody = CreateOrderInput
 
@@ -346,6 +512,9 @@ type AbandonOrderJSONRequestBody = ReasonInput
 
 // ConfirmOrderJSONRequestBody defines body for ConfirmOrder for application/json ContentType.
 type ConfirmOrderJSONRequestBody = ConfirmInput
+
+// RequestReturnJSONRequestBody defines body for RequestReturn for application/json ContentType.
+type RequestReturnJSONRequestBody = ReturnInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -358,6 +527,21 @@ type ServerInterface interface {
 	// CancelOrder Cancel a placed order and refund its payment
 	// (POST /admin/orders/{id}/cancel)
 	CancelOrder(w http.ResponseWriter, r *http.Request, id OrderID)
+	// PackageOrder Mark a received order packaged and book its shipment
+	// (POST /admin/orders/{id}/package)
+	PackageOrder(w http.ResponseWriter, r *http.Request, id OrderID)
+	// RefundOrder Refund part of a placed order
+	// (POST /admin/orders/{id}/refund)
+	RefundOrder(w http.ResponseWriter, r *http.Request, id OrderID, params RefundOrderParams)
+	// ListReturns List the shop's returns, newest first
+	// (GET /admin/returns)
+	ListReturns(w http.ResponseWriter, r *http.Request, params ListReturnsParams)
+	// AcceptReturn Accept a return and refund it
+	// (POST /admin/returns/{id}/accept)
+	AcceptReturn(w http.ResponseWriter, r *http.Request, id ReturnID)
+	// RejectReturn Reject a return
+	// (POST /admin/returns/{id}/reject)
+	RejectReturn(w http.ResponseWriter, r *http.Request, id ReturnID)
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams)
@@ -376,6 +560,9 @@ type ServerInterface interface {
 	// GetMyOrder Get one of my orders
 	// (GET /orders/{id})
 	GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID)
+	// RequestReturn Ask to return delivered items
+	// (POST /orders/{id}/returns)
+	RequestReturn(w http.ResponseWriter, r *http.Request, id OrderID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -397,6 +584,36 @@ func (_ Unimplemented) GetOrder(w http.ResponseWriter, r *http.Request, id Order
 // CancelOrder Cancel a placed order and refund its payment
 // (POST /admin/orders/{id}/cancel)
 func (_ Unimplemented) CancelOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PackageOrder Mark a received order packaged and book its shipment
+// (POST /admin/orders/{id}/package)
+func (_ Unimplemented) PackageOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RefundOrder Refund part of a placed order
+// (POST /admin/orders/{id}/refund)
+func (_ Unimplemented) RefundOrder(w http.ResponseWriter, r *http.Request, id OrderID, params RefundOrderParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListReturns List the shop's returns, newest first
+// (GET /admin/returns)
+func (_ Unimplemented) ListReturns(w http.ResponseWriter, r *http.Request, params ListReturnsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AcceptReturn Accept a return and refund it
+// (POST /admin/returns/{id}/accept)
+func (_ Unimplemented) AcceptReturn(w http.ResponseWriter, r *http.Request, id ReturnID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RejectReturn Reject a return
+// (POST /admin/returns/{id}/reject)
+func (_ Unimplemented) RejectReturn(w http.ResponseWriter, r *http.Request, id ReturnID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -433,6 +650,12 @@ func (_ Unimplemented) ListMyOrders(w http.ResponseWriter, r *http.Request, para
 // GetMyOrder Get one of my orders
 // (GET /orders/{id})
 func (_ Unimplemented) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RequestReturn Ask to return delivered items
+// (POST /orders/{id}/returns)
+func (_ Unimplemented) RequestReturn(w http.ResponseWriter, r *http.Request, id OrderID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -547,6 +770,197 @@ func (siw *ServerInterfaceWrapper) CancelOrder(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CancelOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PackageOrder operation middleware
+func (siw *ServerInterfaceWrapper) PackageOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id OrderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PackageOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefundOrder operation middleware
+func (siw *ServerInterfaceWrapper) RefundOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id OrderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RefundOrderParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefundOrder(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListReturns operation middleware
+func (siw *ServerInterfaceWrapper) ListReturns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListReturnsParams
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReturns(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptReturn operation middleware
+func (siw *ServerInterfaceWrapper) AcceptReturn(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ReturnID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptReturn(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectReturn operation middleware
+func (siw *ServerInterfaceWrapper) RejectReturn(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ReturnID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectReturn(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -807,6 +1221,32 @@ func (siw *ServerInterfaceWrapper) GetMyOrder(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// RequestReturn operation middleware
+func (siw *ServerInterfaceWrapper) RequestReturn(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id OrderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestReturn(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -927,6 +1367,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/orders/{id}", wrapper.GetMyOrder)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/orders/{id}/returns", wrapper.RequestReturn)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/orders", wrapper.ListOrders)
 	})
 	r.Group(func(r chi.Router) {
@@ -934,6 +1377,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/admin/orders/{id}/cancel", wrapper.CancelOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/orders/{id}/package", wrapper.PackageOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/orders/{id}/refund", wrapper.RefundOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/returns", wrapper.ListReturns)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/returns/{id}/accept", wrapper.AcceptReturn)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/returns/{id}/reject", wrapper.RejectReturn)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/orders", wrapper.CreateOrder)
@@ -1113,6 +1571,354 @@ func (response CancelOrder404ApplicationProblemPlusJSONResponse) VisitCancelOrde
 type CancelOrder409ApplicationProblemPlusJSONResponse Problem
 
 func (response CancelOrder409ApplicationProblemPlusJSONResponse) VisitCancelOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PackageOrderRequestObject struct {
+	ID OrderID `json:"id"`
+}
+
+type PackageOrderResponseObject interface {
+	VisitPackageOrderResponse(w http.ResponseWriter) error
+}
+
+type PackageOrder200JSONResponse Order
+
+func (response PackageOrder200JSONResponse) VisitPackageOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PackageOrder403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PackageOrder403ApplicationProblemPlusJSONResponse) VisitPackageOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PackageOrder404ApplicationProblemPlusJSONResponse Problem
+
+func (response PackageOrder404ApplicationProblemPlusJSONResponse) VisitPackageOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PackageOrder409ApplicationProblemPlusJSONResponse Problem
+
+func (response PackageOrder409ApplicationProblemPlusJSONResponse) VisitPackageOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefundOrderRequestObject struct {
+	ID     OrderID `json:"id"`
+	Params RefundOrderParams
+	Body   *RefundOrderJSONRequestBody
+}
+
+type RefundOrderResponseObject interface {
+	VisitRefundOrderResponse(w http.ResponseWriter) error
+}
+
+type RefundOrder200JSONResponse Order
+
+func (response RefundOrder200JSONResponse) VisitRefundOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefundOrder400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RefundOrder400ApplicationProblemPlusJSONResponse) VisitRefundOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefundOrder403ApplicationProblemPlusJSONResponse Problem
+
+func (response RefundOrder403ApplicationProblemPlusJSONResponse) VisitRefundOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefundOrder404ApplicationProblemPlusJSONResponse Problem
+
+func (response RefundOrder404ApplicationProblemPlusJSONResponse) VisitRefundOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RefundOrder409ApplicationProblemPlusJSONResponse Problem
+
+func (response RefundOrder409ApplicationProblemPlusJSONResponse) VisitRefundOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReturnsRequestObject struct {
+	Params ListReturnsParams
+}
+
+type ListReturnsResponseObject interface {
+	VisitListReturnsResponse(w http.ResponseWriter) error
+}
+
+type ListReturns200JSONResponse ReturnList
+
+func (response ListReturns200JSONResponse) VisitListReturnsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReturns400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListReturns400ApplicationProblemPlusJSONResponse) VisitListReturnsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReturns403ApplicationProblemPlusJSONResponse Problem
+
+func (response ListReturns403ApplicationProblemPlusJSONResponse) VisitListReturnsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReturnRequestObject struct {
+	ID   ReturnID `json:"id"`
+	Body *AcceptReturnJSONRequestBody
+}
+
+type AcceptReturnResponseObject interface {
+	VisitAcceptReturnResponse(w http.ResponseWriter) error
+}
+
+type AcceptReturn200JSONResponse Return
+
+func (response AcceptReturn200JSONResponse) VisitAcceptReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReturn403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptReturn403ApplicationProblemPlusJSONResponse) VisitAcceptReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReturn404ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptReturn404ApplicationProblemPlusJSONResponse) VisitAcceptReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReturn409ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptReturn409ApplicationProblemPlusJSONResponse) VisitAcceptReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReturnRequestObject struct {
+	ID   ReturnID `json:"id"`
+	Body *RejectReturnJSONRequestBody
+}
+
+type RejectReturnResponseObject interface {
+	VisitRejectReturnResponse(w http.ResponseWriter) error
+}
+
+type RejectReturn200JSONResponse Return
+
+func (response RejectReturn200JSONResponse) VisitRejectReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReturn400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RejectReturn400ApplicationProblemPlusJSONResponse) VisitRejectReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReturn403ApplicationProblemPlusJSONResponse Problem
+
+func (response RejectReturn403ApplicationProblemPlusJSONResponse) VisitRejectReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReturn404ApplicationProblemPlusJSONResponse Problem
+
+func (response RejectReturn404ApplicationProblemPlusJSONResponse) VisitRejectReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectReturn409ApplicationProblemPlusJSONResponse Problem
+
+func (response RejectReturn409ApplicationProblemPlusJSONResponse) VisitRejectReturnResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1413,6 +2219,87 @@ func (response GetMyOrder404ApplicationProblemPlusJSONResponse) VisitGetMyOrderR
 	return err
 }
 
+type RequestReturnRequestObject struct {
+	ID   OrderID `json:"id"`
+	Body *RequestReturnJSONRequestBody
+}
+
+type RequestReturnResponseObject interface {
+	VisitRequestReturnResponse(w http.ResponseWriter) error
+}
+
+type RequestReturn201JSONResponse Return
+
+func (response RequestReturn201JSONResponse) VisitRequestReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestReturn400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RequestReturn400ApplicationProblemPlusJSONResponse) VisitRequestReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestReturn403ApplicationProblemPlusJSONResponse Problem
+
+func (response RequestReturn403ApplicationProblemPlusJSONResponse) VisitRequestReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestReturn404ApplicationProblemPlusJSONResponse Problem
+
+func (response RequestReturn404ApplicationProblemPlusJSONResponse) VisitRequestReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestReturn409ApplicationProblemPlusJSONResponse Problem
+
+func (response RequestReturn409ApplicationProblemPlusJSONResponse) VisitRequestReturnResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListOrders List the shop's orders, newest first
@@ -1424,6 +2311,21 @@ type StrictServerInterface interface {
 	// CancelOrder Cancel a placed order and refund its payment
 	// (POST /admin/orders/{id}/cancel)
 	CancelOrder(ctx context.Context, request CancelOrderRequestObject) (CancelOrderResponseObject, error)
+	// PackageOrder Mark a received order packaged and book its shipment
+	// (POST /admin/orders/{id}/package)
+	PackageOrder(ctx context.Context, request PackageOrderRequestObject) (PackageOrderResponseObject, error)
+	// RefundOrder Refund part of a placed order
+	// (POST /admin/orders/{id}/refund)
+	RefundOrder(ctx context.Context, request RefundOrderRequestObject) (RefundOrderResponseObject, error)
+	// ListReturns List the shop's returns, newest first
+	// (GET /admin/returns)
+	ListReturns(ctx context.Context, request ListReturnsRequestObject) (ListReturnsResponseObject, error)
+	// AcceptReturn Accept a return and refund it
+	// (POST /admin/returns/{id}/accept)
+	AcceptReturn(ctx context.Context, request AcceptReturnRequestObject) (AcceptReturnResponseObject, error)
+	// RejectReturn Reject a return
+	// (POST /admin/returns/{id}/reject)
+	RejectReturn(ctx context.Context, request RejectReturnRequestObject) (RejectReturnResponseObject, error)
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(ctx context.Context, request CreateOrderRequestObject) (CreateOrderResponseObject, error)
@@ -1442,6 +2344,9 @@ type StrictServerInterface interface {
 	// GetMyOrder Get one of my orders
 	// (GET /orders/{id})
 	GetMyOrder(ctx context.Context, request GetMyOrderRequestObject) (GetMyOrderResponseObject, error)
+	// RequestReturn Ask to return delivered items
+	// (POST /orders/{id}/returns)
+	RequestReturn(ctx context.Context, request RequestReturnRequestObject) (RequestReturnResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1564,6 +2469,161 @@ func (sh *strictHandler) CancelOrder(w http.ResponseWriter, r *http.Request, id 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CancelOrderResponseObject); ok {
 		if err := validResponse.VisitCancelOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PackageOrder operation middleware
+func (sh *strictHandler) PackageOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+	var request PackageOrderRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PackageOrder(ctx, request.(PackageOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PackageOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PackageOrderResponseObject); ok {
+		if err := validResponse.VisitPackageOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RefundOrder operation middleware
+func (sh *strictHandler) RefundOrder(w http.ResponseWriter, r *http.Request, id OrderID, params RefundOrderParams) {
+	var request RefundOrderRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	var body RefundOrderJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RefundOrder(ctx, request.(RefundOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RefundOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RefundOrderResponseObject); ok {
+		if err := validResponse.VisitRefundOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListReturns operation middleware
+func (sh *strictHandler) ListReturns(w http.ResponseWriter, r *http.Request, params ListReturnsParams) {
+	var request ListReturnsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListReturns(ctx, request.(ListReturnsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListReturns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListReturnsResponseObject); ok {
+		if err := validResponse.VisitListReturnsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptReturn operation middleware
+func (sh *strictHandler) AcceptReturn(w http.ResponseWriter, r *http.Request, id ReturnID) {
+	var request AcceptReturnRequestObject
+
+	request.ID = id
+
+	var body AcceptReturnJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptReturn(ctx, request.(AcceptReturnRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptReturn")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptReturnResponseObject); ok {
+		if err := validResponse.VisitAcceptReturnResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RejectReturn operation middleware
+func (sh *strictHandler) RejectReturn(w http.ResponseWriter, r *http.Request, id ReturnID) {
+	var request RejectReturnRequestObject
+
+	request.ID = id
+
+	var body RejectReturnJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RejectReturn(ctx, request.(RejectReturnRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RejectReturn")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RejectReturnResponseObject); ok {
+		if err := validResponse.VisitRejectReturnResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1749,6 +2809,39 @@ func (sh *strictHandler) GetMyOrder(w http.ResponseWriter, r *http.Request, id O
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMyOrderResponseObject); ok {
 		if err := validResponse.VisitGetMyOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestReturn operation middleware
+func (sh *strictHandler) RequestReturn(w http.ResponseWriter, r *http.Request, id OrderID) {
+	var request RequestReturnRequestObject
+
+	request.ID = id
+
+	var body RequestReturnJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestReturn(ctx, request.(RequestReturnRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestReturn")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestReturnResponseObject); ok {
+		if err := validResponse.VisitRequestReturnResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

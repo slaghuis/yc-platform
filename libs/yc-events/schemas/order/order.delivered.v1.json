@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.delivered.v1.json",
+  "title": "order.delivered.v1",
+  "description": "An order was delivered (from shipping.delivered.v1). Its return window starts.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "items",
+    "delivered_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "description": "The delivered SKUs, for verified-purchase reviews.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "sku_id",
+          "quantity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "delivered_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

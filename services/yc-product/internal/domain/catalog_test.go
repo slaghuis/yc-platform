@@ -57,6 +57,11 @@ func TestSKUInputValidate(t *testing.T) {
 	in := domain.SKUInput{Code: "", TaxClass: "VAT 15", WeightGrams: &w}
 	assert.Equal(t, []string{"sku_code:required", "tax_class:invalid", "weight_grams:invalid"}, fields(t, in.Validate()))
 
+	box := domain.SKUInput{Code: "MUG", TaxClass: "za-standard", Dimensions: &domain.Dimensions{LengthMM: 0, WidthMM: 90, HeightMM: 10_001}}
+	assert.Equal(t, []string{"dimensions_mm.length:invalid", "dimensions_mm.height:invalid"}, fields(t, box.Validate()))
+	box.Dimensions = &domain.Dimensions{LengthMM: 120, WidthMM: 90, HeightMM: 100}
+	require.NoError(t, box.Validate())
+
 	ok := domain.SKUInput{Code: " TS-1 ", TaxClass: "za-standard"}
 	require.NoError(t, ok.Validate())
 	assert.Equal(t, "TS-1", ok.Code)

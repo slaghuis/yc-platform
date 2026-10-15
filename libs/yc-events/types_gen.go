@@ -47,7 +47,14 @@ const (
 	TypeInventoryStockReservedV1             = "inventory.stock.reserved.v1"
 	TypeInventoryStockRestoredV1             = "inventory.stock.restored.v1"
 	TypeOrderCancelledV1                     = "order.cancelled.v1"
+	TypeOrderDeliveredV1                     = "order.delivered.v1"
+	TypeOrderPackagedV1                      = "order.packaged.v1"
 	TypeOrderPlacedV1                        = "order.placed.v1"
+	TypeOrderRefundedV1                      = "order.refunded.v1"
+	TypeOrderReturnAcceptedV1                = "order.return_accepted.v1"
+	TypeOrderReturnRejectedV1                = "order.return_rejected.v1"
+	TypeOrderReturnRequestedV1               = "order.return_requested.v1"
+	TypeOrderShippedV1                       = "order.shipped.v1"
 	TypePaymentAuthorizationFailedV1         = "payment.authorization_failed.v1"
 	TypePaymentAuthorizedV1                  = "payment.authorized.v1"
 	TypePaymentCaptureFailedV1               = "payment.capture_failed.v1"
@@ -92,6 +99,11 @@ const (
 	TypeProductSupplierUpdatedV1             = "product.supplier.updated.v1"
 	TypeProductUpdatedV1                     = "product.updated.v1"
 	TypeProductVariantAddedV1                = "product.variant.added.v1"
+	TypeShippingCancelledV1                  = "shipping.cancelled.v1"
+	TypeShippingDeliveredV1                  = "shipping.delivered.v1"
+	TypeShippingDeliveryExceptionV1          = "shipping.delivery_exception.v1"
+	TypeShippingInTransitV1                  = "shipping.in_transit.v1"
+	TypeShippingLabelCreatedV1               = "shipping.label_created.v1"
 )
 
 // EventTypes lists every event type with a schema, sorted.
@@ -135,7 +147,14 @@ var EventTypes = []string{
 	TypeInventoryStockReservedV1,
 	TypeInventoryStockRestoredV1,
 	TypeOrderCancelledV1,
+	TypeOrderDeliveredV1,
+	TypeOrderPackagedV1,
 	TypeOrderPlacedV1,
+	TypeOrderRefundedV1,
+	TypeOrderReturnAcceptedV1,
+	TypeOrderReturnRejectedV1,
+	TypeOrderReturnRequestedV1,
+	TypeOrderShippedV1,
 	TypePaymentAuthorizationFailedV1,
 	TypePaymentAuthorizedV1,
 	TypePaymentCaptureFailedV1,
@@ -180,6 +199,11 @@ var EventTypes = []string{
 	TypeProductSupplierUpdatedV1,
 	TypeProductUpdatedV1,
 	TypeProductVariantAddedV1,
+	TypeShippingCancelledV1,
+	TypeShippingDeliveredV1,
+	TypeShippingDeliveryExceptionV1,
+	TypeShippingInTransitV1,
+	TypeShippingLabelCreatedV1,
 }
 
 // Enum values.
@@ -1037,7 +1061,7 @@ func (InventoryStockRestoredV1) EventType() string { return TypeInventoryStockRe
 
 // OrderCancelledV1 is the payload of order.cancelled.v1.
 //
-// A received order was cancelled before shipment. A captured payment is refunded through yc-payment.
+// A received or packaged order was cancelled before shipment. A captured payment is refunded through yc-payment, and yc-shipping cancels the shipment.
 type OrderCancelledV1 struct {
 	OrderID     string `json:"order_id"`
 	OrderNumber string `json:"order_number"`
@@ -1050,6 +1074,43 @@ type OrderCancelledV1 struct {
 
 // EventType returns order.cancelled.v1.
 func (OrderCancelledV1) EventType() string { return TypeOrderCancelledV1 }
+
+// OrderDeliveredV1ItemsItem is a nested object.
+type OrderDeliveredV1ItemsItem struct {
+	SKUID     string  `json:"sku_id"`
+	ProductID *string `json:"product_id,omitempty"`
+	Quantity  int64   `json:"quantity"`
+}
+
+// OrderDeliveredV1 is the payload of order.delivered.v1.
+//
+// An order was delivered (from shipping.delivered.v1). Its return window starts.
+type OrderDeliveredV1 struct {
+	OrderID     string `json:"order_id"`
+	OrderNumber string `json:"order_number"`
+	UserID      string `json:"user_id"`
+	// The delivered SKUs, for verified-purchase reviews.
+	Items       []OrderDeliveredV1ItemsItem `json:"items"`
+	DeliveredAt time.Time                   `json:"delivered_at"`
+}
+
+// EventType returns order.delivered.v1.
+func (OrderDeliveredV1) EventType() string { return TypeOrderDeliveredV1 }
+
+// OrderPackagedV1 is the payload of order.packaged.v1.
+//
+// The shop admin packaged an order for the carrier; yc-shipping created its shipment.
+type OrderPackagedV1 struct {
+	OrderID        string    `json:"order_id"`
+	OrderNumber    string    `json:"order_number"`
+	UserID         string    `json:"user_id"`
+	ShipmentID     string    `json:"shipment_id"`
+	TrackingNumber string    `json:"tracking_number"`
+	PackagedAt     time.Time `json:"packaged_at"`
+}
+
+// EventType returns order.packaged.v1.
+func (OrderPackagedV1) EventType() string { return TypeOrderPackagedV1 }
 
 // OrderPlacedV1ItemsItem is a nested object.
 type OrderPlacedV1ItemsItem struct {
@@ -1085,6 +1146,95 @@ type OrderPlacedV1 struct {
 
 // EventType returns order.placed.v1.
 func (OrderPlacedV1) EventType() string { return TypeOrderPlacedV1 }
+
+// OrderRefundedV1 is the payload of order.refunded.v1.
+//
+// Money was refunded on an order through yc-payment: an accepted return or an admin refund. Cancellations announce their refund in order.cancelled.v1.
+type OrderRefundedV1 struct {
+	OrderID     string `json:"order_id"`
+	OrderNumber string `json:"order_number"`
+	UserID      string `json:"user_id"`
+	// This refund.
+	Amount Money `json:"amount"`
+	// Everything refunded on the order so far, this refund included.
+	TotalRefunded Money `json:"total_refunded"`
+	// The accepted return, when the refund is for one.
+	ReturnID   *string   `json:"return_id,omitempty"`
+	Reason     string    `json:"reason"`
+	RefundedAt time.Time `json:"refunded_at"`
+}
+
+// EventType returns order.refunded.v1.
+func (OrderRefundedV1) EventType() string { return TypeOrderRefundedV1 }
+
+// OrderReturnAcceptedV1 is the payload of order.return_accepted.v1.
+//
+// The shop admin accepted a return; the returned lines (and shipping, if the admin chose) were refunded through yc-payment.
+type OrderReturnAcceptedV1 struct {
+	OrderID     string `json:"order_id"`
+	OrderNumber string `json:"order_number"`
+	UserID      string `json:"user_id"`
+	ReturnID    string `json:"return_id"`
+	// Amount refunded for the return.
+	Refund     Money     `json:"refund"`
+	AcceptedAt time.Time `json:"accepted_at"`
+}
+
+// EventType returns order.return_accepted.v1.
+func (OrderReturnAcceptedV1) EventType() string { return TypeOrderReturnAcceptedV1 }
+
+// OrderReturnRejectedV1 is the payload of order.return_rejected.v1.
+//
+// The shop admin rejected a return request.
+type OrderReturnRejectedV1 struct {
+	OrderID     string    `json:"order_id"`
+	OrderNumber string    `json:"order_number"`
+	UserID      string    `json:"user_id"`
+	ReturnID    string    `json:"return_id"`
+	Reason      string    `json:"reason"`
+	RejectedAt  time.Time `json:"rejected_at"`
+}
+
+// EventType returns order.return_rejected.v1.
+func (OrderReturnRejectedV1) EventType() string { return TypeOrderReturnRejectedV1 }
+
+// OrderReturnRequestedV1ItemsItem is a nested object.
+type OrderReturnRequestedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// OrderReturnRequestedV1 is the payload of order.return_requested.v1.
+//
+// A customer asked to return some or all lines of a delivered order.
+type OrderReturnRequestedV1 struct {
+	OrderID     string                            `json:"order_id"`
+	OrderNumber string                            `json:"order_number"`
+	UserID      string                            `json:"user_id"`
+	ReturnID    string                            `json:"return_id"`
+	Items       []OrderReturnRequestedV1ItemsItem `json:"items"`
+	Reason      *string                           `json:"reason,omitempty"`
+	RequestedAt time.Time                         `json:"requested_at"`
+}
+
+// EventType returns order.return_requested.v1.
+func (OrderReturnRequestedV1) EventType() string { return TypeOrderReturnRequestedV1 }
+
+// OrderShippedV1 is the payload of order.shipped.v1.
+//
+// An order's shipment is in transit (from shipping.in_transit.v1).
+type OrderShippedV1 struct {
+	OrderID          string    `json:"order_id"`
+	OrderNumber      string    `json:"order_number"`
+	UserID           string    `json:"user_id"`
+	TrackingNumber   string    `json:"tracking_number"`
+	CarrierName      *string   `json:"carrier_name,omitempty"`
+	CarrierReference *string   `json:"carrier_reference,omitempty"`
+	ShippedAt        time.Time `json:"shipped_at"`
+}
+
+// EventType returns order.shipped.v1.
+func (OrderShippedV1) EventType() string { return TypeOrderShippedV1 }
 
 // PaymentAuthorizationFailedV1 is the payload of payment.authorization_failed.v1.
 //
@@ -1746,3 +1896,79 @@ type ProductVariantAddedV1 struct {
 
 // EventType returns product.variant.added.v1.
 func (ProductVariantAddedV1) EventType() string { return TypeProductVariantAddedV1 }
+
+// ShippingCancelledV1 is the payload of shipping.cancelled.v1.
+//
+// A shipment was cancelled before it left the shop, because its order was cancelled.
+type ShippingCancelledV1 struct {
+	ShipmentID     string    `json:"shipment_id"`
+	OrderID        string    `json:"order_id"`
+	TrackingNumber *string   `json:"tracking_number,omitempty"`
+	Reason         string    `json:"reason"`
+	CancelledAt    time.Time `json:"cancelled_at"`
+}
+
+// EventType returns shipping.cancelled.v1.
+func (ShippingCancelledV1) EventType() string { return TypeShippingCancelledV1 }
+
+// ShippingDeliveredV1 is the payload of shipping.delivered.v1.
+//
+// A shipment was delivered. yc-orders moves the order to delivered.
+type ShippingDeliveredV1 struct {
+	ShipmentID     string    `json:"shipment_id"`
+	OrderID        string    `json:"order_id"`
+	TrackingNumber string    `json:"tracking_number"`
+	Message        *string   `json:"message,omitempty"`
+	OccurredAt     time.Time `json:"occurred_at"`
+}
+
+// EventType returns shipping.delivered.v1.
+func (ShippingDeliveredV1) EventType() string { return TypeShippingDeliveredV1 }
+
+// ShippingDeliveryExceptionV1 is the payload of shipping.delivery_exception.v1.
+//
+// A shipment ran into a problem (failed delivery, address issue). yc-orders flags the order until the shipment moves on.
+type ShippingDeliveryExceptionV1 struct {
+	ShipmentID     string `json:"shipment_id"`
+	OrderID        string `json:"order_id"`
+	TrackingNumber string `json:"tracking_number"`
+	// What went wrong.
+	Message    string    `json:"message"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+// EventType returns shipping.delivery_exception.v1.
+func (ShippingDeliveryExceptionV1) EventType() string { return TypeShippingDeliveryExceptionV1 }
+
+// ShippingInTransitV1 is the payload of shipping.in_transit.v1.
+//
+// A shipment left the shop and is on its way. For the manual driver, the shop admin reports it.
+type ShippingInTransitV1 struct {
+	ShipmentID     string `json:"shipment_id"`
+	OrderID        string `json:"order_id"`
+	TrackingNumber string `json:"tracking_number"`
+	// The courier carrying the parcel, when known.
+	CarrierName *string `json:"carrier_name,omitempty"`
+	// The courier's own tracking reference, when known.
+	CarrierReference *string   `json:"carrier_reference,omitempty"`
+	Message          *string   `json:"message,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at"`
+}
+
+// EventType returns shipping.in_transit.v1.
+func (ShippingInTransitV1) EventType() string { return TypeShippingInTransitV1 }
+
+// ShippingLabelCreatedV1 is the payload of shipping.label_created.v1.
+//
+// A shipment was created for a packaged order and its carrier driver issued a tracking number.
+type ShippingLabelCreatedV1 struct {
+	ShipmentID     string    `json:"shipment_id"`
+	OrderID        string    `json:"order_id"`
+	CarrierDriver  string    `json:"carrier_driver"`
+	TrackingNumber string    `json:"tracking_number"`
+	LabelURL       *string   `json:"label_url,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// EventType returns shipping.label_created.v1.
+func (ShippingLabelCreatedV1) EventType() string { return TypeShippingLabelCreatedV1 }

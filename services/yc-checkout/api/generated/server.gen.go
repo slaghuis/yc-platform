@@ -190,7 +190,9 @@ type CompensationEntryStep string
 
 // ConfirmInput defines model for ConfirmInput.
 type ConfirmInput struct {
-	// DeliveryAddress Free-form (ADR-015). Required when requires_shipping.
+	// DeliveryAddress Optional: physical items ship to the address chosen at the
+	// shipping step. A different one here is 409; choose shipping
+	// again.
 	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
 	GuestContact    *GuestContact           `json:"guest_contact,omitempty"`
 
@@ -345,17 +347,25 @@ type SessionList struct {
 	Page PageInfo `json:"page"`
 }
 
-// ShippingInput defines model for ShippingInput.
+// ShippingInput A delivery address to quote, an option of the current address, or both.
 type ShippingInput struct {
-	ShippingOptionID string `json:"shipping_option_id"`
+	// DeliveryAddress Free-form (ADR-015); yc-shipping matches its country_code and
+	// fields to the shop's zones. Replaces an earlier address and its
+	// options.
+	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
+
+	// ShippingOptionID Defaults to the cheapest option.
+	ShippingOptionID *string `json:"shipping_option_id,omitempty"`
 }
 
 // ShippingOption defines model for ShippingOption.
 type ShippingOption struct {
 	// Amount An amount in integer minor units of an ISO 4217 currency.
-	Amount Money  `json:"amount"`
-	ID     string `json:"id"`
-	Name   string `json:"name"`
+	Amount           Money  `json:"amount"`
+	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
+	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
 }
 
 // StartInput defines model for StartInput.
@@ -435,7 +445,7 @@ type ServerInterface interface {
 	// ConfirmCheckout Confirm and pay
 	// (POST /checkout/{id}/confirm)
 	ConfirmCheckout(w http.ResponseWriter, r *http.Request, id SessionID, params ConfirmCheckoutParams)
-	// SelectShipping Choose a shipping option
+	// SelectShipping Choose where and how to ship
 	// (POST /checkout/{id}/shipping)
 	SelectShipping(w http.ResponseWriter, r *http.Request, id SessionID)
 	// GetInternalSession A session for a service
@@ -483,7 +493,7 @@ func (_ Unimplemented) ConfirmCheckout(w http.ResponseWriter, r *http.Request, i
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// SelectShipping Choose a shipping option
+// SelectShipping Choose where and how to ship
 // (POST /checkout/{id}/shipping)
 func (_ Unimplemented) SelectShipping(w http.ResponseWriter, r *http.Request, id SessionID) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1427,7 +1437,7 @@ type StrictServerInterface interface {
 	// ConfirmCheckout Confirm and pay
 	// (POST /checkout/{id}/confirm)
 	ConfirmCheckout(ctx context.Context, request ConfirmCheckoutRequestObject) (ConfirmCheckoutResponseObject, error)
-	// SelectShipping Choose a shipping option
+	// SelectShipping Choose where and how to ship
 	// (POST /checkout/{id}/shipping)
 	SelectShipping(ctx context.Context, request SelectShippingRequestObject) (SelectShippingResponseObject, error)
 	// GetInternalSession A session for a service

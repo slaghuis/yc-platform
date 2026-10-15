@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.return_accepted.v1.json",
+  "title": "order.return_accepted.v1",
+  "description": "The shop admin accepted a return; the returned lines (and shipping, if the admin chose) were refunded through yc-payment.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "return_id",
+    "refund",
+    "accepted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "return_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "refund": {
+      "$ref": "../common/money.v1.json",
+      "description": "Amount refunded for the return."
+    },
+    "accepted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -51,6 +51,7 @@ type Participants interface {
 	CreateOrder(ctx context.Context, key string, in integration.CreateOrder) (integration.Order, error)
 	ConfirmOrder(ctx context.Context, key, orderID, transactionID string) (integration.Order, error)
 	AbandonOrder(ctx context.Context, key, orderID, reason string) error
+	QuoteShipping(ctx context.Context, req integration.ShippingQuoteRequest) (integration.ShippingQuote, error)
 }
 
 // Settings tune sessions and the saga.
@@ -59,9 +60,6 @@ type Settings struct {
 	SessionTTL time.Duration
 	// ReservationTTL is asked of yc-inventory (ADR-012).
 	ReservationTTL time.Duration
-	// Shipping is the one flat-fee option offered for physical items. It
-	// is untaxed.
-	Shipping domain.ShippingOption
 	// ConfirmDeadline bounds one run of the saga; confirm then answers 202
 	// and the sweeper carries on.
 	ConfirmDeadline time.Duration

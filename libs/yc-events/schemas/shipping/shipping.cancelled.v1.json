@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/shipping/shipping.cancelled.v1.json",
+  "title": "shipping.cancelled.v1",
+  "description": "A shipment was cancelled before it left the shop, because its order was cancelled.",
+  "type": "object",
+  "required": [
+    "shipment_id",
+    "order_id",
+    "reason",
+    "cancelled_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "shipment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "cancelled_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

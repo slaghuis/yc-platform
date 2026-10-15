@@ -10,6 +10,7 @@ import (
 // Retention per domain (ADR-004). Zero means unlimited.
 const (
 	retention7Years = 7 * 365 * 24 * time.Hour
+	retention2Years = 2 * 365 * 24 * time.Hour
 	retentionYear   = 365 * 24 * time.Hour
 	retentionDLQ    = 90 * 24 * time.Hour
 	retentionOps    = 90 * 24 * time.Hour
@@ -111,8 +112,16 @@ func OrderStream() StreamConfig {
 		"order.placed.v1", "order.packaged.v1", "order.shipped.v1", "order.delivered.v1",
 		"order.cancelled.v1", "order.cancellation_failed.v1",
 		"order.refund_requested.v1", "order.refunded.v1",
-		"order.return_requested.v1", "order.return_accepted.v1", "order.return_received.v1",
+		"order.return_requested.v1", "order.return_accepted.v1", "order.return_rejected.v1", "order.return_received.v1",
 		"order.disputed.v1", "order.note_added.v1")
+}
+
+// ShippingStream is the shipping domain (2-year retention, ADR-004).
+func ShippingStream() StreamConfig {
+	return DomainStream("shipping", retention2Years,
+		"shipping.rate_quoted.v1", "shipping.label_created.v1", "shipping.label_failed.v1",
+		"shipping.carrier_pickup.v1", "shipping.in_transit.v1", "shipping.out_for_delivery.v1",
+		"shipping.delivered.v1", "shipping.delivery_exception.v1", "shipping.cancelled.v1")
 }
 
 // CheckoutStream is the checkout domain (7-year retention, ADR-004). Every

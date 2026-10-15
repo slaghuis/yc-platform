@@ -14,21 +14,55 @@ import (
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 )
 
-// Status is an order's state. Phase 4 has the checkout states and
-// cancellation; fulfilment states arrive with yc-shipping.
+// Status is an order's state: the checkout states, then fulfilment
+// (ADR-022) and its ends.
 type Status string
 
 // Order states.
 const (
-	StatusPendingPayment Status = "pending_payment"
-	StatusAbandoned      Status = "abandoned"
-	StatusReceived       Status = "received"
-	StatusCancelled      Status = "cancelled"
+	StatusPendingPayment    Status = "pending_payment"
+	StatusAbandoned         Status = "abandoned"
+	StatusReceived          Status = "received"
+	StatusCancelled         Status = "cancelled"
+	StatusPackaged          Status = "packaged"
+	StatusShipped           Status = "shipped"
+	StatusDelivered         Status = "delivered"
+	StatusDeliveryException Status = "delivery_exception"
+	StatusReturned          Status = "returned"
 )
 
 // Placed reports whether the order was paid and confirmed: only placed
 // orders are shown to customers and in admin listings.
-func (s Status) Placed() bool { return s == StatusReceived || s == StatusCancelled }
+func (s Status) Placed() bool { return s != StatusPendingPayment && s != StatusAbandoned && s != "" }
+
+// PlacedStatuses are the statuses Placed accepts.
+var PlacedStatuses = []Status{
+	StatusReceived, StatusCancelled, StatusPackaged, StatusShipped, StatusDelivered, StatusDeliveryException, StatusReturned,
+}
+
+// from lists the states each state is reached from. Shipping events are
+// consumed independently, so delivered may arrive before in transit:
+// delivered is reached from packaged too.
+var from = map[Status][]Status{
+	StatusReceived:          {StatusPendingPayment},
+	StatusAbandoned:         {StatusPendingPayment},
+	StatusCancelled:         {StatusReceived, StatusPackaged},
+	StatusPackaged:          {StatusReceived},
+	StatusShipped:           {StatusPackaged, StatusDeliveryException},
+	StatusDelivered:         {StatusPackaged, StatusShipped, StatusDeliveryException},
+	StatusDeliveryException: {StatusPackaged, StatusShipped},
+	StatusReturned:          {StatusDelivered},
+}
+
+// CanBecome reports whether an order in s may move to next.
+func (s Status) CanBecome(next Status) bool {
+	for _, f := range from[next] {
+		if f == s {
+			return true
+		}
+	}
+	return false
+}
 
 // UserType is who placed an order.
 type UserType string
@@ -81,10 +115,54 @@ type Order struct {
 	PaymentTransactionID string
 	PaymentGateway       string
 	RefundedMinor        int64
+	Shipment             Shipment
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	PlacedAt             *time.Time
 }
+
+// Shipment is the order's parcel as yc-shipping reports it.
+type Shipment struct {
+	ID               string
+	TrackingNumber   string
+	CarrierName      string
+	CarrierReference string
+	PackagedAt       *time.Time
+	ShippedAt        *time.Time
+	DeliveredAt      *time.Time
+}
+
+// ShippingChoice is the option checkout's customer chose, from the
+// shipping snapshot.
+type ShippingChoice struct {
+	Method string
+	RateID string
+}
+
+// ShippingChoice reads the method and rate from the shipping snapshot.
+// Snapshots from before yc-shipping name the method "id".
+func (o Order) ShippingChoice() ShippingChoice {
+	var s struct {
+		ID     string `json:"id"`
+		Method string `json:"method"`
+		RateID string `json:"rate_id"`
+	}
+	_ = json.Unmarshal(o.ShippingSnapshot, &s)
+	c := ShippingChoice{Method: s.Method, RateID: s.RateID}
+	if c.Method == "" {
+		c.Method = s.ID
+	}
+	if c.Method == "" {
+		c.Method = "standard"
+	}
+	if uuid.Validate(c.RateID) != nil {
+		c.RateID = ""
+	}
+	return c
+}
+
+// RefundableMinor is what is left to refund.
+func (o Order) RefundableMinor() int64 { return max(o.TotalMinor-o.RefundedMinor, 0) }
 
 // MaxItems bounds an order's lines.
 const MaxItems = 100
@@ -185,23 +263,27 @@ func (o *Order) Transition(next Status, now time.Time) error {
 	if o.Status == next {
 		return nil
 	}
-	ok := false
-	switch next {
-	case StatusReceived, StatusAbandoned:
-		ok = o.Status == StatusPendingPayment
-	case StatusCancelled:
-		ok = o.Status == StatusReceived
-	case StatusPendingPayment:
-	}
-	if !ok {
+	if !o.Status.CanBecome(next) {
 		return ycerrors.New(ycerrors.CodeInvalidStateTransition,
 			fmt.Sprintf("An order that is %s cannot become %s", o.Status, next)).
 			With("order_status", string(o.Status))
 	}
+	if next == StatusPackaged && !o.RequiresShipping {
+		return ycerrors.New(ycerrors.CodeInvalidStateTransition, "A digital order is not shipped").
+			With("order_status", string(o.Status))
+	}
 	o.Status = next
 	o.UpdatedAt = now
-	if next == StatusReceived {
+	switch next {
+	case StatusReceived:
 		o.PlacedAt = &now
+	case StatusPackaged:
+		o.Shipment.PackagedAt = &now
+	case StatusShipped:
+		o.Shipment.ShippedAt = &now
+	case StatusDelivered:
+		o.Shipment.DeliveredAt = &now
+	case StatusPendingPayment, StatusAbandoned, StatusCancelled, StatusDeliveryException, StatusReturned:
 	}
 	return nil
 }

@@ -10,13 +10,24 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/domain"
 )
 
+var address = map[string]any{"country_code": "ZA", "fields": map[string]any{"province": "Gauteng"}}
+
+func options() []domain.ShippingOption {
+	return []domain.ShippingOption{
+		{ID: "express", Name: "Express", AmountMinor: 1500},
+		{ID: "standard", Name: "Standard", AmountMinor: 500},
+	}
+}
+
 func session(userType domain.UserType, physical bool) domain.Session {
 	s := domain.Session{ID: "s1", UserType: userType, State: domain.StatePricing, ItemsTotalMinor: 1000, TotalMinor: 1000}
-	if physical {
-		s.RequiresShipping = true
-		s.ShippingOptions = []domain.ShippingOption{{ID: "standard", Name: "Standard", AmountMinor: 500}}
-		s.SelectShipping("standard")
-	}
+	s.RequiresShipping = physical
+	return s
+}
+
+func shipped() domain.Session {
+	s := session(domain.UserCustomer, true)
+	s.ShipTo(address, options(), "")
 	return s
 }
 
@@ -39,21 +50,43 @@ func TestValidateConfirm(t *testing.T) {
 		fields(session(domain.UserVisitor, false).ValidateConfirm(domain.ConfirmInput{
 			GuestContact: &domain.GuestContact{Email: "Guest <g@example.com>", PhoneE164: "0831234567"}, PaymentToken: "pm",
 		})))
-	assert.Equal(t, []string{"delivery_address", "payment_gateway_token"},
-		fields(session(domain.UserCustomer, true).ValidateConfirm(domain.ConfirmInput{})))
+	assert.Equal(t, []string{"delivery_address", "shipping_option_id", "payment_gateway_token"},
+		fields(session(domain.UserCustomer, true).ValidateConfirm(domain.ConfirmInput{})),
+		"physical items: the shipping step comes first")
+	assert.Empty(t, shipped().ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"}))
 	assert.Equal(t, []string{"shipping_option_id"},
-		fields(session(domain.UserCustomer, true).ValidateConfirm(domain.ConfirmInput{
-			DeliveryAddress: map[string]any{"line1": "x"}, ShippingOptionID: "express", PaymentToken: "pm",
-		})))
+		fields(shipped().ValidateConfirm(domain.ConfirmInput{ShippingOptionID: "overnight", PaymentToken: "pm"})))
 }
 
 func TestShipping(t *testing.T) {
-	s := session(domain.UserCustomer, true)
-	assert.Equal(t, int64(1500), s.TotalMinor, "flat fee added, untaxed")
-	assert.False(t, s.SelectShipping("express"))
+	s := shipped()
+	assert.Equal(t, int64(1500), s.TotalMinor, "the cheapest added, untaxed")
+	assert.Equal(t, "standard", s.ShippingOptionID)
+	assert.False(t, s.SelectShipping("overnight"))
 	o, ok := s.SelectedShipping()
 	require.True(t, ok)
 	assert.Equal(t, "Standard", o.Name)
+
+	assert.True(t, s.ShipTo(address, options(), "express"))
+	assert.Equal(t, int64(2500), s.TotalMinor, "the named option")
+	assert.False(t, s.ShipTo(map[string]any{"country_code": "NA"}, nil, ""), "nowhere to ship")
+	assert.Equal(t, int64(1000), s.TotalMinor)
+	assert.Empty(t, s.ShippingOptionID)
+}
+
+func TestAddressDiffers(t *testing.T) {
+	s := shipped()
+	assert.False(t, s.AddressDiffers(map[string]any{"fields": map[string]any{"province": " Gauteng "}, "country_code": "ZA"}),
+		"key order and padding do not matter")
+	assert.True(t, s.AddressDiffers(map[string]any{"country_code": "ZA", "fields": map[string]any{"province": "Western Cape"}}))
+	assert.True(t, s.AddressDiffers(map[string]any{"country_code": "ZA"}))
+}
+
+func TestValidateAddress(t *testing.T) {
+	assert.Equal(t, []string{"delivery_address"}, fields(domain.ValidateAddress(map[string]any{})))
+	assert.Empty(t, domain.ValidateAddress(map[string]any{"anything": "the shop collects"}), "fields are the shop's (ADR-015)")
+	big := map[string]any{"line": string(make([]byte, 5000))}
+	assert.Equal(t, []string{"delivery_address"}, fields(domain.ValidateAddress(big)))
 }
 
 func TestSteps(t *testing.T) {

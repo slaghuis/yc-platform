@@ -3,10 +3,13 @@ info:
   title: yc-orders
   version: 0.1.0
   description: |
-    Orders (docs/services/yc-orders.md). Phase 4 subset: the pending order
-    yc-checkout creates, confirms or abandons (ADR-019), the customer's
-    and shop admin's views, and admin cancellation with a refund through
-    yc-payment.
+    Orders (docs/services/yc-orders.md): the pending order yc-checkout
+    creates, confirms or abandons (ADR-019), the customer's and shop
+    admin's views, admin cancellation with a refund through yc-payment,
+    and fulfilment (ADR-022): packaging books the shipment in yc-shipping,
+    whose events move the order to shipped, delivered or
+    delivery_exception. Customers return delivered items within 30 days;
+    an accepted return is refunded at once.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -55,6 +58,32 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /orders/{id}/returns:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Ask to return delivered items
+      description: |
+        Within 30 days of delivery, for physical lines, at most what is
+        left of each. One request awaits the shop's decision at a time
+        (409). Nothing is shipped back through the platform.
+      operationId: requestReturn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReturnInput' }
+      responses:
+        '201':
+          description: The return request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Return' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
   /admin/orders:
     get:
       summary: List the shop's orders, newest first
@@ -96,10 +125,12 @@ paths:
     post:
       summary: Cancel a placed order and refund its payment
       description: |
-        Refunds what is left of the payment through yc-payment, then
-        cancels. Stock is not returned automatically; receive it back in
-        yc-inventory. Cancelling again returns the order; a refund the
-        gateway refuses is 409 and leaves the order as it was.
+        A received or packaged order. Refunds what is left of the payment
+        through yc-payment, then cancels; yc-shipping cancels a booked
+        shipment on order.cancelled.v1. Stock is not returned
+        automatically; receive it back in yc-inventory. Cancelling again
+        returns the order; a refund the gateway refuses is 409 and leaves
+        the order as it was.
       operationId: cancelOrder
       requestBody:
         content:
@@ -111,6 +142,121 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Order' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/orders/{id}/package:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Mark a received order packaged and book its shipment
+      description: |
+        Books the shipment with yc-shipping (the chosen method and rate,
+        to the delivery address); the carrier driver gives the tracking
+        number. Packaging again returns the order. A digital order, or one
+        that is not received, is 409.
+      operationId: packageOrder
+      responses:
+        '200':
+          description: The packaged order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/orders/{id}/refund:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Refund part of a placed order
+      description: |
+        A goodwill refund through yc-payment, at most what is left. The
+        Idempotency-Key also keys the payment refund, so a retry refunds
+        once.
+      operationId: refundOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundInput' }
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/returns:
+    get:
+      summary: List the shop's returns, newest first
+      operationId: listReturns
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ReturnStatus' }
+      responses:
+        '200':
+          description: A page of returns.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReturnList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/returns/{id}/accept:
+    parameters:
+      - $ref: '#/components/parameters/ReturnID'
+    post:
+      summary: Accept a return and refund it
+      description: |
+        Refunds the returned lines' share of their totals through
+        yc-payment at once, plus shipping when refund_shipping is set (once
+        per order). When every physical line has been returned the order
+        becomes returned. Accepting again returns the return.
+      operationId: acceptReturn
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptReturnInput' }
+      responses:
+        '200':
+          description: The accepted return.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Return' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/returns/{id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ReturnID'
+    post:
+      summary: Reject a return
+      operationId: rejectReturn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectReturnInput' }
+      responses:
+        '200':
+          description: The rejected return.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Return' }
+        '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -209,6 +355,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    ReturnID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -232,7 +383,92 @@ components:
         currency: { type: string, pattern: '^[A-Z]{3}$' }
     OrderStatus:
       type: string
-      enum: [pending_payment, abandoned, received, cancelled]
+      enum: [pending_payment, abandoned, received, cancelled, packaged, shipped, delivered, delivery_exception,
+        returned]
+    ReturnStatus:
+      type: string
+      enum: [requested, accepted, rejected]
+    ReturnItem:
+      type: object
+      required: [sku_id, quantity]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+    ReturnInput:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ReturnItem' }
+        reason: { type: string, maxLength: 500 }
+    AcceptReturnInput:
+      type: object
+      additionalProperties: false
+      properties:
+        refund_shipping: { type: boolean, default: false, description: Refund the order's shipping too. }
+        note: { type: string, maxLength: 500 }
+    RejectReturnInput:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    Return:
+      type: object
+      required: [return_id, order_id, status, items, refund_shipping, refund, requested_at]
+      properties:
+        return_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ReturnStatus' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReturnItem' }
+        reason: { type: string }
+        refund_shipping: { type: boolean }
+        refund: { type: integer, format: int64, description: Minor units refunded on acceptance. }
+        decision_reason: { type: string }
+        requested_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time }
+    ReturnList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Return' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    RefundInput:
+      type: object
+      required: [amount_minor, reason]
+      additionalProperties: false
+      properties:
+        amount_minor: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    Refund:
+      type: object
+      required: [refund_id, amount, status, reason, created_at]
+      properties:
+        refund_id: { type: string, format: uuid }
+        return_id: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        status: { type: string, enum: [pending, completed] }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    OrderShipment:
+      type: object
+      required: [shipment_id, tracking_number]
+      properties:
+        shipment_id: { type: string, format: uuid }
+        tracking_number: { type: string }
+        carrier_name: { type: string }
+        carrier_reference: { type: string }
+        packaged_at: { type: string, format: date-time }
+        shipped_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time }
     GuestContact:
       type: object
       required: [email, phone_e164]
@@ -363,9 +599,17 @@ components:
         total: { $ref: '#/components/schemas/Money' }
         refunded: { $ref: '#/components/schemas/Money' }
         payment: { $ref: '#/components/schemas/Payment' }
+        shipping_method: { type: string, description: The shipping option chosen at checkout. }
+        shipment: { $ref: '#/components/schemas/OrderShipment' }
         history:
           type: array
           items: { $ref: '#/components/schemas/HistoryEntry' }
+        returns:
+          type: array
+          items: { $ref: '#/components/schemas/Return' }
+        refunds:
+          type: array
+          items: { $ref: '#/components/schemas/Refund' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         placed_at: { type: string, format: date-time }

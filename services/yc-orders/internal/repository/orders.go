@@ -22,16 +22,20 @@ type Orders struct{}
 const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_id, user_type, guest_contact,
 	delivery_address, requires_shipping, status, items, pricing_snapshot, shipping_snapshot, currency,
 	items_total_minor, shipping_minor, tax_total_minor, total_minor, COALESCE(payment_transaction_id::text, ''),
-	COALESCE(payment_gateway, ''), refunded_minor, created_at, updated_at, placed_at`
+	COALESCE(payment_gateway, ''), refunded_minor, created_at, updated_at, placed_at,
+	COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''), COALESCE(carrier_name, ''),
+	COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at`
 
 func scanOrder(r pgx.Row) (domain.Order, error) {
 	var o domain.Order
 	var userType, status string
 	var guest, address, items []byte
+	sh := &o.Shipment
 	err := r.Scan(&o.ID, &o.OrderNumber, &o.CheckoutSessionID, &o.UserID, &userType, &guest,
 		&address, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot, &o.Currency,
 		&o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
-		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt)
+		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt,
+		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt)
 	if err != nil {
 		return o, err
 	}
@@ -125,12 +129,17 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 	return nil
 }
 
-// UpdateOrder saves an order's status, number, payment and refund.
+// UpdateOrder saves an order's status, number, payment, refund and
+// shipment.
 func (Orders) UpdateOrder(ctx context.Context, tx pgx.Tx, tenantID string, o domain.Order) error {
+	sh := o.Shipment
 	_, err := tx.Exec(ctx, `UPDATE orders SET status = $3, order_number = NULLIF($4, ''),
-			payment_transaction_id = NULLIF($5, '')::uuid, refunded_minor = $6, updated_at = $7, placed_at = $8
+			payment_transaction_id = NULLIF($5, '')::uuid, refunded_minor = $6, updated_at = $7, placed_at = $8,
+			shipment_id = NULLIF($9, '')::uuid, tracking_number = NULLIF($10, ''), carrier_name = NULLIF($11, ''),
+			carrier_reference = NULLIF($12, ''), packaged_at = $13, shipped_at = $14, delivered_at = $15
 		WHERE tenant_id = $1 AND id = $2`,
-		tenantID, o.ID, string(o.Status), o.OrderNumber, o.PaymentTransactionID, o.RefundedMinor, o.UpdatedAt, o.PlacedAt)
+		tenantID, o.ID, string(o.Status), o.OrderNumber, o.PaymentTransactionID, o.RefundedMinor, o.UpdatedAt, o.PlacedAt,
+		sh.ID, sh.TrackingNumber, sh.CarrierName, sh.CarrierReference, sh.PackagedAt, sh.ShippedAt, sh.DeliveredAt)
 	if err != nil {
 		return fmt.Errorf("update order: %w", err)
 	}
@@ -199,12 +208,12 @@ type OrderCursor struct {
 
 // ListOrders returns up to limit orders, newest first.
 func (r Orders) ListOrders(ctx context.Context, tx pgx.Tx, tenantID string, f OrderFilter, after *OrderCursor, limit int) ([]domain.Order, error) {
+	if len(f.Statuses) == 0 {
+		f.Statuses = domain.PlacedStatuses
+	}
 	statuses := make([]string, 0, len(f.Statuses))
 	for _, s := range f.Statuses {
 		statuses = append(statuses, string(s))
-	}
-	if len(statuses) == 0 {
-		statuses = []string{string(domain.StatusReceived), string(domain.StatusCancelled)}
 	}
 	args := []any{tenantID, f.UserID, statuses, limit}
 	q := `SELECT ` + orderColumns + ` FROM orders WHERE tenant_id = $1 AND ($2 = '' OR user_id = $2)

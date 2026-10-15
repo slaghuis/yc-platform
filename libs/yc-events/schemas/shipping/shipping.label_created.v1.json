@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/shipping/shipping.label_created.v1.json",
+  "title": "shipping.label_created.v1",
+  "description": "A shipment was created for a packaged order and its carrier driver issued a tracking number.",
+  "type": "object",
+  "required": [
+    "shipment_id",
+    "order_id",
+    "carrier_driver",
+    "tracking_number",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "shipment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "carrier_driver": {
+      "type": "string"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "label_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

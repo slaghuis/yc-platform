@@ -110,6 +110,7 @@ type SKU struct {
 	IsDigital        bool           `json:"is_digital"`
 	InventoryTracked bool           `json:"inventory_tracked"`
 	TaxClass         string         `json:"tax_class"`
+	WeightGrams      *int64         `json:"weight_grams,omitempty"`
 	Status           string         `json:"status"`
 }
 
@@ -396,6 +397,44 @@ func (c *Clients) ConfirmOrder(ctx context.Context, key, orderID, transactionID 
 	var out Order
 	err := c.call(ctx, http.MethodPost, "/internal/orders/"+url.PathEscape(orderID)+"/confirm", key, 0,
 		map[string]string{"payment_transaction_id": transactionID}, &out)
+	return out, err
+}
+
+// ShippingQuoteItem is one line to ship.
+type ShippingQuoteItem struct {
+	SKUID       string `json:"sku_id"`
+	Quantity    int64  `json:"quantity"`
+	WeightGrams *int64 `json:"weight_grams,omitempty"`
+	IsDigital   bool   `json:"is_digital,omitempty"`
+}
+
+// ShippingQuoteRequest asks what shipping the items to an address costs.
+type ShippingQuoteRequest struct {
+	DeliveryAddress map[string]any      `json:"delivery_address"`
+	Items           []ShippingQuoteItem `json:"items"`
+	SubtotalMinor   int64               `json:"subtotal_minor"`
+}
+
+// ShippingQuoteOption is one way to ship, priced.
+type ShippingQuoteOption struct {
+	OptionID         string `json:"option_id"`
+	RateID           string `json:"rate_id"`
+	Name             string `json:"name"`
+	AmountMinor      int64  `json:"amount_minor"`
+	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
+	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
+}
+
+// ShippingQuote is yc-shipping's options for an address, cheapest first.
+// None means the shop does not ship there.
+type ShippingQuote struct {
+	Options []ShippingQuoteOption `json:"options"`
+}
+
+// QuoteShipping prices shipping to an address (yc-shipping).
+func (c *Clients) QuoteShipping(ctx context.Context, req ShippingQuoteRequest) (ShippingQuote, error) {
+	var out ShippingQuote
+	err := c.call(ctx, http.MethodPost, "/internal/quote", "", 0, req, &out)
 	return out, err
 }
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-`yc-shipping` manages shipping zones, rates, carrier integrations, and tracking. It provides quotes to yc-checkout, generates shipping labels on order placement, and tracks fulfillment through to delivery. Carrier integrations are implemented as drivers behind a common interface.
+`yc-shipping` manages shipping zones, rates, carrier integrations, and tracking. It provides quotes to yc-checkout, books shipments (labels and tracking numbers) when yc-orders packages an order, and tracks fulfillment through to delivery. Carrier integrations are implemented as drivers behind a common interface. The flow between checkout, orders and shipping is ADR-022.
 
 ## Location in Monorepo
 
@@ -15,7 +15,7 @@
 1. Maintain shipping zones (geographic groupings)
 2. Maintain shipping methods and rates per zone
 3. Quote shipping options to yc-checkout given a cart and delivery address
-4. Generate shipping labels when orders are placed
+4. Book shipments (label, tracking number) when the shop admin packages an order
 5. Track shipments via carrier APIs or webhooks
 6. Emit tracking lifecycle events
 7. Handle delivery exceptions (failed delivery, address issues)
@@ -54,18 +54,19 @@ A zone is an arbitrary grouping of regions. Tenants define them.
 
 ```json
 {
-  "zone_id": "za-gauteng",
+  "zone_id": "…",
   "name": "Gauteng",
+  "priority": 10,
   "match_rules": [
-    { "country_code": "ZA", "region": "Gauteng" }
+    { "country_code": "ZA", "fields": { "province": "Gauteng" } }
   ]
 }
 ```
 
 Address matching:
 - Uses `country_code` from the delivery address (ADR-015)
-- Optional additional fields matched against the address's `fields` JSON
-- First matching zone wins; evaluation order is tenant-configured
+- Optional `fields` values must equal the address's `fields` values (case-insensitive, trimmed)
+- Zones are tried by `priority` (lowest first, then name); the first zone with a matching rule wins
 
 ## Rate Definition
 
@@ -98,26 +99,27 @@ Rates are **in store currency** (ADR-014).
 ## Quote Flow
 
 ```
-yc-checkout → yc-shipping: POST /internal/quote
-  Request: cart items (with weights/dimensions from yc-product), delivery_address
+yc-checkout → yc-shipping: POST /internal/quote   (checkout's shipping step, ADR-022 rule 1)
+  Request: delivery_address, items (sku_id, quantity, weight_grams, is_digital), subtotal_minor
   yc-shipping:
     1. Resolve zone from address
-    2. If no zone matches: return empty options (yc-checkout fails confirm)
-    3. For each enabled method in the zone: compute rate
-    4. Return list of options
+    2. If no zone matches: return empty options (yc-checkout answers 409)
+    3. For each active rate in the zone: compute the amount; skip a weight-tiered
+       rate when a physical item has no weight or the parcel is over the last tier
+    4. Return the options, cheapest first
 ```
 
 ## Fulfillment Flow
 
 ```
-yc-orders → yc-shipping (via order.placed.v1):
-  1. Fetch order details
-  2. If order.requires_shipping = false: no-op
-  3. Resolve the chosen rate's carrier driver
-  4. Call driver.CreateLabel
-  5. Store label and tracking number
-  6. Publish shipping.label_created.v1 (yc-orders consumes)
-  7. On carrier webhook or polling: update status, publish tracking events
+yc-orders → yc-shipping: POST /internal/shipments   (admin packages the order, ADR-022 rule 4)
+  Request: order_id, order_number, method, rate_id, delivery_address; Idempotency-Key
+  1. Return the order's shipment if it already has one
+  2. Resolve the rate's carrier driver (manual if the rate is gone)
+  3. Call driver.CreateLabel → tracking number (and label URL)
+  4. Store the shipment as label_created; publish shipping.label_created.v1
+  5. Status updates (admin manual-update now; carrier webhooks or polling later):
+     publish shipping.in_transit.v1 / delivered.v1 / delivery_exception.v1 (yc-orders consumes)
 ```
 
 ## Delivery Exceptions
@@ -151,21 +153,31 @@ yc-orders → yc-shipping (via order.placed.v1):
 | GET | `/admin/shipments` | List shipments | shop_admin |
 | GET | `/admin/shipments/{id}` | Shipment detail | shop_admin |
 | POST | `/admin/shipments/{id}/manual-update` | Update tracking manually (for `manual` driver) | shop_admin |
-| GET | `/admin/carriers` | List carrier configs | shop_admin |
-| PUT | `/admin/carriers/{driver}` | Configure carrier credentials | shop_admin |
+| GET | `/admin/carriers` | List carrier configs (deferred until a carrier driver exists) | shop_admin |
+| PUT | `/admin/carriers/{driver}` | Configure carrier credentials (deferred) | shop_admin |
 
 ### Internal Endpoints
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
 | POST | `/internal/quote` | Shipping quote for checkout | service |
-| POST | `/internal/shipments` | Create shipment (post-order) | service |
+| POST | `/internal/shipments` | Book the order's shipment (yc-orders, on packaging) | service |
 
 ### Webhook Endpoints
 
 | Method | Path | Description |
 |---|---|---|
 | POST | `/webhooks/{driver}` | Carrier webhook (future) |
+
+### Phase 6 Implementation Notes
+
+The contract is `services/yc-shipping/api/openapi.yaml`; the flow is ADR-022. Implemented: zones, rates, the quote, shipment booking with the `manual` driver, admin shipment list, detail and manual updates, public zones and tracking, and cancellation on `order.cancelled.v1`. Carrier configuration, carrier webhooks and the GDPR and tenant subscriptions come with the first real carrier driver.
+
+- **Manual driver.** Tracking numbers are `YC` followed by 12 random characters of Crockford's base 32 (digits and capitals without I, L, O or U); there is no label URL. The admin reports `in_transit` (with an optional carrier name and reference), `delivered` and `exception` (a message is required). `in_transit` and `exception` may repeat; a shipment moves label_created → in_transit → delivered, with `exception` from any of the first two and back.
+- **Booking** is idempotent per order (`UNIQUE (tenant_id, order_id)`) as well as by `Idempotency-Key`. A booking for a rate that has been deleted uses the method name and the manual driver.
+- **Rates** must have sensible tiers: weight tiers with increasing `max_weight_g`, price tiers starting at 0 with increasing `min_subtotal_minor`, amounts not negative, and `estimated_days_min` ≤ `estimated_days_max`. A rate can be made inactive instead of deleted. Deleting a zone deletes its rates.
+- **Public tracking** returns the status, method, carrier and events only, never the address or order.
+- **Cancellation** applies to shipments still `label_created`; a dispatched shipment is left to the shop admin.
 
 ## Database Schema
 
@@ -249,22 +261,19 @@ CREATE POLICY tenant_isolation ON shipments
 
 | Event | When |
 |---|---|
-| `shipping.rate_quoted.v1` | Quote returned to checkout (optional telemetry) |
-| `shipping.label_created.v1` | Label created |
-| `shipping.label_failed.v1` | Label creation failed |
-| `shipping.carrier_pickup.v1` | Carrier collected the package |
-| `shipping.in_transit.v1` | Shipment is moving |
-| `shipping.out_for_delivery.v1` | Final-mile started |
-| `shipping.delivered.v1` | Delivered — triggers yc-orders transition |
-| `shipping.delivery_exception.v1` | Problem (failed delivery, address issue) |
-| `shipping.cancelled.v1` | Shipment cancelled |
+| `shipping.label_created.v1` | Shipment booked: tracking number (and label) created |
+| `shipping.in_transit.v1` | Shipment is moving — yc-orders moves the order to `shipped` |
+| `shipping.delivered.v1` | Delivered — yc-orders moves the order to `delivered` |
+| `shipping.delivery_exception.v1` | Problem (failed delivery, address issue) — order `delivery_exception` |
+| `shipping.cancelled.v1` | Shipment cancelled (order cancelled before dispatch) |
+
+Future, with carrier drivers: `shipping.rate_quoted.v1` (telemetry), `shipping.label_failed.v1`, `shipping.carrier_pickup.v1`, `shipping.out_for_delivery.v1`.
 
 ## Subscribed Events
 
 | Event | Action |
 |---|---|
-| `order.placed.v1` | If `requires_shipping`: create shipment, call carrier driver |
-| `order.cancelled.v1` | Cancel shipment if not yet dispatched |
+| `order.cancelled.v1` | Cancel the order's shipment if not yet dispatched (ADR-022 rule 6) |
 | `platform.tenant.provisioned.v1` | Create empty tenant structures |
 | `platform.tenant.deleted.v1` | Delete tenant zones, rates; retain shipments for retention window |
 | `identity.user.deleted.v1` | Pseudonymize `delivery_address` on completed shipments beyond retention; else retain for operational integrity |
@@ -290,13 +299,13 @@ yc-shipping:
 
 ## Dependencies on Other Services
 
-- **yc-product** (for SKU dimensions/weights at quote time — optional, cached locally)
+- None at runtime: yc-checkout sends SKU weights with the quote (from yc-product), and yc-orders sends the delivery address with the booking
 - External: carrier APIs (per driver)
 
 ## Called By
 
 - `yc-checkout` (quotes)
-- `yc-orders` (via events)
+- `yc-orders` (booking on packaging; consumes shipping events)
 - Clients (tracking lookup)
 - Shop admins
 
@@ -312,7 +321,8 @@ yc-shipping:
 - Real carrier integrations (Aramex, DHL, PostNet, PUDO, Courier Guy)
 - Multi-package shipments
 - International customs documentation
-- Returns / RMA shipping
+- Returns / RMA shipping (returns are refunded without a return shipment in v1, ADR-022 rule 7)
+- Rates by dimensions (SKU dimensions are stored by yc-product but unused)
 - Delivery scheduling / time slots
 - Live rate shopping (query multiple carriers, pick cheapest)
 - Shipping insurance options

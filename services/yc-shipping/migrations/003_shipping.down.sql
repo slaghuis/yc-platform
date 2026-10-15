@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS shipment_events;
+DROP TABLE IF EXISTS shipments;
+DROP TABLE IF EXISTS rates;
+DROP TABLE IF EXISTS zones;

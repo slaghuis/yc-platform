@@ -65,8 +65,13 @@ paths:
 
   /checkout/{id}/shipping:
     post:
-      summary: Choose a shipping option
-      description: Before confirm only. Publishes checkout.shipping_selected.v1.
+      summary: Choose where and how to ship
+      description: |
+        Before confirm only, for physical items. A delivery address is
+        quoted with yc-shipping (the shop's zones and rates; untaxed) and
+        the named option, or the cheapest, is selected; 409 when the shop
+        does not ship there. Without an address, chooses among the current
+        address's options. Publishes checkout.shipping_selected.v1.
       operationId: selectShipping
       parameters:
         - $ref: '#/components/parameters/SessionID'
@@ -244,10 +249,17 @@ components:
         cart_type: { type: string, maxLength: 32, description: Defaults to shopping. }
     ShippingInput:
       type: object
-      required: [shipping_option_id]
       additionalProperties: false
+      description: A delivery address to quote, an option of the current address, or both.
       properties:
-        shipping_option_id: { type: string, maxLength: 64 }
+        delivery_address:
+          type: object
+          additionalProperties: true
+          description: |
+            Free-form (ADR-015); yc-shipping matches its country_code and
+            fields to the shop's zones. Replaces an earlier address and its
+            options.
+        shipping_option_id: { type: string, maxLength: 64, description: Defaults to the cheapest option. }
     GuestContact:
       type: object
       required: [email, phone_e164]
@@ -263,7 +275,10 @@ components:
         delivery_address:
           type: object
           additionalProperties: true
-          description: Free-form (ADR-015). Required when requires_shipping.
+          description: |
+            Optional: physical items ship to the address chosen at the
+            shipping step. A different one here is 409; choose shipping
+            again.
         shipping_option_id: { type: string, maxLength: 64, description: Defaults to the selected option. }
         payment_gateway:
           type: string
@@ -299,6 +314,8 @@ components:
         id: { type: string }
         name: { type: string }
         amount: { $ref: '#/components/schemas/Money' }
+        estimated_days_min: { type: integer }
+        estimated_days_max: { type: integer }
     Totals:
       type: object
       required: [items_total, tax_total, shipping, total]

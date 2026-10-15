@@ -307,7 +307,10 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 	if sess.RequiresShipping {
 		in.DeliveryAddress = sess.DeliveryAddress
 		if o, ok := sess.SelectedShipping(); ok {
-			in.ShippingOption = map[string]any{"id": o.ID, "name": o.Name, "amount_minor": o.AmountMinor}
+			in.ShippingOption = map[string]any{"id": o.ID, "method": o.ID, "name": o.Name, "amount_minor": o.AmountMinor}
+			if o.RateID != "" {
+				in.ShippingOption["rate_id"] = o.RateID
+			}
 		}
 	}
 	if sess.PaymentTransactionID != "" || sess.PaymentGateway != "" {

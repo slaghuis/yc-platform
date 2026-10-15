@@ -178,8 +178,10 @@ func TestProduct(t *testing.T) {
 		skuPath := "/admin/products/" + shirt.ProductID.String() + "/skus"
 		require.Equal(t, http.StatusCreated, admin.do("POST", skuPath, map[string]any{
 			"sku_code": "TS-RED", "variant_values": map[string]string{"colour": "Red"}, "tax_class": "za-standard",
+			"weight_grams": 180, "dimensions_mm": map[string]int{"length": 300, "width": 250, "height": 20},
 		}, &red))
 		assert.True(t, red.InventoryTracked)
+		assert.Equal(t, &api.Dimensions{Length: 300, Width: 250, Height: 20}, red.DimensionsMm)
 		require.Equal(t, http.StatusCreated, admin.do("POST", skuPath, map[string]any{
 			"sku_code": "TS-BLUE", "variant_values": map[string]string{"colour": "Blue"}, "tax_class": "za-standard",
 		}, &blue))
@@ -193,6 +195,10 @@ func TestProduct(t *testing.T) {
 			"unknown value":    {map[string]any{"sku_code": "TS-GRN", "variant_values": map[string]string{"colour": "Green"}, "tax_class": "za-standard"}, http.StatusBadRequest},
 			"missing axis":     {map[string]any{"sku_code": "TS-X", "tax_class": "za-standard"}, http.StatusBadRequest},
 			"bad tax class":    {map[string]any{"sku_code": "TS-Y", "variant_values": map[string]string{"colour": "Red"}, "tax_class": "Standard Rate"}, http.StatusBadRequest},
+			"partial box": {map[string]any{
+				"sku_code": "TS-Z", "variant_values": map[string]string{"colour": "Red"}, "tax_class": "za-standard",
+				"dimensions_mm": map[string]int{"length": 300},
+			}, http.StatusBadRequest},
 		} {
 			assert.Equal(t, tc.status, admin.do("POST", skuPath, tc.body, nil), name)
 		}
@@ -431,6 +437,8 @@ func TestProduct(t *testing.T) {
 		assert.Equal(t, api.SKUDetailStatusActive, d.Status)
 		assert.True(t, d.InventoryTracked)
 		assert.False(t, d.IsDigital)
+		assert.Equal(t, 180, *d.WeightGrams)
+		assert.Equal(t, &api.Dimensions{Length: 300, Width: 250, Height: 20}, d.DimensionsMm)
 		assert.Equal(t, missing, batch.Missing[0].String())
 
 		assert.NotEqual(t, http.StatusOK, visitor.do("GET", "/internal/skus/batch?ids="+red.SkuID.String(), nil, nil),

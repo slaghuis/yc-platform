@@ -32,7 +32,14 @@ type fakeSKU struct {
 	Price    int64 // gross per unit, VAT-inclusive at 15 %
 	Stock    int64
 	Inactive bool
+	Grams    int64
 }
+
+// The fake ships only to ZA addresses, as yc-shipping's zones would.
+const (
+	standardRate = "7f5b1c1e-2d6a-4c11-9b0e-0a1f8c4e2b01"
+	expressRate  = "7f5b1c1e-2d6a-4c11-9b0e-0a1f8c4e2b02"
+)
 
 type fakeLine struct {
 	SKUID    string `json:"sku_id"`
@@ -92,6 +99,7 @@ type fakeGateway struct {
 	orderSeq     int
 	routes       []fakeRoute
 	refunds      map[string]string
+	quotes       []map[string]any
 	calls        []string
 	// fail answers 503 to the next n calls of a step.
 	fail map[string]int
@@ -182,6 +190,15 @@ func (f *fakeGateway) txFor(sessionID string) *fakeTx {
 	return nil
 }
 
+func (f *fakeGateway) lastQuote() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.quotes) == 0 {
+		return nil
+	}
+	return f.quotes[len(f.quotes)-1]
+}
+
 func (f *fakeGateway) orderFor(sessionID string) *fakeOrder {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -263,13 +280,19 @@ func (f *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if s.Inactive {
 				status = "inactive"
 			}
-			skus = append(skus, map[string]any{
+			sku := map[string]any{
 				"sku_id": s.ID, "product_id": uuid.NewString(), "sku_code": "SKU-" + s.Name, "product_name": s.Name,
 				"variant_values": map[string]any{}, "is_digital": s.Digital, "inventory_tracked": s.Tracked,
 				"tax_class": "standard", "status": status,
-			})
+			}
+			if s.Grams > 0 {
+				sku["weight_grams"] = s.Grams
+			}
+			skus = append(skus, sku)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"skus": skus, "missing": missing})
+	case step == "quote":
+		f.quote(w, body)
 	case step == "prices":
 		f.evaluate(w, body)
 	case step == "reservations" && len(parts) == 1:
@@ -330,6 +353,24 @@ func (f *fakeGateway) evaluate(w http.ResponseWriter, body map[string]any) {
 		"totals":      map[string]any{"subtotal_excl_tax": zar(total - tax), "tax_total": zar(tax), "grand_total": zar(total), "tax_breakdown": []any{}},
 		"audit_trail": []any{}, "evaluated_at": time.Now(),
 	})
+}
+
+func (f *fakeGateway) quote(w http.ResponseWriter, body map[string]any) {
+	f.quotes = append(f.quotes, body)
+	address, _ := body["delivery_address"].(map[string]any)
+	options := []map[string]any{}
+	if address["country_code"] == "ZA" {
+		options = append(options,
+			map[string]any{
+				"option_id": "standard", "rate_id": standardRate, "name": "Standard", "amount_minor": 10000,
+				"estimated_days_min": 2, "estimated_days_max": 4, "carrier_driver": "manual",
+			},
+			map[string]any{
+				"option_id": "express", "rate_id": expressRate, "name": "Express", "amount_minor": 20000,
+				"estimated_days_min": 1, "estimated_days_max": 1, "carrier_driver": "manual",
+			})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"options": options})
 }
 
 func (f *fakeGateway) reserve(w http.ResponseWriter, key string, body map[string]any) {

@@ -72,11 +72,27 @@ func (c client) do(method, path string, body, out any, header ...string) int {
 	return resp.StatusCode
 }
 
-func (c client) start() api.Session {
+// quote starts a checkout.
+func (c client) quote() api.Session {
 	c.t.Helper()
 	var s api.Session
 	require.Equal(c.t, http.StatusCreated, c.do(http.MethodPost, "/checkout", map[string]any{}, &s))
 	return s
+}
+
+// start starts a checkout and, for physical items, ships to address.
+func (c client) start() api.Session {
+	c.t.Helper()
+	s := c.quote()
+	if s.RequiresShipping {
+		require.Equal(c.t, http.StatusOK, c.ship(s.SessionID, map[string]any{"delivery_address": address}, &s))
+	}
+	return s
+}
+
+func (c client) ship(id uuid.UUID, body map[string]any, out any) int {
+	c.t.Helper()
+	return c.do(http.MethodPost, "/checkout/"+id.String()+"/shipping", body, out)
 }
 
 func (c client) confirm(id uuid.UUID, key string, body map[string]any) (int, api.Session) {
@@ -93,7 +109,10 @@ func (c client) get(id uuid.UUID) api.Session {
 	return s
 }
 
-var address = map[string]any{"line1": "1 Long St", "city": "Cape Town", "country": "ZA"}
+var address = map[string]any{
+	"country_code": "ZA", "lines": []any{"1 Long St", "Cape Town"},
+	"fields": map[string]any{"city": "Cape Town", "province": "Western Cape"},
+}
 
 func pay(token string) map[string]any {
 	return map[string]any{"delivery_address": address, "payment_gateway_token": token}
@@ -128,7 +147,6 @@ func TestCheckout(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gwSrv.URL)
 	t.Setenv("YC_CHECKOUT_SERVICE_SECRET", "checkout-secret")
-	t.Setenv("YC_CHECKOUT_SHIPPING_FEE_MINOR", "10000")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	cfg.Gateway.InternalURL = ""
@@ -164,7 +182,7 @@ func TestCheckout(t *testing.T) {
 		return out
 	}
 
-	mug := gw.sku(fakeSKU{Name: "Mug", Tracked: true, Price: 11500, Stock: 10})
+	mug := gw.sku(fakeSKU{Name: "Mug", Tracked: true, Price: 11500, Stock: 10, Grams: 350})
 	ebook := gw.sku(fakeSKU{Name: "E-book", Digital: true, Price: 23000})
 	lamp := gw.sku(fakeSKU{Name: "Lamp", Tracked: true, Price: 50000, Stock: 0})
 	retired := gw.sku(fakeSKU{Name: "Old", Price: 100, Inactive: true})
@@ -177,24 +195,52 @@ func TestCheckout(t *testing.T) {
 
 	t.Run("happy path: tracked and digital items", func(t *testing.T) {
 		c := customer(t, fakeLine{mug, 2}, fakeLine{ebook, 1})
-		s := c.start()
+		s := c.quote()
 		assert.Equal(t, api.PRICING, s.State)
 		assert.True(t, s.RequiresShipping)
 		require.Len(t, s.Items, 2)
 		assert.Equal(t, int64(23000), s.Items[0].LineTotal.AmountMinor)
 		assert.Equal(t, int64(46000), s.Totals.ItemsTotal.AmountMinor)
 		assert.Equal(t, int64(3000+3000), s.Totals.TaxTotal.AmountMinor)
-		assert.Equal(t, int64(10000), s.Totals.Shipping.AmountMinor, "flat fee, physical items")
-		assert.Equal(t, int64(56000), s.Totals.Total.AmountMinor)
-		assert.Equal(t, "standard", *s.SelectedShippingOptionID)
+		assert.Empty(t, s.ShippingOptions, "no address yet")
+		assert.Equal(t, int64(46000), s.Totals.Total.AmountMinor)
 		assert.WithinDuration(t, time.Now().Add(30*time.Minute), s.ExpiresAt, time.Minute)
 
-		// ADR-010: a physical checkout needs an address.
+		// ADR-010: a physical checkout needs an address, given at the shipping step.
 		var prob map[string]any
 		code := c.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/confirm",
-			map[string]any{"payment_gateway_token": cardVisa}, &prob, httpkit.HeaderIdempotencyKey, "k1")
+			pay(cardVisa), &prob, httpkit.HeaderIdempotencyKey, "k1")
 		require.Equal(t, http.StatusBadRequest, code)
 		assert.Contains(t, prob["errors"].([]any)[0].(map[string]any)["field"], "delivery_address")
+
+		require.Equal(t, http.StatusConflict, c.ship(s.SessionID,
+			map[string]any{"delivery_address": map[string]any{"country_code": "NA"}}, &prob))
+		assert.Contains(t, prob["detail"], "does not ship to this address")
+		assert.Equal(t, http.StatusBadRequest, c.ship(s.SessionID, map[string]any{"delivery_address": map[string]any{}}, nil))
+		assert.Equal(t, http.StatusBadRequest, c.ship(s.SessionID, map[string]any{"shipping_option_id": "standard"}, nil),
+			"no address to choose for")
+
+		require.Equal(t, http.StatusOK, c.ship(s.SessionID, map[string]any{"delivery_address": address}, &s))
+		require.Len(t, s.ShippingOptions, 2)
+		assert.Equal(t, 4, *s.ShippingOptions[0].EstimatedDaysMax)
+		assert.Equal(t, int64(10000), s.Totals.Shipping.AmountMinor, "the cheapest, untaxed")
+		assert.Equal(t, int64(56000), s.Totals.Total.AmountMinor)
+		assert.Equal(t, "standard", *s.SelectedShippingOptionID)
+		q := gw.lastQuote()
+		assert.Equal(t, float64(46000), q["subtotal_minor"])
+		assert.Equal(t, []any{
+			map[string]any{"sku_id": mug, "quantity": float64(2), "weight_grams": float64(350)},
+			map[string]any{"sku_id": ebook, "quantity": float64(1), "is_digital": true},
+		}, q["items"], "weights for weight-tiered rates")
+
+		require.Equal(t, http.StatusOK, c.ship(s.SessionID, map[string]any{"shipping_option_id": "express"}, &s))
+		assert.Equal(t, int64(66000), s.Totals.Total.AmountMinor)
+		require.Equal(t, http.StatusOK, c.ship(s.SessionID, map[string]any{"shipping_option_id": "standard"}, &s))
+
+		moved := map[string]any{"country_code": "ZA", "fields": map[string]any{"province": "Gauteng"}}
+		require.Equal(t, http.StatusConflict, c.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/confirm",
+			map[string]any{"delivery_address": moved, "payment_gateway_token": cardVisa}, &prob, httpkit.HeaderIdempotencyKey, "k0"))
+		assert.Contains(t, prob["detail"], "choose shipping again")
 
 		code, s = c.confirm(s.SessionID, "k1", pay(cardVisa))
 		require.Equal(t, http.StatusOK, code)
@@ -213,8 +259,13 @@ func TestCheckout(t *testing.T) {
 		assert.Equal(t, "received", o.Status)
 		assert.Equal(t, float64(56000), o.Body["total_minor"])
 		assert.Equal(t, float64(10000), o.Body["shipping_minor"])
+		assert.Equal(t, map[string]any{
+			"id": "standard", "method": "standard", "rate_id": standardRate, "name": "Standard", "amount_minor": float64(10000),
+		}, o.Body["shipping_option"])
+		assert.Equal(t, address, o.Body["delivery_address"])
 		assert.Equal(t, []string{
 			"checkout.started.v1", "checkout.priced.v1", "checkout.validation_failed.v1",
+			"checkout.shipping_selected.v1", "checkout.shipping_selected.v1", "checkout.shipping_selected.v1",
 			"checkout.confirmed.v1", "checkout.completed.v1",
 		}, outbox(s.SessionID))
 
@@ -239,6 +290,8 @@ func TestCheckout(t *testing.T) {
 		assert.False(t, s.RequiresShipping)
 		assert.Empty(t, s.ShippingOptions)
 		assert.Equal(t, int64(23000), s.Totals.Total.AmountMinor)
+		assert.Equal(t, http.StatusBadRequest, v.ship(s.SessionID, map[string]any{"delivery_address": address}, nil),
+			"nothing to ship")
 
 		var prob map[string]any
 		code := v.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/confirm",
@@ -281,7 +334,7 @@ func TestCheckout(t *testing.T) {
 		assert.Contains(t, *s.Failure.Detail, "shortages")
 		assert.Equal(t, []string{"reservations S:reserve"}, gw.callsFor(s.SessionID.String()))
 		assert.Equal(t, []string{
-			"checkout.started.v1", "checkout.priced.v1", "checkout.confirmed.v1",
+			"checkout.started.v1", "checkout.priced.v1", "checkout.shipping_selected.v1", "checkout.confirmed.v1",
 			"checkout.compensating.v1", "checkout.failed.v1",
 		}, outbox(s.SessionID))
 	})

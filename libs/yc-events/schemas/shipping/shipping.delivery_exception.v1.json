@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/shipping/shipping.delivery_exception.v1.json",
+  "title": "shipping.delivery_exception.v1",
+  "description": "A shipment ran into a problem (failed delivery, address issue). yc-orders flags the order until the shipment moves on.",
+  "type": "object",
+  "required": [
+    "shipment_id",
+    "order_id",
+    "tracking_number",
+    "message",
+    "occurred_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "shipment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tracking_number": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string",
+      "description": "What went wrong."
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

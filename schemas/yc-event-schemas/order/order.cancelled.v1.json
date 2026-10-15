@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://yc/schemas/order/order.cancelled.v1.json",
   "title": "order.cancelled.v1",
-  "description": "A received order was cancelled before shipment. A captured payment is refunded through yc-payment.",
+  "description": "A received or packaged order was cancelled before shipment. A captured payment is refunded through yc-payment, and yc-shipping cancels the shipment.",
   "type": "object",
   "required": [
     "order_id",

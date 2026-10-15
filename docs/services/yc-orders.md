@@ -34,28 +34,30 @@
 pending_payment ─▶ abandoned            (checkout compensation; terminal)
        │
        ▼
-received ─▶ packaged ─▶ shipped ─▶ delivered ─▶ (completed)
-    │           │           │
-    │           │           └─▶ delivery_exception ─▶ (resolution path)
+received ─▶ packaged ─▶ shipped ─▶ delivered ─▶ returned   (every physical line returned)
+    │           │  │        │          ▲
+    │           │  │        ▼          │
+    │           │  └─▶ delivery_exception ─▶ shipped / delivered
     │           │
-    └─▶ cancelled (refund issued if captured)
-    
-                                 └─▶ returned ─▶ refunded (partial or full)
+    └───────────┴─▶ cancelled (refund issued if captured)
 
-disputed (triggered by chargeback) ─▶ resolved (won/lost)
+disputed (triggered by chargeback) ─▶ resolved (won/lost)      (future)
 ```
+
+Refunds (cancellation, accepted returns, admin refunds) do not change the status; `refunded` on the order is their sum (ADR-022 rule 8).
 
 - `pending_payment` = created by yc-checkout, payment not yet captured; no events published, hidden from customer and shop admin listings
 - `abandoned` = checkout compensated before payment succeeded; hidden, no events published
 - `received` = paid and confirmed by yc-checkout; `order.placed.v1` published
-- `packaged` = shop admin marks ready for carrier
-- `shipped` = yc-shipping event received
-- `delivered` = yc-shipping event received
-- `cancelled` = pre-shipment cancellation
-- `returned` = post-delivery return accepted
-- `disputed` = chargeback received
+- `packaged` = shop admin packaged it; the shipment is booked with yc-shipping (ADR-022 rule 4)
+- `shipped` = `shipping.in_transit.v1` received
+- `delivered` = `shipping.delivered.v1` received; returns are open for 30 days
+- `delivery_exception` = `shipping.delivery_exception.v1` received; a later in-transit or delivered event resolves it
+- `cancelled` = cancelled before shipment (while `received` or `packaged`)
+- `returned` = every physical line came back through accepted returns
+- `disputed` = chargeback received (future)
 
-Terminal states: `abandoned`, `delivered`, `cancelled`, `refunded`, `returned`.
+Terminal states: `abandoned`, `cancelled`, `returned`; `delivered` is terminal unless a return follows. Digital-only orders stay `received`.
 
 ## Order Snapshot
 
@@ -128,8 +130,8 @@ When a visitor's order is complete and the visitor later registers with the same
 |---|---|---|---|
 | GET | `/orders/mine` | List my orders | customer |
 | GET | `/orders/{id}` | Get order detail | customer (owner) |
-| POST | `/orders/{id}/cancel-request` | Request cancellation (pre-shipment) | customer (owner) |
-| POST | `/orders/{id}/return-request` | Request return (post-delivery) | customer (owner) |
+| POST | `/orders/{id}/cancel-request` | Request cancellation (pre-shipment) (future) | customer (owner) |
+| POST | `/orders/{id}/returns` | Request a return of some or all physical lines (post-delivery) | customer or visitor (owner) |
 | POST | `/orders/claim-guest-orders` | Claim guest orders after registration | customer |
 
 ### Shop Admin Endpoints
@@ -138,10 +140,12 @@ When a visitor's order is complete and the visitor later registers with the same
 |---|---|---|---|
 | GET | `/admin/orders` | List orders (filterable) | shop_admin |
 | GET | `/admin/orders/{id}` | Order detail | shop_admin |
-| POST | `/admin/orders/{id}/package` | Mark as packaged | shop_admin |
+| POST | `/admin/orders/{id}/package` | Book the shipment with yc-shipping and mark packaged | shop_admin |
 | POST | `/admin/orders/{id}/cancel` | Cancel order (triggers refund if captured) | shop_admin |
-| POST | `/admin/orders/{id}/refund` | Issue refund (full or partial) | shop_admin |
-| POST | `/admin/orders/{id}/return/accept` | Accept return | shop_admin |
+| POST | `/admin/orders/{id}/refund` | Issue a refund of any amount left (`Idempotency-Key` required) | shop_admin |
+| GET | `/admin/returns` | List return requests (filter by status) | shop_admin |
+| POST | `/admin/returns/{id}/accept` | Accept a return and refund it (optionally with shipping) | shop_admin |
+| POST | `/admin/returns/{id}/reject` | Reject a return with a reason | shop_admin |
 | POST | `/admin/orders/{id}/notes/internal` | Add internal note | shop_admin |
 | POST | `/admin/orders/{id}/notes/customer` | Add customer-visible note | shop_admin |
 
@@ -165,6 +169,17 @@ The contract is `services/yc-orders/api/openapi.yaml`. Implemented: the internal
 - **Line amounts** are gross, as checkout charged them. Tax is rounded per line, so a line total need not equal unit price times quantity; it must not be negative and must include its tax.
 - **Admin cancel** refunds what is left of the payment through yc-payment (`POST /internal/refund`, an internal call as client `yc-orders` with `YC_ORDERS_SERVICE_SECRET`, ADR-021), then cancels and publishes `order.cancelled.v1`. A refund the gateway refuses is `409` and leaves the order as it was. Stock is not returned automatically.
 - **Idempotency** on the internal POSTs uses the shared `httpkit` Idempotency-Key middleware (24-hour retention).
+
+### Phase 6 Implementation Notes
+
+The flow is ADR-022. Implemented: packaging, the shipping subscriptions, `delivery_exception`, returns, admin refunds and cancellation of packaged orders. Order details (`GET /orders/{id}`, `GET /admin/orders/{id}`) now include the shipment (ID, tracking number, carrier, and when it was packaged, shipped and delivered), the shipping method, returns and refunds.
+
+- **Packaging** calls yc-shipping `POST /internal/shipments` (as client `yc-orders`, ADR-021) outside the database transaction, with `Idempotency-Key: order:<id>:package`, then locks the order, re-checks it and moves it to `packaged`. A booking yc-shipping refuses is `409` and leaves the order `received`. The method and rate come from the shipping option checkout stored on the order.
+- **Shipping events** are consumed by one durable each (`yc-orders-shipping-in-transit`, `-delivered`, `-delivery-exception`). The order's `shipped_at` and `delivered_at` are the events' times. History entries for these transitions are by `yc-shipping`.
+- **Returns** (`order_returns`): the owner asks for lines and quantities within 30 days of delivery; digital lines cannot be returned; an order has at most one open request. Accepting refunds through yc-payment with `Idempotency-Key: order:<order>:return:<return>`; the amount is computed so that partial returns of a line add up to its line total, plus shipping once if the admin asks. If the return is rejected while the refund is in flight, the refund is still recorded and the accept answers `409`. A full return makes the order `returned`.
+- **Refunds** (`order_refunds`) are recorded per payment key (`UNIQUE (tenant_id, payment_key)`): cancellation uses `order:<id>:cancel`, an admin refund `order:<id>:refund:<Idempotency-Key>`. Each publishes `order.refunded.v1`; a refund yc-payment reports as failed is `409` and records nothing.
+- **Cancellation** is allowed while `received` or `packaged`; yc-shipping cancels the booked shipment on `order.cancelled.v1`.
+- **Published** now: `order.packaged.v1`, `order.shipped.v1`, `order.delivered.v1`, `order.return_requested.v1`, `order.return_accepted.v1`, `order.return_rejected.v1` and `order.refunded.v1`, besides `order.placed.v1` and `order.cancelled.v1`.
 
 ## Database Schema
 
@@ -247,12 +262,12 @@ CREATE POLICY tenant_isolation ON orders
 | `order.shipped.v1` | Shipping confirmed |
 | `order.delivered.v1` | Delivery confirmed |
 | `order.cancelled.v1` | Order cancelled |
-| `order.cancellation_failed.v1` | Cancellation blocked (already shipped) |
-| `order.refund_requested.v1` | Refund initiated |
-| `order.refunded.v1` | Refund completed |
+| `order.cancellation_failed.v1` | Cancellation blocked (already shipped) (future) |
+| `order.refunded.v1` | Refund recorded (cancellation, accepted return or admin refund) |
 | `order.return_requested.v1` | Customer requested return |
-| `order.return_accepted.v1` | Shop admin accepted return |
-| `order.return_received.v1` | Returned items received |
+| `order.return_accepted.v1` | Shop admin accepted return (and refunded it) |
+| `order.return_rejected.v1` | Shop admin rejected return |
+| `order.return_received.v1` | Returned items received (future, with return shipments) |
 | `order.disputed.v1` | Chargeback flagged |
 | `order.note_added.v1` | Note added (internal or customer-visible) |
 
@@ -260,11 +275,10 @@ CREATE POLICY tenant_isolation ON orders
 
 | Event | Action |
 |---|---|
-| `shipping.label_created.v1` | Update order with tracking info |
 | `shipping.in_transit.v1` | Advance to `shipped` |
 | `shipping.delivered.v1` | Advance to `delivered` |
-| `shipping.delivery_exception.v1` | Flag exception |
-| `payment.refund_completed.v1` | Mark order (or portion) refunded |
+| `shipping.delivery_exception.v1` | Advance to `delivery_exception` |
+| `payment.refund_completed.v1` | Settle refunds yc-payment reported as pending (future) |
 | `payment.chargeback_received.v1` | Transition to `disputed` |
 | `identity.user.registered.v1` | Check for guest orders by email; expose claim opportunity |
 | `identity.user.deleted.v1` | Pseudonymize `user_id`, clear `guest_contact.phone`, keep order record (financial); publish `platform.gdpr.cascade_completed.v1` |
@@ -291,7 +305,7 @@ yc-orders:
 ## Dependencies on Other Services
 
 - **yc-payment** (refunds)
-- **yc-shipping** (status updates via events)
+- **yc-shipping** (booking on packaging; status updates via events)
 - **yc-inventory** (release reservation on cancel pre-shipment via events)
 
 ## Called By
@@ -318,7 +332,7 @@ yc-orders:
 - Gift messages and gift wrapping
 - Subscription order renewals
 - Marketplace commission calculation
-- Return merchandise authorization (RMA) workflow
+- Return shipments, received-goods inspection and restocking (v1 refunds on acceptance, ADR-022 rule 7)
 - Automated return label generation
 - Store credit as refund option
 - Multi-currency reporting (reporting dashboard aggregates in a reporting currency)

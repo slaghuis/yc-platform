@@ -23,6 +23,7 @@
 | 019 | Synchronous Checkout Saga | Accepted |
 | 020 | Gateway Database | Accepted |
 | 021 | Service Tokens and Internal Calls | Accepted |
+| 022 | Order Fulfilment Flow | Accepted |
 
 Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
 

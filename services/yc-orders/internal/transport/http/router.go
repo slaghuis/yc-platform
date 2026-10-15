@@ -16,6 +16,7 @@ import (
 	api "github.com/slaghuis/yc-platform/services/yc-orders/api/generated"
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/domain"
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/repository"
+	"github.com/slaghuis/yc-platform/services/yc-orders/internal/service"
 )
 
 // Orders is the service the handlers call.
@@ -24,11 +25,17 @@ type Orders interface {
 	Confirm(ctx context.Context, id, paymentTransactionID string) (domain.Order, error)
 	Abandon(ctx context.Context, id, reason string) (domain.Order, bool, error)
 	Cancel(ctx context.Context, id, reason string) (domain.Order, error)
-	Order(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error)
-	AdminOrder(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error)
-	CustomerOrder(ctx context.Context, id string) (domain.Order, []domain.HistoryEntry, error)
+	Package(ctx context.Context, id string) (domain.Order, error)
+	Refund(ctx context.Context, id string, amountMinor int64, reason, key string) (domain.Order, error)
+	Order(ctx context.Context, id string) (service.Detail, error)
+	AdminOrder(ctx context.Context, id string) (service.Detail, error)
+	CustomerOrder(ctx context.Context, id string) (service.Detail, error)
 	Mine(ctx context.Context, after *repository.OrderCursor, limit int) ([]domain.Order, error)
 	AdminList(ctx context.Context, status domain.Status, after *repository.OrderCursor, limit int) ([]domain.Order, error)
+	RequestReturn(ctx context.Context, orderID string, items []domain.ReturnItem, reason string) (domain.Return, error)
+	AcceptReturn(ctx context.Context, id string, refundShipping bool, note string) (domain.Return, error)
+	RejectReturn(ctx context.Context, id, reason string) (domain.Return, error)
+	Returns(ctx context.Context, status domain.ReturnStatus, after *repository.ReturnCursor, limit int) ([]domain.Return, error)
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -55,10 +62,11 @@ func Routes() []httpkit.RegisteredRoute {
 	admin := []string{string(authctx.ActorShopAdmin)}
 	return []httpkit.RegisteredRoute{
 		{
-			Prefix: "/orders", Methods: []string{http.MethodGet},
+			Prefix: "/orders", Methods: []string{http.MethodGet, http.MethodPost},
 			Roles: []string{string(authctx.ActorCustomer), string(authctx.ActorVisitor)},
 		},
 		{Prefix: "/admin/orders", Roles: admin},
+		{Prefix: "/admin/returns", Roles: admin},
 		{Prefix: "/internal/orders"},
 	}
 }
@@ -83,11 +91,93 @@ func (h handlers) ListMyOrders(ctx context.Context, req api.ListMyOrdersRequestO
 }
 
 func (h handlers) GetMyOrder(ctx context.Context, req api.GetMyOrderRequestObject) (api.GetMyOrderResponseObject, error) {
-	o, history, err := h.svc.CustomerOrder(ctx, req.ID.String())
+	d, err := h.svc.CustomerOrder(ctx, req.ID.String())
 	if err != nil {
 		return nil, err
 	}
-	return api.GetMyOrder200JSONResponse(order(o, history)), nil
+	return api.GetMyOrder200JSONResponse(detail(d)), nil
+}
+
+func (h handlers) RequestReturn(ctx context.Context, req api.RequestReturnRequestObject) (api.RequestReturnResponseObject, error) {
+	items := make([]domain.ReturnItem, len(req.Body.Items))
+	for i, it := range req.Body.Items {
+		items[i] = domain.ReturnItem{SKUID: it.SkuID.String(), Quantity: it.Quantity}
+	}
+	r, err := h.svc.RequestReturn(ctx, req.ID.String(), items, deref(req.Body.Reason))
+	if err != nil {
+		return nil, err
+	}
+	return api.RequestReturn201JSONResponse(returnOut(r)), nil
+}
+
+func (h handlers) PackageOrder(ctx context.Context, req api.PackageOrderRequestObject) (api.PackageOrderResponseObject, error) {
+	o, err := h.svc.Package(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.PackageOrder200JSONResponse(order(o, nil)), nil
+}
+
+func (h handlers) RefundOrder(ctx context.Context, req api.RefundOrderRequestObject) (api.RefundOrderResponseObject, error) {
+	o, err := h.svc.Refund(ctx, req.ID.String(), req.Body.AmountMinor, req.Body.Reason, req.Params.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	return api.RefundOrder200JSONResponse(order(o, nil)), nil
+}
+
+func (h handlers) ListReturns(ctx context.Context, req api.ListReturnsRequestObject) (api.ListReturnsResponseObject, error) {
+	page, err := httpkit.ParsePage(req.Params.PageSize, req.Params.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	var after *repository.ReturnCursor
+	if page.Cursor != "" {
+		after = &repository.ReturnCursor{}
+		if err := httpkit.DecodeCursor(page.Cursor, after); err != nil {
+			return nil, err
+		}
+	}
+	var status domain.ReturnStatus
+	if req.Params.Status != nil {
+		status = domain.ReturnStatus(*req.Params.Status)
+	}
+	rs, err := h.svc.Returns(ctx, status, after, page.Size+1)
+	if err != nil {
+		return nil, err
+	}
+	info := httpkit.PageInfo{Size: page.Size, Cursor: page.Cursor}
+	if len(rs) > page.Size {
+		rs = rs[:page.Size]
+		last := rs[len(rs)-1]
+		info.NextCursor = httpkit.EncodeCursor(repository.ReturnCursor{At: last.RequestedAt, ID: last.ID})
+	}
+	out := api.ListReturns200JSONResponse{Items: make([]api.Return, len(rs)), Page: info}
+	for i, r := range rs {
+		out.Items[i] = returnOut(r)
+	}
+	return out, nil
+}
+
+func (h handlers) AcceptReturn(ctx context.Context, req api.AcceptReturnRequestObject) (api.AcceptReturnResponseObject, error) {
+	var refundShipping bool
+	var note string
+	if req.Body != nil {
+		refundShipping, note = deref(req.Body.RefundShipping), deref(req.Body.Note)
+	}
+	r, err := h.svc.AcceptReturn(ctx, req.ID.String(), refundShipping, note)
+	if err != nil {
+		return nil, err
+	}
+	return api.AcceptReturn200JSONResponse(returnOut(r)), nil
+}
+
+func (h handlers) RejectReturn(ctx context.Context, req api.RejectReturnRequestObject) (api.RejectReturnResponseObject, error) {
+	r, err := h.svc.RejectReturn(ctx, req.ID.String(), req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return api.RejectReturn200JSONResponse(returnOut(r)), nil
 }
 
 func (h handlers) ListOrders(ctx context.Context, req api.ListOrdersRequestObject) (api.ListOrdersResponseObject, error) {
@@ -108,11 +198,11 @@ func (h handlers) ListOrders(ctx context.Context, req api.ListOrdersRequestObjec
 }
 
 func (h handlers) GetOrder(ctx context.Context, req api.GetOrderRequestObject) (api.GetOrderResponseObject, error) {
-	o, history, err := h.svc.AdminOrder(ctx, req.ID.String())
+	d, err := h.svc.AdminOrder(ctx, req.ID.String())
 	if err != nil {
 		return nil, err
 	}
-	return api.GetOrder200JSONResponse(order(o, history)), nil
+	return api.GetOrder200JSONResponse(detail(d)), nil
 }
 
 func (h handlers) CancelOrder(ctx context.Context, req api.CancelOrderRequestObject) (api.CancelOrderResponseObject, error) {
@@ -178,11 +268,11 @@ func (h handlers) CreateOrder(ctx context.Context, req api.CreateOrderRequestObj
 }
 
 func (h handlers) GetInternalOrder(ctx context.Context, req api.GetInternalOrderRequestObject) (api.GetInternalOrderResponseObject, error) {
-	o, history, err := h.svc.Order(ctx, req.ID.String())
+	d, err := h.svc.Order(ctx, req.ID.String())
 	if err != nil {
 		return nil, err
 	}
-	return api.GetInternalOrder200JSONResponse(order(o, history)), nil
+	return api.GetInternalOrder200JSONResponse(detail(d)), nil
 }
 
 func (h handlers) ConfirmOrder(ctx context.Context, req api.ConfirmOrderRequestObject) (api.ConfirmOrderResponseObject, error) {
@@ -301,7 +391,57 @@ func order(o domain.Order, history []domain.HistoryEntry) api.Order {
 		}
 		out.History = &hs
 	}
+	if c := o.ShippingChoice(); o.RequiresShipping {
+		out.ShippingMethod = &c.Method
+	}
+	if sh := o.Shipment; sh.ID != "" {
+		out.Shipment = &api.OrderShipment{
+			ShipmentID: mustUUID(sh.ID), TrackingNumber: sh.TrackingNumber, CarrierName: optional(sh.CarrierName),
+			CarrierReference: optional(sh.CarrierReference), PackagedAt: utc(sh.PackagedAt), ShippedAt: utc(sh.ShippedAt),
+			DeliveredAt: utc(sh.DeliveredAt),
+		}
+	}
 	return out
+}
+
+// detail is an order with its history, returns and refunds.
+func detail(d service.Detail) api.Order {
+	out := order(d.Order, d.History)
+	rs := make([]api.Return, len(d.Returns))
+	for i, r := range d.Returns {
+		rs[i] = returnOut(r)
+	}
+	out.Returns = &rs
+	fs := make([]api.Refund, len(d.Refunds))
+	for i, f := range d.Refunds {
+		fs[i] = api.Refund{
+			RefundID: mustUUID(f.ID), Amount: money(f.AmountMinor, d.Order.Currency),
+			Status: api.RefundStatus(f.Status), Reason: f.Reason, CreatedAt: f.CreatedAt.UTC(),
+		}
+		if f.ReturnID != "" {
+			id := mustUUID(f.ReturnID)
+			fs[i].ReturnID = &id
+		}
+	}
+	out.Refunds = &fs
+	return out
+}
+
+func returnOut(r domain.Return) api.Return {
+	items := make([]api.ReturnItem, len(r.Items))
+	for i, it := range r.Items {
+		items[i] = api.ReturnItem{SkuID: mustUUID(it.SKUID), Quantity: it.Quantity}
+	}
+	return api.Return{
+		ReturnID: mustUUID(r.ID), OrderID: mustUUID(r.OrderID), Status: api.ReturnStatus(r.Status), Items: items,
+		Reason: optional(r.Reason), RefundShipping: r.RefundShipping, Refund: r.RefundMinor,
+		DecisionReason: optional(r.DecisionReason), RequestedAt: r.RequestedAt.UTC(), DecidedAt: utc(r.DecidedAt),
+	}
+}
+
+func mustUUID(s string) uuid.UUID {
+	id, _ := uuid.Parse(s)
+	return id
 }
 
 func money(minor int64, currency string) api.Money {
