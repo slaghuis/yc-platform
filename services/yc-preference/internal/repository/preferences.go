@@ -137,6 +137,20 @@ func (Preferences) SetVerified(ctx context.Context, tx pgx.Tx, tenantID, userID 
 	return nil
 }
 
+// DeleteUser removes a user's preferences and channels, returning how
+// many rows went.
+func (Preferences) DeleteUser(ctx context.Context, tx pgx.Tx, tenantID, userID string) (int64, error) {
+	channels, err := tx.Exec(ctx, `DELETE FROM messaging_channels WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete channels: %w", err)
+	}
+	prefs, err := tx.Exec(ctx, `DELETE FROM preferences WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete preferences: %w", err)
+	}
+	return channels.RowsAffected() + prefs.RowsAffected(), nil
+}
+
 // DeleteChannel removes a channel.
 func (Preferences) DeleteChannel(ctx context.Context, tx pgx.Tx, tenantID, userID string, c domain.Channel) error {
 	_, err := tx.Exec(ctx, `DELETE FROM messaging_channels WHERE tenant_id = $1 AND user_id = $2 AND channel = $3`,

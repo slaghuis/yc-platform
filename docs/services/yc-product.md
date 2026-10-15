@@ -381,6 +381,8 @@ None are startup-blocking — the projection is eventually consistent.
 - The `customer_favourites_projection` is PII (contains `user_id` → purchase history)
 - On `identity.user.deleted.v1`: delete all rows for that `user_id` in `customer_favourites_projection`; publish `platform.gdpr.cascade_completed.v1`
 
+*Phase 8:* Implemented as described; popularity counts no one and stays. The action is reported as `deleted`.
+
 ## Open Questions / Future Scope
 
 - Product bundles (one SKU composed of other SKUs)

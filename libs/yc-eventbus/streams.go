@@ -14,6 +14,7 @@ const (
 	retentionYear   = 365 * 24 * time.Hour
 	retentionDLQ    = 90 * 24 * time.Hour
 	retentionOps    = 90 * 24 * time.Hour
+	retentionMonth  = 30 * 24 * time.Hour
 	retentionWeek   = 7 * 24 * time.Hour
 )
 
@@ -53,13 +54,58 @@ func DomainStream(domain string, maxAge time.Duration, aggregateEvents ...string
 	}
 }
 
-// IdentityStream is the identity domain (1-year retention, ADR-004).
-//
-// TODO(ADR-004): identity.user.deleted.v1 needs 7-year retention; move it
-// to its own stream when yc-identity starts publishing it.
+// IdentityStream is the identity domain (1-year retention, ADR-004) except
+// identity.user.deleted.v1, which IdentityDeletedStream keeps for 7 years.
+// Its events are listed rather than captured by wildcard, so add new
+// identity events here.
 func IdentityStream() StreamConfig {
-	return DomainStream("identity", retentionYear, "identity.oauth_linked.v1")
+	events := []string{
+		"identity.visitor.created.v1",
+		"identity.user.registered.v1", "identity.user.promoted.v1", "identity.user.demoted.v1",
+		"identity.user.logged_in.v1", "identity.user.login_failed.v1",
+		"identity.user.password_reset_requested.v1", "identity.user.password_changed.v1",
+		"identity.user.suspended.v1",
+		"identity.oauth_linked.v1", "identity.oauth_unlinked.v1",
+	}
+	subjects := make([]string, 0, len(events))
+	for _, e := range events {
+		subjects = append(subjects, "yc.*."+e)
+	}
+	return StreamConfig{
+		Name:     "YC_IDENTITY",
+		Subjects: subjects,
+		Storage:  jetstream.FileStorage,
+		MaxAge:   retentionYear,
+	}
 }
+
+// IdentityDeletedStream holds identity.user.deleted.v1 for 7 years, the
+// proof of GDPR deletions (ADR-004, ADR-005). List it after IdentityStream:
+// a YC_IDENTITY created before Phase 8 captured every identity event, and
+// JetStream refuses overlapping streams until it is updated.
+func IdentityDeletedStream() StreamConfig {
+	return StreamConfig{
+		Name:     "YC_IDENTITY_DELETED",
+		Subjects: []string{"yc.*.identity.user.deleted.v1"},
+		Storage:  jetstream.FileStorage,
+		MaxAge:   retention7Years,
+	}
+}
+
+// GDPRStreams are the streams a GDPR cascade participant needs: deletions
+// in, platform.gdpr.cascade_completed.v1 out (ADR-005).
+func GDPRStreams() []StreamConfig {
+	return []StreamConfig{IdentityStream(), IdentityDeletedStream(), PlatformStream()}
+}
+
+// AuditStream is the audit domain (unlimited retention, ADR-004).
+func AuditStream() StreamConfig { return DomainStream("audit", 0) }
+
+// MonitorStream is the monitor domain (30-day retention, ADR-004).
+func MonitorStream() StreamConfig { return DomainStream("monitor", retentionMonth) }
+
+// AnalyticsStream is the analytics domain (1-year retention, ADR-004).
+func AnalyticsStream() StreamConfig { return DomainStream("analytics", retentionYear) }
 
 // CartStream is the cart domain (90-day retention, ADR-004).
 func CartStream() StreamConfig {

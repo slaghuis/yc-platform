@@ -257,6 +257,11 @@ Tenant resolution is by hostname only.
 - **Login routing.** Static identity routes now include `/refresh`, `/password` (both anonymous) and `/logout`, `/oauth` alongside `/login`, `/register` and `/visitor`. OAuth starts and callbacks carry the visitor cookie, so yc-identity can name the visitor as the cart merge source.
 - **Rate limiting** as described under Rate Limiting.
 
+### Phase 8 Implementation Notes
+
+- **Unserved internal paths** (ADR-025 rule 18): on the internal listener, a path no registered service serves is `503 unavailable` ("No service serves this path"), not 404, so a caller retries while the owning service restarts or re-registers. The public listener keeps 404.
+- **Monitoring:** yc-monitor learns every registered service from `platform.service.registered.v1` and `.deregistered.v1` and checks it independently of the gateway's own health polling.
+
 ## Dependencies on Other Services
 
 - **yc-identity** (critical) — for token validation and visitor token issuance

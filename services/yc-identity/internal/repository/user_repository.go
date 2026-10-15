@@ -173,6 +173,35 @@ func (Users) SetRole(ctx context.Context, tx pgx.Tx, id string, role domain.Role
 	return u, nil
 }
 
+// Anonymise marks user id deleted and clears its personal data: email,
+// phone, display name and password. The row stays so its ID is never
+// reused and tokens naming it stop validating.
+func (Users) Anonymise(ctx context.Context, tx pgx.Tx, id string, at time.Time) error {
+	tag, err := tx.Exec(ctx, `UPDATE users SET email = NULL, phone_e164 = NULL, display_name = NULL,
+			password_hash = NULL, status = 'deleted', deleted_at = $2, updated_at = $2
+		WHERE id = $1`, id, at)
+	if err != nil {
+		return fmt.Errorf("anonymise user: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ycerrors.NotFound("User", id)
+	}
+	return nil
+}
+
+// Pseudonyms is the pseudonym_map table (ADR-005).
+type Pseudonyms struct{}
+
+// Insert records user id's pseudonym.
+func (Pseudonyms) Insert(ctx context.Context, tx pgx.Tx, tenantID, userID, pseudonym, requestedBy string, at time.Time) error {
+	_, err := tx.Exec(ctx, `INSERT INTO pseudonym_map (user_id, tenant_id, pseudonym, requested_by, created_at)
+		VALUES ($1, $2, $3, $4, $5)`, userID, tenantID, pseudonym, requestedBy, at)
+	if err != nil {
+		return fmt.Errorf("insert pseudonym: %w", err)
+	}
+	return nil
+}
+
 // Filter narrows List. Empty fields match everything.
 type Filter struct {
 	TenantID string

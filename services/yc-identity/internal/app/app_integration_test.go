@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -109,9 +111,10 @@ type sent struct {
 	Body   map[string]any
 }
 
-// messageStub is yc-gateway in front of yc-message: it issues yc-identity's
-// service token and records /internal/send calls.
-func messageStub(t *testing.T) (*httptest.Server, func() []sent) {
+// messageStub is yc-gateway in front of yc-message and yc-orders: it issues
+// yc-identity's service token, records /internal/send calls and answers
+// /internal/customer-orders with openOrders.
+func messageStub(t *testing.T, openOrders *atomic.Int64) (*httptest.Server, func() []sent) {
 	t.Helper()
 	var (
 		mu    sync.Mutex
@@ -134,6 +137,12 @@ func messageStub(t *testing.T) (*httptest.Server, func() []sent) {
 			mu.Unlock()
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"message_id":"m1","status":"queued"}`))
+		case "/internal/customer-orders":
+			if r.Header.Get(authctx.HeaderTenantID) != "shop-a" || r.URL.Query().Get("user_id") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"orders":[],"open_count":%d}`, openOrders.Load())
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -180,7 +189,8 @@ func TestIdentity(t *testing.T) {
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__AUTH_URL", fb.URL+"/auth")
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__TOKEN_URL", fb.URL+"/token")
 	t.Setenv("YC_IDENTITY__OAUTH__FACEBOOK__USERINFO_URL", fb.URL+"/me")
-	gateway, sends := messageStub(t)
+	var openOrders atomic.Int64
+	gateway, sends := messageStub(t, &openOrders)
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gateway.URL)
 	t.Setenv("YC_IDENTITY_SERVICE_SECRET", "identity-secret-0123456789-0123456789")
 	cfg, err := app.LoadConfig()
@@ -202,11 +212,11 @@ func TestIdentity(t *testing.T) {
 	t.Cleanup(nc.Close)
 	js, err := jetstream.New(nc)
 	require.NoError(t, err)
-	lastEvent := func(t *testing.T, subject string) eventbus.Envelope {
+	lastEventIn := func(t *testing.T, streamName, subject string) eventbus.Envelope {
 		t.Helper()
 		var msg *jetstream.RawStreamMsg
 		require.Eventually(t, func() bool {
-			stream, err := js.Stream(ctx, "YC_IDENTITY")
+			stream, err := js.Stream(ctx, streamName)
 			if err != nil {
 				return false
 			}
@@ -216,6 +226,10 @@ func TestIdentity(t *testing.T) {
 		var env eventbus.Envelope
 		require.NoError(t, json.Unmarshal(msg.Data, &env))
 		return env
+	}
+	lastEvent := func(t *testing.T, subject string) eventbus.Envelope {
+		t.Helper()
+		return lastEventIn(t, "YC_IDENTITY", subject)
 	}
 	// eventWith waits until the last event on subject has a payload
 	// containing want, since an earlier event may still be the last one.
@@ -579,6 +593,80 @@ func TestIdentity(t *testing.T) {
 		}
 		assert.Equal(t, http.StatusForbidden, call(t, srv, http.MethodGet, "/admin/users?tenant_id=shop-b", nil, shopAdmin, nil))
 		assert.Equal(t, http.StatusForbidden, call(t, srv, http.MethodGet, "/admin/users", nil, as("shop-a", visitorID, "customer"), nil))
+	})
+
+	t.Run("a customer deletes their account (GDPR)", func(t *testing.T) {
+		var dora api.Session
+		body := map[string]string{"email": "dora@example.com", "password": "correct horse battery", "display_name": "Dora"}
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", body, as("shop-a", "", ""), &dora))
+		doraID := dora.UserID.String()
+		self := as("shop-a", doraID, "customer")
+
+		openOrders.Store(2)
+		assert.Equal(t, http.StatusConflict, call(t, srv, http.MethodDelete, "/me", nil, self, nil), "unfinished orders")
+		openOrders.Store(0)
+		assert.Equal(t, http.StatusForbidden, call(t, srv, http.MethodDelete, "/me", nil, as("shop-a", visitorID, "shop_admin"), nil),
+			"only customers delete themselves")
+		require.Equal(t, http.StatusNoContent, call(t, srv, http.MethodDelete, "/me", nil, self, nil))
+
+		env := lastEventIn(t, "YC_IDENTITY_DELETED", "yc.shop-a.identity.user.deleted.v1")
+		var deleted events.IdentityUserDeletedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &deleted))
+		assert.Equal(t, doraID, deleted.UserID)
+		assert.Equal(t, "customer", deleted.Role)
+		assert.Equal(t, "user", deleted.RequestedBy)
+		require.NotEqual(t, doraID, deleted.Pseudonym)
+
+		var mapped string
+		require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT pseudonym::text FROM pseudonym_map WHERE user_id = $1`, doraID).Scan(&mapped)
+		}))
+		assert.Equal(t, deleted.Pseudonym, mapped, "only yc-identity can map the pseudonym back")
+
+		env = lastEventIn(t, "YC_PLATFORM", "yc.shop-a.platform.gdpr.cascade_completed.v1")
+		var done events.PlatformGdprCascadeCompletedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &done))
+		assert.Equal(t, "yc-identity", done.Service)
+		assert.Equal(t, "anonymized", done.Action)
+		assert.Equal(t, deleted.Pseudonym, done.Pseudonym)
+
+		var user api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodGet, "/admin/users/"+doraID, nil, root, &user))
+		assert.Equal(t, api.UserStatus("deleted"), user.Status)
+		assert.Empty(t, user.Email)
+		assert.Empty(t, user.DisplayName)
+		_, code := validate(t, dora.AccessToken)
+		assert.Equal(t, http.StatusUnauthorized, code, "tokens stop validating")
+		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", body, as("shop-a", "", ""), nil))
+		assert.Equal(t, http.StatusNotFound, call(t, srv, http.MethodDelete, "/me", nil, self, nil), "already deleted")
+
+		var again api.Session
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", body, as("shop-a", "", ""), &again),
+			"the email is free again")
+		assert.NotEqual(t, doraID, again.UserID.String())
+	})
+
+	t.Run("system admins delete customers, not system admins", func(t *testing.T) {
+		var eve api.Session
+		body := map[string]string{"email": "eve@example.com", "password": "correct horse battery"}
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", body, as("shop-a", "", ""), &eve))
+		eveID := eve.UserID.String()
+
+		assert.Equal(t, http.StatusForbidden, call(t, srv, http.MethodDelete, "/admin/users/"+eveID, nil,
+			as("shop-a", visitorID, "shop_admin"), nil), "shop admins cannot delete users")
+		assert.Equal(t, http.StatusConflict, call(t, srv, http.MethodDelete, "/admin/users/"+sysadmin.UserID.String(), nil, root, nil))
+		require.Equal(t, http.StatusNoContent, call(t, srv, http.MethodDelete, "/admin/users/"+eveID, nil, root, nil))
+
+		var env eventbus.Envelope
+		require.Eventually(t, func() bool {
+			env = lastEventIn(t, "YC_IDENTITY_DELETED", "yc.shop-a.identity.user.deleted.v1")
+			return bytes.Contains(env.Payload, []byte(eveID))
+		}, 10*time.Second, 50*time.Millisecond)
+		var deleted events.IdentityUserDeletedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &deleted))
+		assert.Equal(t, "system_admin", deleted.RequestedBy)
+		assert.Equal(t, "system_admin", env.Actor.Type)
+		assert.Equal(t, http.StatusNotFound, call(t, srv, http.MethodDelete, "/admin/users/"+eveID, nil, root, nil))
 	})
 
 	t.Run("suspended user's token is rejected", func(t *testing.T) {

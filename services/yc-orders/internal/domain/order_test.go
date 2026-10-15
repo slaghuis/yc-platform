@@ -84,3 +84,29 @@ func TestOrderNumber(t *testing.T) {
 	assert.Equal(t, "DEMO-SHOP-000042", domain.OrderNumber("demo-shop", 42))
 	assert.Equal(t, "SHOP-A-1234567", domain.OrderNumber("shop-a", 1234567))
 }
+
+func TestDisputeAndOpen(t *testing.T) {
+	for _, s := range domain.PlacedStatuses {
+		if s != domain.StatusDisputed {
+			assert.True(t, s.CanBecome(domain.StatusDisputed), s)
+		}
+	}
+	assert.False(t, domain.StatusPendingPayment.CanBecome(domain.StatusDisputed), "only paid orders are disputed")
+	assert.False(t, domain.StatusDisputed.CanBecome(domain.StatusShipped), "a disputed order ignores shipping")
+
+	open := map[domain.Status]bool{
+		domain.StatusPendingPayment: true, domain.StatusReceived: true, domain.StatusPackaged: true,
+		domain.StatusShipped: true, domain.StatusDeliveryException: true,
+	}
+	for _, s := range append(domain.PlacedStatuses, domain.StatusPendingPayment, domain.StatusAbandoned) {
+		assert.Equal(t, open[s], s.Open(), s)
+	}
+
+	o := order()
+	o.GuestContact = &domain.GuestContact{Email: "a@b.co", PhoneE164: "+27820000000"}
+	o.Pseudonymise("p1")
+	assert.Equal(t, "p1", o.UserID)
+	assert.Nil(t, o.GuestContact)
+	assert.Nil(t, o.DeliveryAddress)
+	assert.EqualValues(t, 1400, o.TotalMinor)
+}

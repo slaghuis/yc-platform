@@ -576,9 +576,21 @@ Full observability, audit, analytics, and GDPR cascade.
 - Milestone events (first order, revenue tiers)
 
 **Cross-service**
-- Every service: implement `identity.user.deleted.v1` subscriber; publish `platform.gdpr.cascade_completed.v1` on completion
+- Every service holding user data: implement `identity.user.deleted.v1` subscriber; publish `platform.gdpr.cascade_completed.v1` on completion
 - yc-identity: user deletion endpoint; pseudonym generation
 - End-to-end GDPR cascade test
+- Chargebacks: Stripe disputes → `payment.chargeback_received.v1` → `order.disputed.v1`
+- `yc-dlq-cli`: list, show and replay dead letters
+
+### As built
+
+The decisions are in ADR-025 (with amendments to ADR-004 and ADR-005); `task demo:phase8` runs the milestone against the fake Stripe and MailHog (`scripts/demo-phase8.sh`), and `task test:e2e` runs the GDPR cascade end to end (`test/e2e/gdpr_cascade_test.go`). Differences from the scope above:
+
+- **Deletion** is `DELETE /me` and `DELETE /admin/users/{id}`, refused (409) while the user has unfinished orders or open returns. The pseudonym is a random UUID. Eleven services take part; yc-inventory joins with back-in-stock subscriptions, and yc-payment pseudonymises the shop admin on refunds.
+- **Alerts** go to yc-message as `monitor.alert.opened.v1`: system admins are configured addresses (`YC_MESSAGE_SYSTEM_ADMIN_EMAILS`), shop admins come from `identity.user.promoted.v1`. GDPR incidents alert system admins only.
+- **Analytics** builds four daily aggregates (revenue, funnel, product performance per SKU, gateway performance) from facts, refreshed within 30 seconds and rebuilt nightly; cohorts, promotions, reviews and lifetime value are deferred. Milestones are first order, order counts and revenue tiers, for orders under 24 hours old.
+- **Gateway:** an internal path no service serves is now 503, so callers retry while a service restarts.
+- The monitor learns services from the gateway's registration events; a service the gateway deregistered for failing its checks stays monitored. The demo therefore pauses containers (`docker pause`) rather than stopping them, since a graceful stop deregisters.
 
 ### Milestone
 
@@ -600,6 +612,8 @@ Full observability, audit, analytics, and GDPR cascade.
 - GDPR incident alerting works (test by holding one service back)
 - Audit log immutable (verify database privileges prevent UPDATE/DELETE)
 - Analytics aggregates match ground truth (query facts, compare to aggregates)
+
+The demo checks immutability as the service's own role and calls `GET /sysadmin/analytics/consistency`; incident alerting is covered by the yc-audit (deadline sweep) and yc-monitor (`gdpr_cascade_incident` alert) integration tests.
 
 ---
 

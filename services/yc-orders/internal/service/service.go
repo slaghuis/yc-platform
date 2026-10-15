@@ -124,6 +124,9 @@ func (s *Service) Confirm(ctx context.Context, id, paymentTransactionID string) 
 			return err
 		}
 		o.OrderNumber = domain.OrderNumber(tenantID, n)
+		if err := s.pseudonymiseIfDeleted(ctx, tx, tenantID, &o); err != nil {
+			return err
+		}
 		if err := s.repo.UpdateOrder(ctx, tx, tenantID, o); err != nil {
 			return err
 		}

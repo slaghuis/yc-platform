@@ -282,6 +282,8 @@ components:
         - refund_issued
         - cart_abandoned
         - review_prompt
+        - admin_alert
+        - milestone
     Channel:
       type: string
       enum: [email, sms, whatsapp, telegram]

@@ -16,6 +16,13 @@ gateway:
   internal_url: ${YC_GATEWAY_INTERNAL_URL}
   advertise_url: ${YC_SHIPPING_ADVERTISE_URL:-http://yc-shipping:8080}
   interval: 30s
+# Calls to other services through yc-gateway (ADR-021): yc-orders finds a
+# deleted customer's orders (ADR-005). The secret is yc-shipping's client
+# secret registered with yc-identity.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_SHIPPING_SERVICE_SECRET}
+  timeout: 30s
 # Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
 idempotency:
   retention: 24h

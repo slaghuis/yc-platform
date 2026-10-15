@@ -34,10 +34,23 @@ type DLQEntry struct {
 	LastFailureAt  time.Time       `json:"last_failure_at"`
 	Envelope       json.RawMessage `json:"envelope"`
 	CreatedAt      time.Time       `json:"created_at"`
+	Acknowledged   bool            `json:"acknowledged"`
+	AcknowledgedBy string          `json:"acknowledged_by,omitempty"`
+	AcknowledgedAt *time.Time      `json:"acknowledged_at,omitempty"`
+}
+
+// DLQSummary counts a tenant's unacknowledged dead letters for a service.
+type DLQSummary struct {
+	TenantID       string    `json:"tenant_id"`
+	Service        string    `json:"service"`
+	Unacknowledged int64     `json:"unacknowledged"`
+	Latest         time.Time `json:"latest"`
 }
 
 // Filter narrows a listing. An empty TenantID lists every tenant.
 type Filter struct {
-	TenantID string
-	Limit    int
+	TenantID     string
+	Service      string
+	Acknowledged *bool
+	Limit        int
 }

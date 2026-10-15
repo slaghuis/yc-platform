@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/monitor/monitor.service.recovered.v1.json",
+  "title": "monitor.service.recovered.v1",
+  "description": "An unhealthy service passed its readiness check the configured number of times in a row. Published under _platform.",
+  "type": "object",
+  "required": [
+    "service_name",
+    "unhealthy_since",
+    "recovered_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+    },
+    "unhealthy_since": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "recovered_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

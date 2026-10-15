@@ -96,6 +96,18 @@
 
 Standard `/healthz` and `/readyz` on every service — consumed by yc-monitor.
 
+### Phase 8 Implementation Notes
+
+The contract is `services/yc-monitor/api/openapi.yaml`; the design is ADR-025.
+
+- **Services** come from `platform.service.registered.v1` and `.deregistered.v1`. A service deregistered with reason `shutdown` or `manual` is no longer checked; `health_check_failed` (the gateway gave up on it) keeps it checked. Checks call `<base_url>/readyz` every `health_check.interval` (15s, `YC_MONITOR_HEALTH_INTERVAL`) with a 3s timeout.
+- **Metrics** are counted from events: `checkouts.started`, `.completed`, `.failed`, `orders.placed`, `payments.failed` (by gateway) and `events.dlq` (by service). Response times and per-event counts are not collected. `GET /sysadmin/metrics` and `/admin/metrics` take `metric`, `bucket` (1m, 5m, 1h, 1d), `from` and `to`.
+- **Rules** are built in (ADR-025 rule 10). `GET /sysadmin/thresholds` lists the settings and `PUT /sysadmin/thresholds` overrides `dlq_rate` (platform only) or `checkout_success_rate` (platform or one shop). Rules are evaluated every `alerts.evaluate_interval` (15s).
+- **Alerts:** `GET /sysadmin/alerts?status=open|acknowledged|resolved|active&severity&rule&tenant_id` and `/admin/alerts` for the shop's own; `POST .../{id}/ack` on both. Opened, resolved and acknowledged alerts are published as `monitor.alert.*.v1`; yc-message emails opened ones. Critical alerts are also posted to `alerts.critical_webhook_url` (`YC_MONITOR_CRITICAL_WEBHOOK`) when set.
+- **Dashboard:** `GET /sysadmin/dashboard` is red with an unhealthy service or an open critical alert, amber with an unknown service or an open warning, otherwise green.
+- **Dead letters:** `GET /sysadmin/dlq?tenant_id&service&acknowledged&limit`, `GET /sysadmin/dlq/summary` (unacknowledged per shop and service) and `POST /sysadmin/dlq/{sequence}/ack`. Replay is `yc-dlq-cli` (docs/runbooks/dlq-replay.md).
+- No idempotency store: acknowledging is naturally repeatable and thresholds are a PUT.
+
 ## Database Schema
 
 Database: **`yc_monitor`**

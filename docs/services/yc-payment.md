@@ -165,6 +165,11 @@ The contract is `services/yc-payment/api/openapi.yaml`. Implemented: the Stripe 
 - **Routing** (ADR-013). Each gateway config has a `priority` (0–1000, lowest first, default 100) and an optional `currencies` list (empty: all the driver takes; a currency the driver cannot take is `400`). `GET /internal/gateway-route?currency=` returns the enabled gateway with the lowest priority that takes the currency, with its capabilities (`supports_separate_auth_capture`, `hosted_payment`, `public_key`); `&gateway=` checks a named one. No such gateway is `412`.
 - **Charge** (`POST /internal/charge`) is idempotent by `Idempotency-Key` like authorize, records `kind = charge` and the order it pays for, and sends the gateway the tenant, session and transaction IDs as metadata.
 
+### Phase 8 Implementation Notes
+
+- **Chargebacks** (ADR-025 rule 17): a verified Stripe `charge.dispute.created` webhook is stored in `chargebacks` once per dispute and published as `payment.chargeback_received.v1` (transaction, order, amount, reason, gateway reference). yc-orders marks the order disputed; yc-monitor alerts the shop; yc-audit records it. Yoco disputes and dispute outcomes are not handled. The dev stack's fake Stripe opens a dispute with `POST /_fake/payment_intents/{id}/dispute` (`webhook_url`, `webhook_secret`, `reason`).
+- **GDPR:** yc-payment subscribes to `identity.user.deleted.v1`; see GDPR Behavior.
+
 ## Database Schema
 
 Database: **`yc_payment`**
@@ -326,6 +331,8 @@ yc-payment:
 - On `identity.user.deleted.v1`: no deletion of transactions (financial retention); `actor_id` on admin-initiated refunds pseudonymized
 - Payment gateway tokens never persisted beyond the single API call
 - Publish `platform.gdpr.cascade_completed.v1` so the yc-audit register can close the cascade
+
+*Phase 8:* Implemented (ADR-025): refunds issued by the deleted shop admin get the pseudonym as `actor_id`; the action is reported as `pseudonymized`, with a count of 0 for customers.
 
 ## Security
 

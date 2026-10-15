@@ -130,6 +130,18 @@ The API supports a fixed set of named queries. Ad-hoc SQL is **not** exposed to 
 
 None in v1. yc-analytics is read-only to the outside; it only consumes events.
 
+### Phase 8 Implementation Notes
+
+The contract is `services/yc-analytics/api/openapi.yaml`; the design is ADR-025. A subset of the model above is implemented:
+
+- **Facts:** `fact_order` and `fact_order_item` (from `order.placed.v1`; cancelled, refunded and delivered update them), `fact_payment` (authorized, captured, charged and their failures), `fact_checkout_step` (started, confirmed, completed, failed, expired), `fact_cart_event` (created, abandoned, converted; `in_funnel` for the `funnel.cart_types`, shopping by default) and `fact_visitor_session` (`identity.visitor.created.v1`). `dim_tenant` comes from `platform.tenant.provisioned.v1`. Reviews, cohorts and the other dimensions are not built yet.
+- **Aggregates:** `agg_daily_revenue` (per currency), `agg_daily_funnel`, `agg_product_performance` (per day and SKU) and `agg_gateway_performance`. Days are UTC. A fact change marks the shop and day dirty; the refresher rebuilds dirty days every `aggregates.refresh_interval` (30s, `YC_ANALYTICS_REFRESH_INTERVAL`) in batches of `refresh_batch`, and the nightly job (`nightly_at` 02:00 UTC) rebuilds the last `nightly_days` (2).
+- **Late events:** order cancellations, refunds and deliveries that arrive before their `order.placed.v1` are retried (up to 10 deliveries) rather than lost.
+- **Endpoints:** `/admin/analytics/dashboard`, `revenue`, `products/top?by=revenue|units&limit`, `funnel`, `gateways` and `export/{query}` (CSV of `revenue`, `top_products`, `funnel` or `gateways`), each with `from` and `to` (up to 366 days, default the last 30). System admins: `/sysadmin/analytics/platform`, `tenants/comparison`, `POST rebuild` (`tenant_id`, `from`, `to`) and `consistency` (lists days whose aggregates differ from the facts). Orders, single products, cohorts, promotions and growth are not implemented.
+- **Milestones:** first order, order counts (`milestones.order_counts`) and revenue per currency (`milestones.revenue_tiers`, minor units), each once per shop, for orders placed within `milestones.max_age` (24h). Published as `analytics.milestone.reached.v1`; yc-message emails the shop admins. Rebuilds publish `analytics.aggregate.rebuilt.v1`.
+- **GDPR:** facts carrying the user are pseudonymised and reported (`pseudonymized`).
+- No idempotency store: rebuilds are repeatable.
+
 ## Database Schema
 
 Database: **`yc_analytics`**

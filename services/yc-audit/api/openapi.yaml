@@ -1,0 +1,329 @@
+openapi: 3.1.0
+info:
+  title: yc-audit
+  version: 0.1.0
+  description: |
+    The platform's append-only audit log and GDPR cascade register
+    (docs/services/yc-audit.md, ADR-025, ADR-005). Records are made from
+    events; there is no API to change or delete them.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /sysadmin routes are for system admins and see
+    every shop; /admin/audit is for a shop's admins and sees only their
+    shop, without GDPR records. Errors are application/problem+json
+    (error-handling.md).
+
+paths:
+  /sysadmin/audit:
+    get:
+      summary: List audit records
+      description: Every shop's records, newest first.
+      operationId: listAuditRecords
+      parameters:
+        - $ref: '#/components/parameters/CategoryParam'
+        - $ref: '#/components/parameters/TenantIDParam'
+        - $ref: '#/components/parameters/EventTypeParam'
+        - $ref: '#/components/parameters/SubjectRefParam'
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of records.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditRecordList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/audit/export:
+    get:
+      summary: Export audit records
+      description: |
+        Up to 10,000 records (configurable), newest first, with the same
+        filters as the list. CSV leaves out payloads; JSON Lines has one
+        record with its payload per line. X-YC-Truncated is true when more
+        records matched.
+      operationId: exportAuditRecords
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, jsonl], default: csv }
+        - $ref: '#/components/parameters/CategoryParam'
+        - $ref: '#/components/parameters/TenantIDParam'
+        - $ref: '#/components/parameters/EventTypeParam'
+        - $ref: '#/components/parameters/SubjectRefParam'
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: The records.
+          headers:
+            X-YC-Truncated:
+              schema: { type: boolean }
+          content:
+            text/csv:
+              schema: { type: string }
+            application/x-ndjson:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/audit/{id}:
+    get:
+      summary: Get an audit record
+      operationId: getAuditRecord
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The record with its event payload.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditRecord' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/gdpr/register:
+    get:
+      summary: List GDPR deletions
+      description: Newest first, without each service's report.
+      operationId: listGdprRegister
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/RegisterStatus' }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of deletions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/gdpr/register/{user_id}:
+    get:
+      summary: Get a user's GDPR deletion
+      description: Status, expected and missing services, and each service's report.
+      operationId: getGdprRegisterEntry
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The deletion.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterEntry' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/gdpr/incidents:
+    get:
+      summary: List GDPR incidents
+      description: Deletions that missed their deadline, including those completed late.
+      operationId: listGdprIncidents
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of deletions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegisterList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/audit:
+    get:
+      summary: List my shop's audit records
+      description: The calling shop admin's shop's records, newest first, without GDPR records.
+      operationId: listShopAuditRecords
+      parameters:
+        - $ref: '#/components/parameters/CategoryParam'
+        - $ref: '#/components/parameters/EventTypeParam'
+        - $ref: '#/components/parameters/SubjectRefParam'
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of records.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditRecordList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    CategoryParam:
+      name: category
+      in: query
+      description: One or more categories.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items: { $ref: '#/components/schemas/Category' }
+    TenantIDParam:
+      name: tenant_id
+      in: query
+      schema: { type: string }
+    EventTypeParam:
+      name: event_type
+      in: query
+      schema: { type: string }
+    SubjectRefParam:
+      name: subject_ref
+      in: query
+      description: What the event is about, e.g. user:<id> or order:<id>.
+      schema: { type: string }
+    FromParam:
+      name: from
+      in: query
+      description: Events at or after this time.
+      schema: { type: string, format: date-time }
+    ToParam:
+      name: to
+      in: query
+      description: Events before this time.
+      schema: { type: string, format: date-time }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Category:
+      type: string
+      enum: [role_change, tenant_lifecycle, config_change, gdpr, financial, security]
+    RegisterStatus:
+      type: string
+      enum: [in_progress, complete, incident]
+    AuditRecord:
+      type: object
+      required: [id, tenant_id, category, event_type, event_id, source_service, summary, event_time, recorded_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        event_type: { type: string }
+        event_id: { type: string, format: uuid }
+        source_service: { type: string }
+        actor_type: { type: string }
+        actor_id: { type: string }
+        subject_ref: { type: string }
+        summary: { type: string }
+        correlation_id: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+          description: The event's payload; only on a single record.
+        event_time: { type: string, format: date-time }
+        recorded_at: { type: string, format: date-time }
+    AuditRecordList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditRecord' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ServiceReport:
+      type: object
+      required: [service, action, record_count, completed_at, reported_at]
+      properties:
+        service: { type: string }
+        action: { type: string, enum: [deleted, anonymized, pseudonymized] }
+        record_count: { type: integer, format: int64 }
+        completed_at: { type: string, format: date-time }
+        reported_at: { type: string, format: date-time }
+    RegisterEntry:
+      type: object
+      required: [tenant_id, user_id, pseudonym, role, requested_by, status, initiated_at, deadline, expected_services, missing_services]
+      properties:
+        tenant_id: { type: string }
+        user_id: { type: string, format: uuid }
+        pseudonym: { type: string, format: uuid }
+        role: { type: string }
+        requested_by: { type: string }
+        status: { $ref: '#/components/schemas/RegisterStatus' }
+        initiated_at: { type: string, format: date-time }
+        deadline: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        incident_at: { type: string, format: date-time, description: When it missed its deadline. }
+        expected_services:
+          type: array
+          items: { type: string }
+        missing_services:
+          type: array
+          items: { type: string }
+        reports:
+          type: array
+          description: Each service's report; only on a single entry.
+          items: { $ref: '#/components/schemas/ServiceReport' }
+    RegisterList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RegisterEntry' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

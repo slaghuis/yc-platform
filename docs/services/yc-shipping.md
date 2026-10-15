@@ -179,6 +179,10 @@ The contract is `services/yc-shipping/api/openapi.yaml`; the flow is ADR-022. Im
 - **Public tracking** returns the status, method, carrier and events only, never the address or order.
 - **Cancellation** applies to shipments still `label_created`; a dispatched shipment is left to the shop admin.
 
+### Phase 8 Implementation Notes
+
+- **GDPR:** yc-shipping subscribes to `identity.user.deleted.v1` and calls yc-orders `GET /internal/customer-orders` (ADR-021) as client `yc-shipping` (`internal_calls`, `YC_SHIPPING_SERVICE_SECRET`); see GDPR Behavior.
+
 ## Database Schema
 
 Database: **`yc_shipping`**
@@ -315,6 +319,8 @@ yc-shipping:
 - Retained for the shipment retention window (2 years per ADR-004)
 - On `identity.user.deleted.v1`: pseudonymize address on shipments outside the operational window; retain inside the window for carrier reconciliation
 - Publish `platform.gdpr.cascade_completed.v1`
+
+*Phase 8:* Implemented: shipments do not record the customer, so yc-shipping asks yc-orders for the customer's orders (by user ID and pseudonym, with its new service secret) and clears their delivery addresses at once; the action is reported as `anonymized`.
 
 ## Open Questions / Future Scope
 

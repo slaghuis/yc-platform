@@ -8,6 +8,10 @@ import (
 
 // Event types with a schema.
 const (
+	TypeAnalyticsAggregateRebuiltV1          = "analytics.aggregate.rebuilt.v1"
+	TypeAnalyticsMilestoneReachedV1          = "analytics.milestone.reached.v1"
+	TypeAuditGdprCascadeCompleteV1           = "audit.gdpr.cascade_complete.v1"
+	TypeAuditGdprCascadeIncidentV1           = "audit.gdpr.cascade_incident.v1"
 	TypeCartAbandonedV1                      = "cart.abandoned.v1"
 	TypeCartClearedV1                        = "cart.cleared.v1"
 	TypeCartConvertedV1                      = "cart.converted.v1"
@@ -27,6 +31,7 @@ const (
 	TypeCheckoutStartedV1                    = "checkout.started.v1"
 	TypeCheckoutValidationFailedV1           = "checkout.validation_failed.v1"
 	TypeIdentityOauthLinkedV1                = "identity.oauth_linked.v1"
+	TypeIdentityUserDeletedV1                = "identity.user.deleted.v1"
 	TypeIdentityUserLoggedInV1               = "identity.user.logged_in.v1"
 	TypeIdentityUserPasswordChangedV1        = "identity.user.password_changed.v1"
 	TypeIdentityUserPasswordResetRequestedV1 = "identity.user.password_reset_requested.v1"
@@ -53,8 +58,14 @@ const (
 	TypeMessageSentV1                        = "message.sent.v1"
 	TypeMessageVerificationConfirmedV1       = "message.verification_confirmed.v1"
 	TypeMessageVerificationSentV1            = "message.verification_sent.v1"
+	TypeMonitorAlertAcknowledgedV1           = "monitor.alert.acknowledged.v1"
+	TypeMonitorAlertOpenedV1                 = "monitor.alert.opened.v1"
+	TypeMonitorAlertResolvedV1               = "monitor.alert.resolved.v1"
+	TypeMonitorServiceRecoveredV1            = "monitor.service.recovered.v1"
+	TypeMonitorServiceUnhealthyV1            = "monitor.service.unhealthy.v1"
 	TypeOrderCancelledV1                     = "order.cancelled.v1"
 	TypeOrderDeliveredV1                     = "order.delivered.v1"
+	TypeOrderDisputedV1                      = "order.disputed.v1"
 	TypeOrderPackagedV1                      = "order.packaged.v1"
 	TypeOrderPlacedV1                        = "order.placed.v1"
 	TypeOrderRefundedV1                      = "order.refunded.v1"
@@ -67,6 +78,7 @@ const (
 	TypePaymentCaptureFailedV1               = "payment.capture_failed.v1"
 	TypePaymentCapturedV1                    = "payment.captured.v1"
 	TypePaymentChargeFailedV1                = "payment.charge_failed.v1"
+	TypePaymentChargebackReceivedV1          = "payment.chargeback_received.v1"
 	TypePaymentChargedV1                     = "payment.charged.v1"
 	TypePaymentIntentCreatedV1               = "payment.intent.created.v1"
 	TypePaymentRefundCompletedV1             = "payment.refund_completed.v1"
@@ -75,6 +87,7 @@ const (
 	TypePaymentVoidFailedV1                  = "payment.void_failed.v1"
 	TypePaymentVoidedV1                      = "payment.voided.v1"
 	TypePaymentWebhookSignatureFailedV1      = "payment.webhook_signature_failed.v1"
+	TypePlatformGdprCascadeCompletedV1       = "platform.gdpr.cascade_completed.v1"
 	TypePlatformServiceDeregisteredV1        = "platform.service.deregistered.v1"
 	TypePlatformServiceRegisteredV1          = "platform.service.registered.v1"
 	TypePlatformTenantProvisionedV1          = "platform.tenant.provisioned.v1"
@@ -125,6 +138,10 @@ const (
 
 // EventTypes lists every event type with a schema, sorted.
 var EventTypes = []string{
+	TypeAnalyticsAggregateRebuiltV1,
+	TypeAnalyticsMilestoneReachedV1,
+	TypeAuditGdprCascadeCompleteV1,
+	TypeAuditGdprCascadeIncidentV1,
 	TypeCartAbandonedV1,
 	TypeCartClearedV1,
 	TypeCartConvertedV1,
@@ -144,6 +161,7 @@ var EventTypes = []string{
 	TypeCheckoutStartedV1,
 	TypeCheckoutValidationFailedV1,
 	TypeIdentityOauthLinkedV1,
+	TypeIdentityUserDeletedV1,
 	TypeIdentityUserLoggedInV1,
 	TypeIdentityUserPasswordChangedV1,
 	TypeIdentityUserPasswordResetRequestedV1,
@@ -170,8 +188,14 @@ var EventTypes = []string{
 	TypeMessageSentV1,
 	TypeMessageVerificationConfirmedV1,
 	TypeMessageVerificationSentV1,
+	TypeMonitorAlertAcknowledgedV1,
+	TypeMonitorAlertOpenedV1,
+	TypeMonitorAlertResolvedV1,
+	TypeMonitorServiceRecoveredV1,
+	TypeMonitorServiceUnhealthyV1,
 	TypeOrderCancelledV1,
 	TypeOrderDeliveredV1,
+	TypeOrderDisputedV1,
 	TypeOrderPackagedV1,
 	TypeOrderPlacedV1,
 	TypeOrderRefundedV1,
@@ -184,6 +208,7 @@ var EventTypes = []string{
 	TypePaymentCaptureFailedV1,
 	TypePaymentCapturedV1,
 	TypePaymentChargeFailedV1,
+	TypePaymentChargebackReceivedV1,
 	TypePaymentChargedV1,
 	TypePaymentIntentCreatedV1,
 	TypePaymentRefundCompletedV1,
@@ -192,6 +217,7 @@ var EventTypes = []string{
 	TypePaymentVoidFailedV1,
 	TypePaymentVoidedV1,
 	TypePaymentWebhookSignatureFailedV1,
+	TypePlatformGdprCascadeCompletedV1,
 	TypePlatformServiceDeregisteredV1,
 	TypePlatformServiceRegisteredV1,
 	TypePlatformTenantProvisionedV1,
@@ -242,6 +268,11 @@ var EventTypes = []string{
 
 // Enum values.
 const (
+	AnalyticsAggregateRebuiltV1TriggerSchedule               = "schedule"
+	AnalyticsAggregateRebuiltV1TriggerManual                 = "manual"
+	AnalyticsMilestoneReachedV1MilestoneFirstOrder           = "first_order"
+	AnalyticsMilestoneReachedV1MilestoneOrderCount           = "order_count"
+	AnalyticsMilestoneReachedV1MilestoneRevenue              = "revenue"
 	CartClearedV1ReasonCustomer                              = "customer"
 	CartClearedV1ReasonCheckout                              = "checkout"
 	CartCreatedV1UserTypeVisitor                             = "visitor"
@@ -295,6 +326,10 @@ const (
 	ActorTypeService                                         = "service"
 	IdentityOauthLinkedV1ProviderGoogle                      = "google"
 	IdentityOauthLinkedV1ProviderFacebook                    = "facebook"
+	IdentityUserDeletedV1RoleCustomer                        = "customer"
+	IdentityUserDeletedV1RoleShopAdmin                       = "shop_admin"
+	IdentityUserDeletedV1RequestedByUser                     = "user"
+	IdentityUserDeletedV1RequestedBySystemAdmin              = "system_admin"
 	IdentityUserLoggedInV1RoleCustomer                       = "customer"
 	IdentityUserLoggedInV1RoleShopAdmin                      = "shop_admin"
 	IdentityUserLoggedInV1RoleSystemAdmin                    = "system_admin"
@@ -356,6 +391,12 @@ const (
 	MessageVerificationSentV1ChannelSms                      = "sms"
 	MessageVerificationSentV1ChannelWhatsapp                 = "whatsapp"
 	MessageVerificationSentV1ChannelTelegram                 = "telegram"
+	MonitorAlertOpenedV1SeverityInfo                         = "info"
+	MonitorAlertOpenedV1SeverityWarning                      = "warning"
+	MonitorAlertOpenedV1SeverityCritical                     = "critical"
+	MonitorAlertResolvedV1SeverityInfo                       = "info"
+	MonitorAlertResolvedV1SeverityWarning                    = "warning"
+	MonitorAlertResolvedV1SeverityCritical                   = "critical"
 	OrderPlacedV1UserTypeCustomer                            = "customer"
 	OrderPlacedV1UserTypeVisitor                             = "visitor"
 	PaymentAuthorizationFailedV1GatewayStripe                = "stripe"
@@ -368,6 +409,8 @@ const (
 	PaymentCapturedV1GatewayYoco                             = "yoco"
 	PaymentChargeFailedV1GatewayStripe                       = "stripe"
 	PaymentChargeFailedV1GatewayYoco                         = "yoco"
+	PaymentChargebackReceivedV1GatewayStripe                 = "stripe"
+	PaymentChargebackReceivedV1GatewayYoco                   = "yoco"
 	PaymentChargedV1GatewayStripe                            = "stripe"
 	PaymentChargedV1GatewayYoco                              = "yoco"
 	PaymentIntentCreatedV1GatewayStripe                      = "stripe"
@@ -378,6 +421,9 @@ const (
 	PaymentVoidedV1GatewayYoco                               = "yoco"
 	PaymentWebhookSignatureFailedV1GatewayStripe             = "stripe"
 	PaymentWebhookSignatureFailedV1GatewayYoco               = "yoco"
+	PlatformGdprCascadeCompletedV1ActionDeleted              = "deleted"
+	PlatformGdprCascadeCompletedV1ActionAnonymized           = "anonymized"
+	PlatformGdprCascadeCompletedV1ActionPseudonymized        = "pseudonymized"
 	PlatformServiceDeregisteredV1ReasonShutdown              = "shutdown"
 	PlatformServiceDeregisteredV1ReasonHealthCheckFailed     = "health_check_failed"
 	PlatformServiceDeregisteredV1ReasonManual                = "manual"
@@ -424,6 +470,67 @@ const (
 	ReviewSubmittedV1StatusApproved                          = "approved"
 	ReviewSubmittedV1StatusRejected                          = "rejected"
 )
+
+// AnalyticsAggregateRebuiltV1 is the payload of analytics.aggregate.rebuilt.v1.
+//
+// yc-analytics rebuilt its aggregates from the facts for a date range. Published under _platform.
+type AnalyticsAggregateRebuiltV1 struct {
+	Aggregates []string `json:"aggregates"`
+	From       string   `json:"from"`
+	// Inclusive.
+	To        string    `json:"to"`
+	Rows      int64     `json:"rows"`
+	Trigger   *string   `json:"trigger,omitempty"`
+	RebuiltAt time.Time `json:"rebuilt_at"`
+}
+
+// EventType returns analytics.aggregate.rebuilt.v1.
+func (AnalyticsAggregateRebuiltV1) EventType() string { return TypeAnalyticsAggregateRebuiltV1 }
+
+// AnalyticsMilestoneReachedV1 is the payload of analytics.milestone.reached.v1.
+//
+// A shop reached a milestone: its first order, an order count or a revenue tier. Published once per milestone under the shop's tenant; yc-message congratulates the shop admins.
+type AnalyticsMilestoneReachedV1 struct {
+	Milestone string `json:"milestone"`
+	// The order count, or the revenue in minor units of the store currency; 1 for first_order.
+	Threshold int64 `json:"threshold"`
+	// The store currency, for revenue milestones.
+	Currency *string `json:"currency,omitempty"`
+	// The order that reached it.
+	OrderID   *string   `json:"order_id,omitempty"`
+	ReachedAt time.Time `json:"reached_at"`
+}
+
+// EventType returns analytics.milestone.reached.v1.
+func (AnalyticsMilestoneReachedV1) EventType() string { return TypeAnalyticsMilestoneReachedV1 }
+
+// AuditGdprCascadeCompleteV1 is the payload of audit.gdpr.cascade_complete.v1.
+//
+// Every expected service reported its part of a user's GDPR deletion (ADR-005). Published under the user's tenant.
+type AuditGdprCascadeCompleteV1 struct {
+	UserID      string    `json:"user_id"`
+	Pseudonym   string    `json:"pseudonym"`
+	Services    []string  `json:"services"`
+	InitiatedAt time.Time `json:"initiated_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+// EventType returns audit.gdpr.cascade_complete.v1.
+func (AuditGdprCascadeCompleteV1) EventType() string { return TypeAuditGdprCascadeCompleteV1 }
+
+// AuditGdprCascadeIncidentV1 is the payload of audit.gdpr.cascade_incident.v1.
+//
+// A user's GDPR deletion was not complete by its deadline (72h by default): a compliance incident (ADR-005). Published under the user's tenant; yc-monitor raises a critical alert.
+type AuditGdprCascadeIncidentV1 struct {
+	UserID          string    `json:"user_id"`
+	Pseudonym       string    `json:"pseudonym"`
+	MissingServices []string  `json:"missing_services"`
+	InitiatedAt     time.Time `json:"initiated_at"`
+	Deadline        time.Time `json:"deadline"`
+}
+
+// EventType returns audit.gdpr.cascade_incident.v1.
+func (AuditGdprCascadeIncidentV1) EventType() string { return TypeAuditGdprCascadeIncidentV1 }
 
 // CartAbandonedV1 is the payload of cart.abandoned.v1.
 //
@@ -807,6 +914,22 @@ type IdentityOauthLinkedV1 struct {
 
 // EventType returns identity.oauth_linked.v1.
 func (IdentityOauthLinkedV1) EventType() string { return TypeIdentityOauthLinkedV1 }
+
+// IdentityUserDeletedV1 is the payload of identity.user.deleted.v1.
+//
+// A user's account was deleted: yc-identity anonymised it and revoked its tokens. Starts the GDPR cascade (ADR-005): every service holding the user's data removes it or replaces user_id with the pseudonym, then publishes platform.gdpr.cascade_completed.v1.
+type IdentityUserDeletedV1 struct {
+	UserID string `json:"user_id"`
+	// A random UUID that replaces user_id wherever a record is kept, so later events about those records still validate. Only yc-identity can map it back to the user.
+	Pseudonym string `json:"pseudonym"`
+	Role      string `json:"role"`
+	// Whether the user deleted their own account or a system admin deleted it.
+	RequestedBy string    `json:"requested_by"`
+	DeletedAt   time.Time `json:"deleted_at"`
+}
+
+// EventType returns identity.user.deleted.v1.
+func (IdentityUserDeletedV1) EventType() string { return TypeIdentityUserDeletedV1 }
 
 // IdentityUserLoggedInV1 is the payload of identity.user.logged_in.v1.
 //
@@ -1257,6 +1380,87 @@ type MessageVerificationSentV1 struct {
 // EventType returns message.verification_sent.v1.
 func (MessageVerificationSentV1) EventType() string { return TypeMessageVerificationSentV1 }
 
+// MonitorAlertAcknowledgedV1 is the payload of monitor.alert.acknowledged.v1.
+//
+// An admin acknowledged an open alert. Published under the alert's tenant.
+type MonitorAlertAcknowledgedV1 struct {
+	AlertID        string    `json:"alert_id"`
+	Rule           string    `json:"rule"`
+	AcknowledgedBy string    `json:"acknowledged_by"`
+	AcknowledgedAt time.Time `json:"acknowledged_at"`
+}
+
+// EventType returns monitor.alert.acknowledged.v1.
+func (MonitorAlertAcknowledgedV1) EventType() string { return TypeMonitorAlertAcknowledgedV1 }
+
+// MonitorAlertOpenedV1 is the payload of monitor.alert.opened.v1.
+//
+// yc-monitor raised an alert. Published under the alert's tenant (_platform for platform alerts). yc-message emails the admins named in notify.
+type MonitorAlertOpenedV1 struct {
+	AlertID string `json:"alert_id"`
+	// The alert rule's name, e.g. dlq_rate or service_unhealthy.
+	Rule     string `json:"rule"`
+	Metric   string `json:"metric"`
+	Severity string `json:"severity"`
+	// One line for people, e.g. 'yc-pricing failed 3 health checks'.
+	Summary string `json:"summary"`
+	// What the alert is about, e.g. {"service": "yc-pricing"}.
+	Dimensions map[string]any `json:"dimensions,omitempty"`
+	// The measured value that crossed the threshold, for threshold rules.
+	Value     *float64 `json:"value,omitempty"`
+	Threshold *float64 `json:"threshold,omitempty"`
+	// Who should be told: the platform's system admins, the tenant's shop admins, or nobody (empty).
+	Notify   []string  `json:"notify"`
+	OpenedAt time.Time `json:"opened_at"`
+}
+
+// EventType returns monitor.alert.opened.v1.
+func (MonitorAlertOpenedV1) EventType() string { return TypeMonitorAlertOpenedV1 }
+
+// MonitorAlertResolvedV1 is the payload of monitor.alert.resolved.v1.
+//
+// An alert's condition cleared. Published under the alert's tenant.
+type MonitorAlertResolvedV1 struct {
+	AlertID    string         `json:"alert_id"`
+	Rule       string         `json:"rule"`
+	Metric     string         `json:"metric"`
+	Severity   string         `json:"severity"`
+	Summary    string         `json:"summary"`
+	Dimensions map[string]any `json:"dimensions,omitempty"`
+	Notify     []string       `json:"notify"`
+	OpenedAt   time.Time      `json:"opened_at"`
+	ResolvedAt time.Time      `json:"resolved_at"`
+}
+
+// EventType returns monitor.alert.resolved.v1.
+func (MonitorAlertResolvedV1) EventType() string { return TypeMonitorAlertResolvedV1 }
+
+// MonitorServiceRecoveredV1 is the payload of monitor.service.recovered.v1.
+//
+// An unhealthy service passed its readiness check the configured number of times in a row. Published under _platform.
+type MonitorServiceRecoveredV1 struct {
+	ServiceName    string    `json:"service_name"`
+	UnhealthySince time.Time `json:"unhealthy_since"`
+	RecoveredAt    time.Time `json:"recovered_at"`
+}
+
+// EventType returns monitor.service.recovered.v1.
+func (MonitorServiceRecoveredV1) EventType() string { return TypeMonitorServiceRecoveredV1 }
+
+// MonitorServiceUnhealthyV1 is the payload of monitor.service.unhealthy.v1.
+//
+// A registered service failed its readiness check the configured number of times in a row. Published under _platform.
+type MonitorServiceUnhealthyV1 struct {
+	ServiceName         string     `json:"service_name"`
+	ConsecutiveFailures int64      `json:"consecutive_failures"`
+	LastError           string     `json:"last_error"`
+	LastHealthyAt       *time.Time `json:"last_healthy_at,omitempty"`
+	DetectedAt          time.Time  `json:"detected_at"`
+}
+
+// EventType returns monitor.service.unhealthy.v1.
+func (MonitorServiceUnhealthyV1) EventType() string { return TypeMonitorServiceUnhealthyV1 }
+
 // OrderCancelledV1 is the payload of order.cancelled.v1.
 //
 // A received order was cancelled before shipment. A captured payment is refunded through yc-payment.
@@ -1294,6 +1498,23 @@ type OrderDeliveredV1 struct {
 
 // EventType returns order.delivered.v1.
 func (OrderDeliveredV1) EventType() string { return TypeOrderDeliveredV1 }
+
+// OrderDisputedV1 is the payload of order.disputed.v1.
+//
+// A chargeback was received for the order's payment; the order is now disputed.
+type OrderDisputedV1 struct {
+	OrderID     string `json:"order_id"`
+	OrderNumber string `json:"order_number"`
+	// The buyer's ID, or their pseudonym after a GDPR deletion.
+	UserID       string    `json:"user_id"`
+	ChargebackID string    `json:"chargeback_id"`
+	Amount       Money     `json:"amount"`
+	Reason       *string   `json:"reason,omitempty"`
+	DisputedAt   time.Time `json:"disputed_at"`
+}
+
+// EventType returns order.disputed.v1.
+func (OrderDisputedV1) EventType() string { return TypeOrderDisputedV1 }
 
 // OrderPackagedV1 is the payload of order.packaged.v1.
 //
@@ -1517,6 +1738,26 @@ type PaymentChargeFailedV1 struct {
 // EventType returns payment.charge_failed.v1.
 func (PaymentChargeFailedV1) EventType() string { return TypePaymentChargeFailedV1 }
 
+// PaymentChargebackReceivedV1 is the payload of payment.chargeback_received.v1.
+//
+// The gateway reported a chargeback (dispute) on a payment. yc-orders marks the order disputed; the response to the dispute is handled in the gateway's dashboard.
+type PaymentChargebackReceivedV1 struct {
+	ChargebackID  string `json:"chargeback_id"`
+	TransactionID string `json:"transaction_id"`
+	// Absent when the payment never became an order.
+	OrderID *string `json:"order_id,omitempty"`
+	Gateway string  `json:"gateway"`
+	// The gateway's dispute ID.
+	GatewayReference string `json:"gateway_reference"`
+	Amount           Money  `json:"amount"`
+	// The gateway's reason code, e.g. fraudulent.
+	Reason     *string   `json:"reason,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+// EventType returns payment.chargeback_received.v1.
+func (PaymentChargebackReceivedV1) EventType() string { return TypePaymentChargebackReceivedV1 }
+
 // PaymentChargedV1 is the payload of payment.charged.v1.
 //
 // A combined authorize-and-capture charge succeeded (Variant B). The point of no return of the checkout saga.
@@ -1637,6 +1878,23 @@ type PaymentWebhookSignatureFailedV1 struct {
 
 // EventType returns payment.webhook_signature_failed.v1.
 func (PaymentWebhookSignatureFailedV1) EventType() string { return TypePaymentWebhookSignatureFailedV1 }
+
+// PlatformGdprCascadeCompletedV1 is the payload of platform.gdpr.cascade_completed.v1.
+//
+// A service finished its part of a user's GDPR deletion (ADR-005). yc-audit marks the service complete in the cascade register. Published under the deleted user's tenant.
+type PlatformGdprCascadeCompletedV1 struct {
+	UserID    string `json:"user_id"`
+	Pseudonym string `json:"pseudonym"`
+	Service   string `json:"service"`
+	// What the service did with the user's records: removed them, stripped the personal data, or replaced user_id with the pseudonym.
+	Action string `json:"action"`
+	// Records changed or removed; 0 when the service held nothing for the user.
+	RecordCount int64     `json:"record_count"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+// EventType returns platform.gdpr.cascade_completed.v1.
+func (PlatformGdprCascadeCompletedV1) EventType() string { return TypePlatformGdprCascadeCompletedV1 }
 
 // PlatformServiceDeregisteredV1 is the payload of platform.service.deregistered.v1.
 //

@@ -19,6 +19,7 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/gateway/yoco"
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/secrets"
 	"github.com/slaghuis/yc-platform/services/yc-payment/internal/service"
+	subscribers "github.com/slaghuis/yc-platform/services/yc-payment/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-payment/internal/transport/http"
 	"github.com/slaghuis/yc-platform/services/yc-payment/migrations"
 )
@@ -100,7 +101,7 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams:     []eventbus.StreamConfig{eventbus.PaymentStream(), eventbus.DLQStream()},
+		Streams:     append([]eventbus.StreamConfig{eventbus.PaymentStream(), eventbus.DLQStream()}, eventbus.GDPRStreams()...),
 	})
 	if err != nil {
 		return nil, err
@@ -112,6 +113,11 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	a.Service = service.New(db, bus, cipher,
 		stripe.New(cfg.Gateways.Stripe.APIBase, stripeClient),
 		yoco.New(cfg.Gateways.Yoco.APIBase, yocoClient))
+	for _, sub := range subscribers.Subscriptions(a.Service) {
+		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
+			return nil, err
+		}
+	}
 	a.Handler = transport.NewRouter(a.Service, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},

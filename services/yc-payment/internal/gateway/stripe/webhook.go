@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -105,6 +106,28 @@ func (*Driver) ParseWebhook(secret string, header http.Header, body []byte, now 
 		out.Kind = gateway.WebhookRefund
 		out.Refund = r.refund()
 		out.PaymentReference = r.PaymentIntent
+	case e.Type == "charge.dispute.created":
+		var d dispute
+		if err := json.Unmarshal(e.Data.Object, &d); err != nil {
+			return gateway.WebhookEvent{}, fmt.Errorf("stripe: malformed dispute: %w", err)
+		}
+		if d.ID == "" || d.PaymentIntent == "" || d.Amount <= 0 {
+			return gateway.WebhookEvent{}, errors.New("stripe: dispute without id, payment_intent or amount")
+		}
+		out.Kind = gateway.WebhookDispute
+		out.Dispute = gateway.Dispute{
+			Reference: d.ID, AmountMinor: d.Amount, Currency: strings.ToUpper(d.Currency), Reason: d.Reason,
+		}
+		out.PaymentReference = d.PaymentIntent
 	}
 	return out, nil
+}
+
+// dispute is Stripe's Dispute object.
+type dispute struct {
+	ID            string `json:"id"`
+	Amount        int64  `json:"amount"`
+	Currency      string `json:"currency"`
+	PaymentIntent string `json:"payment_intent"`
+	Reason        string `json:"reason"`
 }

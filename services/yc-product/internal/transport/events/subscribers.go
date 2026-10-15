@@ -20,6 +20,7 @@ type Handlers interface {
 	SetReviewStats(ctx context.Context, tenantID, productID string, stats domain.ReviewStats) error
 	SetBasePrice(ctx context.Context, tenantID, skuID string, minor *int64, at time.Time) error
 	SetInStock(ctx context.Context, tenantID, skuID string, inStock bool, at time.Time) error
+	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -47,7 +48,11 @@ var reviewEvents = map[string]string{
 
 // Subscriptions are yc-product's consumers.
 func Subscriptions(h Handlers) []Subscription {
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-product-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetUser(ctx, tenantID, e))
+	})
 	return append([]Subscription{
+		{Opts: gdprOpts, Handler: gdpr},
 		{
 			Opts: eventbus.SubscribeOpts{
 				Subject:     "yc.*." + ycevents.TypeOrderPlacedV1,

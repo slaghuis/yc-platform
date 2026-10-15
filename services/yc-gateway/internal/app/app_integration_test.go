@@ -354,6 +354,10 @@ func TestGateway(t *testing.T) {
 		wrong := httpkit.NewInternalClient("yc-cart", httpkit.InternalConfig{GatewayURL: internal.URL, ClientSecret: "nope"})
 		err := wrong.Do(callCtx, http.MethodPost, "/internal/evaluate", nil, nil)
 		assert.Equal(t, http.StatusUnauthorized, httpkit.UpstreamStatus(err))
+
+		err = client.Do(callCtx, http.MethodGet, "/internal/preferences/u1", nil, nil)
+		assert.Equal(t, http.StatusServiceUnavailable, httpkit.UpstreamStatus(err),
+			"a path no service serves is unavailable, not a missing resource")
 	})
 
 	t.Run("health and readiness need no tenant", func(t *testing.T) {

@@ -24,7 +24,7 @@ const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_
 	items_total_minor, shipping_minor, tax_total_minor, total_minor, COALESCE(payment_transaction_id::text, ''),
 	COALESCE(payment_gateway, ''), refunded_minor, created_at, updated_at, placed_at,
 	COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''), COALESCE(carrier_name, ''),
-	COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at`
+	COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at, COALESCE(chargeback_id::text, '')`
 
 func scanOrder(r pgx.Row) (domain.Order, error) {
 	var o domain.Order
@@ -35,7 +35,8 @@ func scanOrder(r pgx.Row) (domain.Order, error) {
 		&address, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot, &o.Currency,
 		&o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
 		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt,
-		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt)
+		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt,
+		&o.ChargebackID)
 	if err != nil {
 		return o, err
 	}
@@ -129,21 +130,31 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 	return nil
 }
 
-// UpdateOrder saves an order's status, number, payment, refund and
-// shipment.
+// UpdateOrder saves an order's status, number, payment, refund, chargeback
+// and shipment.
 func (Orders) UpdateOrder(ctx context.Context, tx pgx.Tx, tenantID string, o domain.Order) error {
 	sh := o.Shipment
 	_, err := tx.Exec(ctx, `UPDATE orders SET status = $3, order_number = NULLIF($4, ''),
 			payment_transaction_id = NULLIF($5, '')::uuid, refunded_minor = $6, updated_at = $7, placed_at = $8,
 			shipment_id = NULLIF($9, '')::uuid, tracking_number = NULLIF($10, ''), carrier_name = NULLIF($11, ''),
-			carrier_reference = NULLIF($12, ''), packaged_at = $13, shipped_at = $14, delivered_at = $15
+			carrier_reference = NULLIF($12, ''), packaged_at = $13, shipped_at = $14, delivered_at = $15,
+			chargeback_id = NULLIF($16, '')::uuid
 		WHERE tenant_id = $1 AND id = $2`,
 		tenantID, o.ID, string(o.Status), o.OrderNumber, o.PaymentTransactionID, o.RefundedMinor, o.UpdatedAt, o.PlacedAt,
-		sh.ID, sh.TrackingNumber, sh.CarrierName, sh.CarrierReference, sh.PackagedAt, sh.ShippedAt, sh.DeliveredAt)
+		sh.ID, sh.TrackingNumber, sh.CarrierName, sh.CarrierReference, sh.PackagedAt, sh.ShippedAt, sh.DeliveredAt,
+		o.ChargebackID)
 	if err != nil {
 		return fmt.Errorf("update order: %w", err)
 	}
 	return nil
+}
+
+// OrderByTransaction returns the order a payment transaction paid for.
+func (r Orders) OrderByTransaction(ctx context.Context, tx pgx.Tx, tenantID, transactionID string) (domain.Order, bool, error) {
+	if !validUUID(transactionID) {
+		return domain.Order{}, false, nil
+	}
+	return r.one(ctx, tx, `tenant_id = $1 AND payment_transaction_id = $2 FOR UPDATE`, tenantID, transactionID)
 }
 
 // Purchase is a customer's latest placed order containing a product.

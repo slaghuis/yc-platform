@@ -562,6 +562,29 @@ func TestCart(t *testing.T) {
 		assert.Equal(t, 1, n, "a new idle spell is announced again")
 		assert.Len(t, outbox("shop-a", events.TypeCartAbandonedV1), 3)
 	})
+
+	t.Run("a deleted user's carts are deleted (GDPR)", func(t *testing.T) {
+		dave := uuid.NewString()
+		daveC := as(t, srv, "shop-a", dave, "customer")
+		code, _ := add(daveC, "shopping", skuA, 1)
+		require.Equal(t, http.StatusOK, code)
+		code, _ = add(daveC, "wishlist", skuC, 1)
+		require.Equal(t, http.StatusOK, code)
+		publish("shop-a", events.TypeIdentityUserDeletedV1, events.IdentityUserDeletedV1{
+			UserID: dave, Pseudonym: uuid.NewString(), Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		done := outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)[0]
+		assert.Equal(t, "yc-cart", done["service"])
+		assert.Equal(t, "deleted", done["action"])
+		assert.EqualValues(t, 2, done["record_count"])
+		var left int
+		require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM carts WHERE user_id = $1`, dave).Scan(&left)
+		}))
+		assert.Zero(t, left)
+	})
 }
 
 func unique(xs []string) []string {

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.deleted.v1.json",
+  "title": "identity.user.deleted.v1",
+  "description": "A user's account was deleted: yc-identity anonymised it and revoked its tokens. Starts the GDPR cascade (ADR-005): every service holding the user's data removes it or replaces user_id with the pseudonym, then publishes platform.gdpr.cascade_completed.v1.",
+  "type": "object",
+  "required": [
+    "user_id",
+    "pseudonym",
+    "role",
+    "requested_by",
+    "deleted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pseudonym": {
+      "type": "string",
+      "format": "uuid",
+      "description": "A random UUID that replaces user_id wherever a record is kept, so later events about those records still validate. Only yc-identity can map it back to the user."
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "customer",
+        "shop_admin"
+      ]
+    },
+    "requested_by": {
+      "type": "string",
+      "enum": [
+        "user",
+        "system_admin"
+      ],
+      "description": "Whether the user deleted their own account or a system admin deleted it."
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

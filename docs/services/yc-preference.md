@@ -202,6 +202,8 @@ yc-preference:
 
 - On `identity.user.deleted.v1`: all rows for `user_id` deleted; publish `platform.gdpr.cascade_completed.v1`
 
+*Phase 8:* Implemented as described (preferences and messaging channels); the action is reported as `deleted`.
+
 ## Open Questions / Future Scope
 
 - Marketing consent flags (per channel, per category)

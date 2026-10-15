@@ -248,6 +248,39 @@ func (Reviews) RemoveLike(ctx context.Context, tx pgx.Tx, tenantID, productID, u
 	return tag.RowsAffected() == 1, nil
 }
 
+// Forgotten is what ForgetUser changed.
+type Forgotten struct {
+	Reviews int64
+	Prompts int64
+	// LikedProducts are the products whose likes were removed.
+	LikedProducts []string
+}
+
+// ForgetUser deletes userID's likes and review prompts and gives its
+// reviews to pseudonym (ADR-005).
+func (Reviews) ForgetUser(ctx context.Context, tx pgx.Tx, tenantID, userID, pseudonym string) (Forgotten, error) {
+	var f Forgotten
+	rows, err := tx.Query(ctx, `DELETE FROM product_likes WHERE tenant_id = $1 AND user_id = $2 RETURNING product_id::text`,
+		tenantID, userID)
+	if err != nil {
+		return f, fmt.Errorf("delete likes: %w", err)
+	}
+	if f.LikedProducts, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		return f, fmt.Errorf("delete likes: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE reviews SET user_id = $3 WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID, userID, pseudonym)
+	if err != nil {
+		return f, fmt.Errorf("pseudonymise reviews: %w", err)
+	}
+	f.Reviews = tag.RowsAffected()
+	if tag, err = tx.Exec(ctx, `DELETE FROM review_prompts WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID); err != nil {
+		return f, fmt.Errorf("delete prompts: %w", err)
+	}
+	f.Prompts = tag.RowsAffected()
+	return f, nil
+}
+
 // Like is a product a user likes.
 type Like struct {
 	ProductID string

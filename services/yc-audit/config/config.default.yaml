@@ -1,11 +1,39 @@
 service: yc-audit
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_AUDIT_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_AUDIT_ADVERTISE_URL:-http://yc-audit:8080}
+  interval: 30s
+# The GDPR cascade register (ADR-005): a deletion is complete when every
+# expected service has published platform.gdpr.cascade_completed.v1, and
+# a compliance incident when it is not complete by the deadline.
+gdpr:
+  expected_services:
+    - yc-identity
+    - yc-preference
+    - yc-cart
+    - yc-product
+    - yc-review
+    - yc-message
+    - yc-checkout
+    - yc-orders
+    - yc-payment
+    - yc-shipping
+    - yc-analytics
+  deadline: ${YC_AUDIT_GDPR_DEADLINE:-72h}
+  sweep_interval: ${YC_AUDIT_SWEEP_INTERVAL:-1m}
+# GET /sysadmin/audit/export returns at most this many records.
+export:
+  max_records: 10000

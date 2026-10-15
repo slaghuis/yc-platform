@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/audit/audit.gdpr.cascade_complete.v1.json",
+  "title": "audit.gdpr.cascade_complete.v1",
+  "description": "Every expected service reported its part of a user's GDPR deletion (ADR-005). Published under the user's tenant.",
+  "type": "object",
+  "required": [
+    "user_id",
+    "pseudonym",
+    "services",
+    "initiated_at",
+    "completed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pseudonym": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+      },
+      "minItems": 1
+    },
+    "initiated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

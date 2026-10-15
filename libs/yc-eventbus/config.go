@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -108,6 +109,29 @@ func DefaultBackoff(attempt int) time.Duration {
 	default:
 		return 10 * time.Minute
 	}
+}
+
+// ParseBackoff reads a comma-separated list of waits, e.g. "1s,5s,30s":
+// attempt n waits the n-th, and later attempts the last. An empty string
+// is DefaultBackoff. Services expose it as configuration so a demo can
+// dead-letter in seconds rather than minutes.
+func ParseBackoff(s string) (BackoffFunc, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return DefaultBackoff, nil
+	}
+	parts := strings.Split(s, ",")
+	steps := make([]time.Duration, 0, len(parts))
+	for _, p := range parts {
+		d, err := time.ParseDuration(strings.TrimSpace(p))
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("eventbus: backoff %q: want positive durations such as 1s,5s,30s", s)
+		}
+		steps = append(steps, d)
+	}
+	return func(attempt int) time.Duration {
+		return steps[min(max(attempt, 0), len(steps)-1)]
+	}, nil
 }
 
 func (c *Config) applyDefaults() {

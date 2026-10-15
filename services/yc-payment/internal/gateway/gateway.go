@@ -85,6 +85,15 @@ type Refund struct {
 	FailureReason string
 }
 
+// Dispute is a chargeback the gateway reports on a payment.
+type Dispute struct {
+	Reference   string
+	AmountMinor int64
+	Currency    string
+	// Reason is the gateway's reason code, e.g. fraudulent.
+	Reason string
+}
+
 // WebhookKind classifies a webhook for yc-payment.
 type WebhookKind string
 
@@ -92,6 +101,7 @@ type WebhookKind string
 const (
 	WebhookPayment WebhookKind = "payment" // Payment holds the new state
 	WebhookRefund  WebhookKind = "refund"  // Refund holds the new state
+	WebhookDispute WebhookKind = "dispute" // Dispute holds a new chargeback
 	WebhookOther   WebhookKind = "other"
 )
 
@@ -102,7 +112,8 @@ type WebhookEvent struct {
 	Kind    WebhookKind
 	Payment Payment
 	Refund  Refund
-	// PaymentReference is the payment a refund belongs to.
+	Dispute Dispute
+	// PaymentReference is the payment a refund or dispute belongs to.
 	PaymentReference string
 	// RefundAmount identifies a refund the gateway names differently from
 	// its refund call's answer, when non-zero.

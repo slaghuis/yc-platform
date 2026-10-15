@@ -166,9 +166,11 @@ func (in *Internal) resolve(r *http.Request) (internalTarget, error) {
 			WithInternal("actor_type %s on %s", id.ActorType, r.URL.Path)
 	}
 
+	// 503, not 404: the path's service is down or not registered yet, and
+	// callers must retry rather than read it as a missing resource (ADR-025).
 	route, ok := in.routes.MatchInternal(r.Method, r.URL.Path)
 	if !ok {
-		return internalTarget{}, ycerrors.New(ycerrors.CodeNotFound, "Route not found").
+		return internalTarget{}, ycerrors.Unavailable("No service serves this path").
 			WithInternal("%s %s", r.Method, r.URL.Path)
 	}
 

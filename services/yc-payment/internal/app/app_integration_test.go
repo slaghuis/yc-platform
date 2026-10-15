@@ -12,13 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
@@ -100,7 +104,8 @@ func TestPayments(t *testing.T) {
 	require.NoError(t, err)
 	dbURL := testkit.Postgres(t)
 	t.Setenv("YC_PAYMENT_DB_URL", dbURL)
-	t.Setenv("NATS_URL", testkit.NATS(t))
+	natsURL := testkit.NATS(t)
+	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_PAYMENT_CIPHER_KEY", base64.StdEncoding.EncodeToString(key))
 	t.Setenv("YC_PAYMENT_STRIPE_API_BASE", fake.URL)
@@ -116,6 +121,14 @@ func TestPayments(t *testing.T) {
 	db, err := pgxpool.New(ctx, dbURL)
 	require.NoError(t, err)
 	t.Cleanup(db.Close)
+	validator, err := events.NewValidator()
+	require.NoError(t, err)
+	upstream, err := eventbus.NewClient(ctx, eventbus.Config{
+		NATSURL: natsURL, ServiceName: "yc-upstream", Validator: validator,
+		Streams: []eventbus.StreamConfig{eventbus.IdentityStream()},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = upstream.Close(context.Background()) })
 	outbox := func(tenant, eventType string) []map[string]any {
 		t.Helper()
 		rows, err := db.Query(ctx, `SELECT envelope->'payload' FROM outbox
@@ -405,6 +418,24 @@ func TestPayments(t *testing.T) {
 		assert.Equal(t, api.RefundStatus("completed"), d.Refunds[0].Status)
 	})
 
+	t.Run("a dispute webhook is a chargeback, once", func(t *testing.T) {
+		body, sig, disputeID, ok := fake.Dispute(secret, *paid.GatewayReference, "fraudulent")
+		require.True(t, ok)
+		require.Equal(t, http.StatusOK, stripeHook.raw("POST", "/webhooks/stripe", body, nil, stripe.SignatureHeader, sig))
+		require.Equal(t, http.StatusOK, stripeHook.raw("POST", "/webhooks/stripe", body, nil, stripe.SignatureHeader, sig),
+			"a redelivery is acknowledged")
+		cb := outbox("shop-a", events.TypePaymentChargebackReceivedV1)
+		require.Len(t, cb, 1)
+		assert.Equal(t, paid.TransactionID.String(), cb[0]["transaction_id"])
+		assert.Equal(t, paid.OrderID.String(), cb[0]["order_id"])
+		assert.Equal(t, disputeID, cb[0]["gateway_reference"])
+		assert.Equal(t, "fraudulent", cb[0]["reason"])
+		assert.Equal(t, map[string]any{"amount_minor": float64(12345), "currency": "ZAR"}, cb[0]["amount"])
+
+		_, _, _, ok = fake.Dispute(secret, "pi_unknown", "fraudulent")
+		assert.False(t, ok)
+	})
+
 	t.Run("webhooks with a bad signature are rejected", func(t *testing.T) {
 		body, _ := fake.Webhook(secret, "payment_intent.succeeded", *paid.GatewayReference)
 		_, forged := fake.Webhook("whsec_attacker", "payment_intent.succeeded", *paid.GatewayReference)
@@ -449,5 +480,41 @@ func TestPayments(t *testing.T) {
 		for _, tx := range failed.Items {
 			assert.Equal(t, api.TransactionStatus("failed"), tx.Status)
 		}
+	})
+
+	t.Run("a deleted shop admin's refunds are pseudonymised (GDPR)", func(t *testing.T) {
+		session := uuid.NewString()
+		code, tx := authorize(session, stripetest.CardVisa, session+":authorize", 5000)
+		require.Equal(t, http.StatusOK, code)
+		order := uuid.New()
+		code, _ = capture(tx.TransactionID, &order)
+		require.Equal(t, http.StatusOK, code)
+		adminID := uuid.NewString()
+		onBehalf := as(t, srv, "shop-a", adminID, "shop_admin")
+		onBehalf.hdr[authctx.HeaderCallerService] = "yc-orders"
+		var r api.RefundResult
+		require.Equal(t, http.StatusOK, onBehalf.do("POST", "/internal/refund", api.RefundInput{TransactionID: tx.TransactionID},
+			&r, "Idempotency-Key", order.String()+":refund"))
+		require.NotNil(t, r.Refund)
+
+		pseudonym := uuid.NewString()
+		require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+			EventType: events.TypeIdentityUserDeletedV1, TenantID: "shop-a",
+			Actor: eventbus.Actor{Type: "service", ID: "yc-identity"},
+			Payload: events.IdentityUserDeletedV1{
+				UserID: adminID, Pseudonym: pseudonym, Role: "shop_admin", RequestedBy: "system_admin", DeletedAt: time.Now().UTC(),
+			},
+		}))
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		done := outbox("shop-a", events.TypePlatformGdprCascadeCompletedV1)[0]
+		assert.Equal(t, "yc-payment", done["service"])
+		assert.Equal(t, "pseudonymized", done["action"])
+		assert.EqualValues(t, 1, done["record_count"])
+		var actor string
+		require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT actor_id FROM refunds WHERE id = $1`, r.Refund.RefundID).Scan(&actor)
+		}))
+		assert.Equal(t, pseudonym, actor)
 	})
 }

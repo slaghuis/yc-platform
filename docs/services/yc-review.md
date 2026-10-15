@@ -256,6 +256,8 @@ yc-review:
 - Publish `platform.gdpr.cascade_completed.v1`
 - Review images (via yc-image) are deleted via a `review.deleted.v1` or `review.rejected.v1` event
 
+*Phase 8:* Implemented: reviews move to the pseudonym and keep their text (reviews show no author name), likes are deleted with the products' stats republished, pending review prompts are dropped, and the action is reported as `pseudonymized`.
+
 ## Open Questions / Future Scope
 
 - Review helpfulness votes ("Was this helpful?")

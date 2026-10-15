@@ -47,6 +47,8 @@ if [ "${1:-}" = "--app" ]; then
     wait_until "yc-shipping" curl -fsS http://localhost:8094/readyz
     wait_until "yc-message"  curl -fsS http://localhost:8095/readyz
     wait_until "yc-review"   curl -fsS http://localhost:8096/readyz
+    wait_until "yc-audit"    curl -fsS http://localhost:8097/readyz
+    wait_until "yc-analytics" curl -fsS http://localhost:8098/readyz
 fi
 
 if [ $failed -gt 0 ]; then

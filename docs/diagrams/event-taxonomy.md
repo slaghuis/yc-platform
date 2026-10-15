@@ -18,26 +18,26 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 |---|---|---|---|
 | `platform.service.registered.v1` | yc-gateway | yc-monitor | A backend service registers |
 | `platform.service.deregistered.v1` | yc-gateway | yc-monitor | A backend service deregisters or fails health |
-| `platform.tenant.provisioned.v1` | yc-tenant-cli | yc-analytics, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-inventory, yc-orders, yc-payment, yc-preference, yc-pricing, yc-review, yc-shipping | Admin provisions tenant |
+| `platform.tenant.provisioned.v1` | yc-tenant-cli | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-inventory, yc-orders, yc-payment, yc-preference, yc-pricing, yc-review, yc-shipping | Admin provisions tenant |
 | `platform.tenant.suspended.v1` | yc-tenant-cli | yc-gateway | Admin suspends tenant |
 | `platform.tenant.deleted.v1` | yc-tenant-cli | yc-analytics, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-image, yc-inventory, yc-orders, yc-payment, yc-preference, yc-pricing, yc-product, yc-review, yc-shipping | Admin deletes tenant |
 | `platform.tenant.configuration_changed.v1` | yc-tenant-cli | yc-analytics, yc-audit, yc-inventory | Admin updates tenant config |
-| `platform.gdpr.cascade_completed.v1` | Every PII-holding service (ADR-005) | yc-audit, yc-identity | Service completes its part of a GDPR deletion |
+| `platform.gdpr.cascade_completed.v1` | Every GDPR cascade participant (ADR-005, ADR-025) | yc-audit | Service completes its part of a GDPR deletion (`deleted`, `anonymized` or `pseudonymized`, with a count) |
 
 ## Identity Domain
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `identity.visitor.created.v1` | yc-identity | yc-analytics | Visitor token issued |
+| `identity.visitor.created.v1` | yc-identity | yc-analytics, yc-monitor | Visitor token issued |
 | `identity.user.registered.v1` | yc-identity | yc-message, yc-orders, yc-preference | New customer registration |
-| `identity.user.promoted.v1` | yc-identity | yc-audit | Role changed upward |
+| `identity.user.promoted.v1` | yc-identity | yc-audit, yc-message | Role changed upward (yc-message keeps its shop admins) |
 | `identity.user.demoted.v1` | yc-identity | yc-audit | Role changed downward |
 | `identity.user.logged_in.v1` | yc-identity | yc-cart | Successful login |
 | `identity.user.login_failed.v1` | yc-identity | yc-audit | Failed login (for brute-force detection) |
 | `identity.user.password_reset_requested.v1` | yc-identity | — | Reset flow started (no token; yc-identity sends the link through yc-message `POST /internal/send`, ADR-023) |
 | `identity.user.password_changed.v1` | yc-identity | — | Password successfully changed |
 | `identity.user.suspended.v1` | yc-identity | yc-audit | Admin-suspended |
-| `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-image, yc-inventory, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping | Deletion triggered — kicks off GDPR cascade |
+| `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping | `DELETE /me` or `DELETE /admin/users/{id}`; carries the pseudonym and kicks off the GDPR cascade (yc-inventory joins with back-in-stock subscriptions) |
 | `identity.oauth_linked.v1` | yc-identity | — | OAuth provider linked to user |
 | `identity.oauth_unlinked.v1` | yc-identity | — | OAuth provider unlinked |
 
@@ -169,7 +169,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `payment.refund_initiated.v1` | yc-payment | — | Refund requested |
 | `payment.refund_completed.v1` | yc-payment | yc-orders | Refund settled |
 | `payment.refund_failed.v1` | yc-payment | — | Refund failed |
-| `payment.chargeback_received.v1` | yc-payment | yc-audit, yc-message, yc-orders | Chargeback / dispute notification |
+| `payment.chargeback_received.v1` | yc-payment | yc-audit, yc-orders | Stripe dispute webhook |
 | `payment.webhook_signature_failed.v1` | yc-payment | yc-audit, yc-monitor | Potential security event |
 
 ## Order Domain
@@ -182,12 +182,12 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `order.delivered.v1` | yc-orders | yc-analytics, yc-message, yc-review | `shipping.delivered.v1` received |
 | `order.cancelled.v1` | yc-orders | yc-analytics, yc-message, yc-shipping | Order cancelled |
 | `order.cancellation_failed.v1` | yc-orders | — | Cancellation blocked (already shipped) (future) |
-| `order.refunded.v1` | yc-orders | yc-analytics, yc-message | Refund recorded (cancellation, accepted return or admin refund) |
+| `order.refunded.v1` | yc-orders | yc-analytics, yc-audit, yc-message | Refund recorded (cancellation, accepted return or admin refund) |
 | `order.return_requested.v1` | yc-orders | — | Customer requested return |
 | `order.return_accepted.v1` | yc-orders | — | Shop admin accepted return (and refunded it) |
 | `order.return_rejected.v1` | yc-orders | — | Shop admin rejected return |
 | `order.return_received.v1` | yc-orders | — | Returned items received (future, with return shipments) |
-| `order.disputed.v1` | yc-orders | — | Chargeback flagged |
+| `order.disputed.v1` | yc-orders | yc-audit, yc-monitor | `payment.chargeback_received.v1` received |
 | `order.note_added.v1` | yc-orders | — | Note added (internal or customer-visible) |
 
 ## Shipping Domain
@@ -230,34 +230,33 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `audit.record.stored.v1` | yc-audit | — | Any audit record stored (used by yc-monitor for throughput metrics) |
-| `audit.gdpr.cascade_complete.v1` | yc-audit | — | All services reported |
-| `audit.gdpr.cascade_incident.v1` | yc-audit | yc-monitor | 72h window exceeded |
+| `audit.record.stored.v1` | yc-audit | — | Any audit record stored (future; not published yet) |
+| `audit.gdpr.cascade_complete.v1` | yc-audit | yc-audit (records it) | Every expected service reported |
+| `audit.gdpr.cascade_incident.v1` | yc-audit | yc-audit, yc-monitor | Deadline (72h) passed without every report |
 
 ## Monitor Domain
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
 | `monitor.gateway.request_received.v1` | yc-gateway | — | **Not published per request** — sampled metrics only, aggregated by yc-monitor |
-| `monitor.service.unhealthy.v1` | yc-monitor | — | Service failed health checks |
-| `monitor.service.recovered.v1` | yc-monitor | — | Service recovered |
-| `monitor.alert.opened.v1` | yc-monitor | — | New alert raised |
-| `monitor.alert.resolved.v1` | yc-monitor | — | Alert condition cleared |
+| `monitor.service.unhealthy.v1` | yc-monitor | — | Three failed `/readyz` checks in a row |
+| `monitor.service.recovered.v1` | yc-monitor | — | Three good checks after unhealthy |
+| `monitor.alert.opened.v1` | yc-monitor | yc-message, yc-monitor (critical webhook) | New alert raised |
+| `monitor.alert.resolved.v1` | yc-monitor | — | Alert condition cleared, or an incident alert acknowledged |
 | `monitor.alert.acknowledged.v1` | yc-monitor | — | Admin acknowledged |
-| `monitor.dlq.spike_detected.v1` | yc-monitor | — | DLQ throughput exceeded threshold |
-| `monitor.threshold.breached.v1` | yc-monitor | — | Generic threshold breach |
+| `monitor.dlq.spike_detected.v1` | yc-monitor | — | Not published: a spike opens a `dlq_rate` alert (ADR-025) |
+| `monitor.threshold.breached.v1` | yc-monitor | — | Not published: breaches open alerts (ADR-025) |
 
 ## Analytics Domain
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `analytics.aggregate.rebuilt.v1` | yc-analytics | — | Aggregate job completed |
-| `analytics.milestone.reached.v1` | yc-analytics | — | Tenant hits a milestone (first order, 100th order, R100k revenue) — triggers congratulatory messaging |
+| `analytics.aggregate.rebuilt.v1` | yc-analytics | — | Nightly or on-demand rebuild finished |
+| `analytics.milestone.reached.v1` | yc-analytics | yc-message | Shop reaches a milestone (first order, an order count, a revenue tier) — emailed to the shop admins |
 
 ## Pattern Subscriptions
 
 | Pattern | Subscriber | Purpose |
 |---|---|---|
-| `*.admin_action.v1` | yc-audit | Store as `admin_action` |
-| `platform.tenant.*` | yc-audit | Store as `tenant_lifecycle` |
+| `*.admin_action.v1` | yc-audit | Store as `admin_action` (future; Phase 8 audits the event types listed in ADR-025 rule 5) |
 | `yc.*.*.dlq.v1` | yc-monitor | Record DLQ entry; raise alert if threshold breached |

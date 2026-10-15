@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/monitor/monitor.alert.acknowledged.v1.json",
+  "title": "monitor.alert.acknowledged.v1",
+  "description": "An admin acknowledged an open alert. Published under the alert's tenant.",
+  "type": "object",
+  "required": [
+    "alert_id",
+    "rule",
+    "acknowledged_by",
+    "acknowledged_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "alert_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rule": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acknowledged_by": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acknowledged_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

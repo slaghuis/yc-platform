@@ -25,6 +25,8 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Start dev stack
         run: task devstack:up
+      - name: Start the services
+        run: task devstack:app
       - name: Run E2E tests
         run: task test:e2e
       - name: Collect logs on failure

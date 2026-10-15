@@ -21,6 +21,7 @@ Each event stream has a declared retention policy, configured per JetStream stre
 | `message.*` | **1 year** | Delivery audit |
 | `image.*` | **7 days** | Short-lived processing events |
 | `monitor.*` | **30 days** | Operational telemetry |
+| `analytics.*` | **1 year** | Milestones and rebuilds; the facts live in yc-analytics |
 | `platform.*` | **Infinite** | Tenant lifecycle must be fully traceable |
 | `*.dlq.v1` | **90 days** | Human investigation window |
 
@@ -31,3 +32,5 @@ Each event stream has a declared retention policy, configured per JetStream stre
 3. Changes to retention policy require an ADR update
 4. Long-retention streams (`audit`, `order`, `payment`) are configured with **file storage**, not memory
 5. GDPR trumps retention: when a user is deleted, their events are **anonymized in place**, not deleted (see ADR-005)
+
+*Amended 2026-10-15 (ADR-025):* `identity.user.deleted.v1` has its own stream, `YC_IDENTITY_DELETED` (7 years). `YC_IDENTITY` (1 year) lists its event types instead of capturing `identity.*`, because JetStream streams cannot overlap; a new identity event type is added to that list. `analytics.*` is new, at 1 year.

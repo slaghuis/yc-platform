@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
 	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
@@ -458,6 +460,87 @@ func TestMessaging(t *testing.T) {
 		var list api.MessageList
 		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/messages?type=cart_abandoned", nil, &list))
 		assert.Len(t, list.Items, 2)
+	})
+
+	publishIn := func(tenant string, payload interface{ EventType() string }) {
+		t.Helper()
+		require.NoError(t, bus.PublishDirect(ctx, eventbus.Event{
+			EventType: payload.EventType(), TenantID: tenant,
+			Actor: eventbus.Actor{Type: "service", ID: "yc-test"}, Payload: payload,
+		}))
+	}
+	nomsa := uuid.NewString()
+	t.Run("alerts and milestones reach the shop's admins", func(t *testing.T) {
+		up.set(func(u *upstreams) {
+			u.preferences[nomsa] = map[string]any{
+				"user_id": nomsa, "locale": "en", "primary_channel": "email",
+				"channels": []map[string]any{{"channel": "email", "address": "nomsa@x.test", "verified": true}},
+			}
+		})
+		publish(events.IdentityUserPromotedV1{UserID: nomsa, FromRole: "customer", ToRole: "shop_admin", PromotedAt: time.Now().UTC()})
+		require.Eventually(t, func() bool {
+			var n int
+			require.NoError(t, dbkit.WithTenantTx(ctx, db, shop, func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT count(*) FROM shop_admins WHERE user_id = $1`, nomsa).Scan(&n)
+			}))
+			return n == 1
+		}, 5*time.Second, 20*time.Millisecond)
+
+		value, threshold := 12.0, 10.0
+		publish(events.MonitorAlertOpenedV1{
+			AlertID: uuid.NewString(), Rule: "chargeback", Metric: "chargebacks", Severity: "critical",
+			Summary: "Chargeback on order YC-1001", Dimensions: map[string]any{"order_number": "YC-1001"},
+			Value: &value, Threshold: &threshold, Notify: []string{"shop_admin"}, OpenedAt: time.Now().UTC(),
+		})
+		m := waitMail("nomsa@x.test", 1)[0]
+		assert.Equal(t, "[critical] Chargeback on order YC-1001", m.Subject)
+		assert.Contains(t, m.Body, "order_number: YC-1001")
+		assert.Contains(t, m.Body, "Threshold: 10")
+		assert.Empty(t, box.to("ops@yourcommerce.test"), "a shop alert for the shop's admins only")
+
+		currency := "ZAR"
+		publish(events.AnalyticsMilestoneReachedV1{Milestone: "revenue", Threshold: 100000, Currency: &currency, ReachedAt: time.Now().UTC()})
+		m = waitMail("nomsa@x.test", 2)[1]
+		assert.Contains(t, m.Subject, "in sales")
+		assert.Contains(t, m.Subject, "ZAR")
+	})
+
+	t.Run("platform alerts go to the system admins", func(t *testing.T) {
+		publishIn(eventbus.PlatformTenantID, events.MonitorAlertOpenedV1{
+			AlertID: uuid.NewString(), Rule: "service_unhealthy", Metric: "health", Severity: "critical",
+			Summary: "yc-pricing failed 3 health checks", Dimensions: map[string]any{"service": "yc-pricing"},
+			Notify: []string{"system_admin", "shop_admin"}, OpenedAt: time.Now().UTC(),
+		})
+		m := waitMail("ops@yourcommerce.test", 1)[0]
+		assert.Equal(t, "[critical] yc-pricing failed 3 health checks", m.Subject)
+		assert.Contains(t, m.Body, "service: yc-pricing")
+		assert.Len(t, box.to("nomsa@x.test"), 2, "no shop's admins for a platform alert")
+	})
+
+	t.Run("a deleted user's messages are pseudonymised (GDPR)", func(t *testing.T) {
+		var before api.MessageList
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/messages?user_id="+thandi, nil, &before))
+		require.NotEmpty(t, before.Items)
+		pseudonym := uuid.NewString()
+		publish(events.IdentityUserDeletedV1{
+			UserID: thandi, Pseudonym: pseudonym, Role: "customer", RequestedBy: "user", DeletedAt: time.Now().UTC(),
+		})
+		require.Eventually(t, func() bool {
+			return len(outbox(events.TypePlatformGdprCascadeCompletedV1)) == 1
+		}, 5*time.Second, 20*time.Millisecond)
+		done := outbox(events.TypePlatformGdprCascadeCompletedV1)[0]
+		assert.Equal(t, "yc-message", done["service"])
+		assert.Equal(t, "pseudonymized", done["action"])
+		assert.GreaterOrEqual(t, done["record_count"], float64(len(before.Items)))
+
+		var after api.MessageList
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/messages?user_id="+thandi, nil, &after))
+		assert.Empty(t, after.Items)
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/messages?user_id="+pseudonym, nil, &after))
+		require.Len(t, after.Items, len(before.Items))
+		for _, m := range after.Items {
+			assert.Empty(t, m.Address)
+		}
 	})
 }
 

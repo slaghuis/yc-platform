@@ -1,0 +1,594 @@
+openapi: 3.1.0
+info:
+  title: yc-monitor
+  version: 0.2.0
+  description: |
+    Platform operations: health of the services registered with yc-gateway,
+    business and dead-letter counters, alerts and their thresholds
+    (docs/services/yc-monitor.md, ADR-025).
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /sysadmin routes are for system admins and see
+    every shop; /admin routes are for a shop's admins and see only their
+    shop. Errors are application/problem+json (error-handling.md).
+
+paths:
+  /sysadmin/dashboard:
+    get:
+      summary: Platform dashboard
+      description: |
+        Service health, open alerts, unacknowledged dead letters and the
+        last hour's counters. Status is red with an unhealthy service or an
+        open critical alert, amber with an open warning or a service not yet
+        checked, otherwise green.
+      operationId: getDashboard
+      responses:
+        '200':
+          description: The dashboard.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/services:
+    get:
+      summary: List services and their health
+      operationId: listServices
+      responses:
+        '200':
+          description: Every service registered with yc-gateway, by name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceList' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/metrics:
+    get:
+      summary: Query a counter
+      description: Summed over every shop unless tenant_id names one.
+      operationId: getMetrics
+      parameters:
+        - $ref: '#/components/parameters/MetricParam'
+        - $ref: '#/components/parameters/TenantIDParam'
+        - $ref: '#/components/parameters/BucketParam'
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: The counter per bucket; empty buckets are left out.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetricSeries' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/alerts:
+    get:
+      summary: List alerts
+      description: Every shop's and the platform's alerts, newest first.
+      operationId: listAlerts
+      parameters:
+        - $ref: '#/components/parameters/AlertStatusParam'
+        - $ref: '#/components/parameters/SeverityParam'
+        - $ref: '#/components/parameters/RuleParam'
+        - $ref: '#/components/parameters/TenantIDParam'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of alerts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/alerts/{id}/ack:
+    post:
+      summary: Acknowledge an alert
+      description: |
+        Marks the alert seen. Alerts raised by an event (a GDPR incident, a
+        webhook signature failure, stale exchange rates) are resolved too;
+        threshold and health alerts stay open until their condition clears.
+        Acknowledging again changes nothing.
+      operationId: acknowledgeAlert
+      parameters:
+        - $ref: '#/components/parameters/AlertID'
+      responses:
+        '200':
+          description: The alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/thresholds:
+    get:
+      summary: List alert thresholds
+      description: |
+        The platform-wide settings of every threshold rule, then each
+        shop's overrides.
+      operationId: listThresholds
+      responses:
+        '200':
+          description: The thresholds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThresholdList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Set an alert threshold
+      description: |
+        Sets a threshold rule for the platform, or overrides it for one shop
+        (checkout_success_rate only). Fields left out keep their current
+        values. The next evaluation, within 15 seconds, uses it.
+      operationId: putThresholds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThresholdsInput' }
+      responses:
+        '200':
+          description: The rule's settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thresholds' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/dlq:
+    get:
+      summary: List dead letters
+      description: Every tenant's dead letters, newest first.
+      operationId: listDeadLetters
+      parameters:
+        - $ref: '#/components/parameters/TenantIDParam'
+        - name: service
+          in: query
+          description: The consuming service that gave up on the event.
+          schema: { type: string }
+        - name: acknowledged
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The dead letters.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetterList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/dlq/summary:
+    get:
+      summary: Count unacknowledged dead letters
+      operationId: getDeadLetterSummary
+      responses:
+        '200':
+          description: Unacknowledged dead letters per tenant and service.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetterSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/dlq/{sequence}/ack:
+    post:
+      summary: Acknowledge a dead letter
+      description: Marks it handled, e.g. after replaying it with yc-dlq-cli.
+      operationId: acknowledgeDeadLetter
+      parameters:
+        - name: sequence
+          in: path
+          required: true
+          description: The dead letter's YC_DLQ stream sequence.
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: The dead letter.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetter' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/events:
+    get:
+      summary: List received events
+      description: The Phase 1 event log of identity.visitor.created.v1, newest first.
+      operationId: listReceivedEvents
+      parameters:
+        - $ref: '#/components/parameters/TenantIDParam'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceivedEventList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/metrics:
+    get:
+      summary: Query a counter for my shop
+      operationId: getShopMetrics
+      parameters:
+        - $ref: '#/components/parameters/MetricParam'
+        - $ref: '#/components/parameters/BucketParam'
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: The counter per bucket.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetricSeries' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/alerts:
+    get:
+      summary: List my shop's alerts
+      operationId: listShopAlerts
+      parameters:
+        - $ref: '#/components/parameters/AlertStatusParam'
+        - $ref: '#/components/parameters/SeverityParam'
+        - $ref: '#/components/parameters/RuleParam'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of alerts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/alerts/{id}/ack:
+    post:
+      summary: Acknowledge one of my shop's alerts
+      operationId: acknowledgeShopAlert
+      parameters:
+        - $ref: '#/components/parameters/AlertID'
+      responses:
+        '200':
+          description: The alert.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Alert' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/dlq:
+    get:
+      summary: Count my shop's unacknowledged dead letters
+      operationId: getShopDeadLetterSummary
+      responses:
+        '200':
+          description: Unacknowledged dead letters per service.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetterSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    MetricParam:
+      name: metric
+      in: query
+      required: true
+      schema: { $ref: '#/components/schemas/Metric' }
+    TenantIDParam:
+      name: tenant_id
+      in: query
+      schema: { type: string }
+    BucketParam:
+      name: bucket
+      in: query
+      schema: { type: string, enum: ['1m', '5m', '1h', '1d'], default: '1h' }
+    FromParam:
+      name: from
+      in: query
+      description: The first bucket; defaults to 59 buckets before to.
+      schema: { type: string, format: date-time }
+    ToParam:
+      name: to
+      in: query
+      description: Buckets before this time; defaults to now.
+      schema: { type: string, format: date-time }
+    AlertStatusParam:
+      name: status
+      in: query
+      description: active is open or acknowledged.
+      schema: { type: string, enum: [open, acknowledged, resolved, active] }
+    SeverityParam:
+      name: severity
+      in: query
+      schema: { $ref: '#/components/schemas/Severity' }
+    RuleParam:
+      name: rule
+      in: query
+      schema: { type: string }
+    AlertID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Metric:
+      type: string
+      enum: [checkouts.started, checkouts.completed, checkouts.failed, orders.placed, payments.failed, events.dlq]
+    Severity:
+      type: string
+      enum: [info, warning, critical]
+    HealthStatus:
+      type: string
+      enum: [unknown, healthy, unhealthy, deregistered]
+
+    Dashboard:
+      type: object
+      required: [status, services, open_alerts, dead_letters_unacknowledged, last_hour, generated_at]
+      properties:
+        status: { type: string, enum: [green, amber, red] }
+        services:
+          type: object
+          required: [total, healthy, unhealthy, unknown, deregistered]
+          properties:
+            total: { type: integer }
+            healthy: { type: integer }
+            unhealthy: { type: integer }
+            unknown: { type: integer }
+            deregistered: { type: integer }
+        open_alerts:
+          type: object
+          required: [critical, warning, info]
+          properties:
+            critical: { type: integer }
+            warning: { type: integer }
+            info: { type: integer }
+        dead_letters_unacknowledged: { type: integer, format: int64 }
+        last_hour:
+          type: object
+          description: Each metric's count over the last 60 minutes, every shop.
+          additionalProperties: { type: integer, format: int64 }
+        generated_at: { type: string, format: date-time }
+
+    Service:
+      type: object
+      required: [name, instance_id, base_url, status, consecutive_failures, consecutive_successes, registered_at]
+      properties:
+        name: { type: string }
+        instance_id: { type: string }
+        base_url: { type: string }
+        version: { type: string }
+        status: { $ref: '#/components/schemas/HealthStatus' }
+        consecutive_failures: { type: integer }
+        consecutive_successes: { type: integer }
+        last_error: { type: string }
+        last_check_at: { type: string, format: date-time }
+        last_healthy_at: { type: string, format: date-time }
+        unhealthy_since: { type: string, format: date-time }
+        registered_at: { type: string, format: date-time }
+        deregistered_at: { type: string, format: date-time }
+    ServiceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Service' }
+
+    MetricSeries:
+      type: object
+      required: [metric, bucket, from, to, points]
+      properties:
+        metric: { $ref: '#/components/schemas/Metric' }
+        tenant_id: { type: string }
+        bucket: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/MetricPoint' }
+    MetricPoint:
+      type: object
+      required: [bucket_start, value]
+      properties:
+        bucket_start: { type: string, format: date-time }
+        value: { type: integer, format: int64 }
+
+    Alert:
+      type: object
+      required: [id, tenant_id, rule, metric, severity, status, summary, notify, occurrences, opened_at, last_seen_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        rule: { type: string }
+        metric: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        summary: { type: string }
+        dimensions:
+          type: object
+          additionalProperties: { type: string }
+        value: { type: number, format: double }
+        threshold: { type: number, format: double }
+        notify:
+          type: array
+          items: { type: string }
+        occurrences: { type: integer }
+        opened_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        acknowledged_at: { type: string, format: date-time }
+        acknowledged_by: { type: string }
+        resolved_at: { type: string, format: date-time }
+    AlertList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Alert' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    Thresholds:
+      type: object
+      required: [tenant_id, rule, threshold, min_volume, window_minutes, enabled]
+      properties:
+        tenant_id: { type: string, description: _platform for the platform-wide setting. }
+        rule: { type: string }
+        threshold:
+          type: number
+          format: double
+          description: Dead letters per minute (dlq_rate) or the lowest success ratio, 0 to 1 (checkout_success_rate).
+        min_volume:
+          type: integer
+          format: int64
+          description: No alert below this many events in the window.
+        window_minutes: { type: integer }
+        enabled: { type: boolean }
+        updated_by: { type: string }
+        updated_at: { type: string, format: date-time }
+    ThresholdList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Thresholds' }
+    ThresholdsInput:
+      type: object
+      required: [rule]
+      properties:
+        rule: { type: string, enum: [checkout_success_rate, dlq_rate] }
+        tenant_id: { type: string, description: A shop to override; the platform when left out. }
+        threshold: { type: number, format: double, minimum: 0 }
+        min_volume: { type: integer, format: int64, minimum: 0 }
+        window_minutes: { type: integer, minimum: 1, maximum: 1440 }
+        enabled: { type: boolean }
+
+    DeadLetter:
+      type: object
+      required: [id, dlq_sequence, tenant_id, service, consumer, event_type, event_id, failure_reason, attempts,
+                 envelope, created_at, acknowledged]
+      properties:
+        id: { type: string, format: uuid }
+        dlq_sequence: { type: integer, format: int64 }
+        tenant_id: { type: string }
+        service: { type: string }
+        consumer: { type: string }
+        event_type: { type: string }
+        event_id: { type: string }
+        failure_reason: { type: string, description: poison or exhausted. }
+        attempts: { type: integer }
+        last_error: { type: string }
+        first_failure_at: { type: string, format: date-time }
+        last_failure_at: { type: string, format: date-time }
+        envelope:
+          type: object
+          description: The original event; may hold personal data.
+        created_at: { type: string, format: date-time }
+        acknowledged: { type: boolean }
+        acknowledged_by: { type: string }
+        acknowledged_at: { type: string, format: date-time }
+    DeadLetterList:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/DeadLetter' }
+    DeadLetterSummary:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DeadLetterCount' }
+    DeadLetterCount:
+      type: object
+      required: [tenant_id, service, unacknowledged, latest]
+      properties:
+        tenant_id: { type: string }
+        service: { type: string }
+        unacknowledged: { type: integer, format: int64 }
+        latest: { type: string, format: date-time }
+
+    ReceivedEvent:
+      type: object
+      required: [event_id, tenant_id, event_type, source_service, event_time, envelope, received_at]
+      properties:
+        event_id: { type: string }
+        tenant_id: { type: string }
+        event_type: { type: string }
+        source_service: { type: string }
+        correlation_id: { type: string }
+        event_time: { type: string, format: date-time }
+        envelope: { type: object }
+        received_at: { type: string, format: date-time }
+    ReceivedEventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/ReceivedEvent' }
+
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

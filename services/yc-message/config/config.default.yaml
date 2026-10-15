@@ -9,6 +9,10 @@ database:
   migrate_on_start: true
 nats:
   url: ${NATS_URL}
+  # Waits between redeliveries of an event whose handler failed, e.g.
+  # "1s,2s,5s"; empty is 1s,5s,30s,2m,10m. The Phase 8 demo shortens it so
+  # failures reach the DLQ in seconds.
+  retry_backoff: ${YC_MESSAGE_EVENT_RETRY_BACKOFF}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
 # Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
@@ -50,3 +54,7 @@ messages:
   dispatch_interval: 2s
 verification:
   ttl: 15m
+# Platform alerts from yc-monitor go to these addresses (comma-separated);
+# shop alerts and milestones go to the shop's admins.
+admins:
+  system_emails: ${YC_MESSAGE_SYSTEM_ADMIN_EMAILS:-ops@yourcommerce.test}

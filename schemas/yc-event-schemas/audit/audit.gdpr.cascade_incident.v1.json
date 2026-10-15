@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/audit/audit.gdpr.cascade_incident.v1.json",
+  "title": "audit.gdpr.cascade_incident.v1",
+  "description": "A user's GDPR deletion was not complete by its deadline (72h by default): a compliance incident (ADR-005). Published under the user's tenant; yc-monitor raises a critical alert.",
+  "type": "object",
+  "required": [
+    "user_id",
+    "pseudonym",
+    "missing_services",
+    "initiated_at",
+    "deadline"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pseudonym": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "missing_services": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^yc-[a-z]+(-[a-z]+)*$"
+      },
+      "minItems": 1
+    },
+    "initiated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deadline": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -98,9 +98,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ServiceName: cfg.Service,
 		DB:          db,
 		Validator:   validator,
-		Streams: []eventbus.StreamConfig{
+		Streams: append([]eventbus.StreamConfig{
 			eventbus.CheckoutStream(), eventbus.InventoryStream(), eventbus.PaymentStream(), eventbus.DLQStream(),
-		},
+		}, eventbus.GDPRStreams()...),
 	})
 	if err != nil {
 		return nil, err

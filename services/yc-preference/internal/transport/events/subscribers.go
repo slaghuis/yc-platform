@@ -17,6 +17,7 @@ type Handlers interface {
 	SeedUser(ctx context.Context, tenantID, userID, email string) error
 	ChannelVerified(ctx context.Context, tenantID string, p ycevents.MessageVerificationConfirmedV1) error
 	ChannelBounced(ctx context.Context, tenantID string, p ycevents.MessageBouncedV1) error
+	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -27,7 +28,11 @@ type Subscription struct {
 
 // Subscriptions are yc-preference's consumers.
 func Subscriptions(h Handlers) []Subscription {
+	gdprOpts, gdpr := ycevents.OnUserDeleted("yc-preference-gdpr", func(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error {
+		return poisonInvalid(h.ForgetUser(ctx, tenantID, e))
+	})
 	return []Subscription{
+		{Opts: gdprOpts, Handler: gdpr},
 		{
 			Opts: eventbus.SubscribeOpts{
 				Subject:     "yc." + eventbus.PlatformTenantID + "." + ycevents.TypePlatformTenantProvisionedV1,

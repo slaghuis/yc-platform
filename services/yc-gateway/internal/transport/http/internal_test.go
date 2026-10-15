@@ -142,9 +142,9 @@ func TestInternalRejections(t *testing.T) {
 		{"no token", "POST", "/internal/evaluate", []func(*http.Request){tenant}, 401, ycerrors.CodeUnauthorized},
 		{"invalid token", "POST", "/internal/evaluate", []func(*http.Request){tenant, bearer("garbage")}, 401, ycerrors.CodeUnauthorized},
 		{"user token", "POST", "/internal/evaluate", []func(*http.Request){tenant, bearer("shop-a:customer")}, 401, ycerrors.CodeUnauthorized},
-		{"no route", "POST", "/internal/nothing", []func(*http.Request){tenant, bearer("_platform:service")}, 404, ycerrors.CodeNotFound},
-		{"wrong method", "GET", "/internal/evaluate", []func(*http.Request){tenant, bearer("_platform:service")}, 404, ycerrors.CodeNotFound},
-		{"public route", "GET", "/internal/prices", []func(*http.Request){tenant, bearer("_platform:service")}, 404, ycerrors.CodeNotFound},
+		{"no route", "POST", "/internal/nothing", []func(*http.Request){tenant, bearer("_platform:service")}, 503, ycerrors.CodeUnavailable},
+		{"wrong method", "GET", "/internal/evaluate", []func(*http.Request){tenant, bearer("_platform:service")}, 503, ycerrors.CodeUnavailable},
+		{"public route", "GET", "/internal/prices", []func(*http.Request){tenant, bearer("_platform:service")}, 503, ycerrors.CodeUnavailable},
 		{"no tenant", "POST", "/internal/evaluate", []func(*http.Request){bearer("_platform:service")}, 400, ycerrors.CodeValidationFailed},
 		{"actor type without ID", "POST", "/internal/evaluate", []func(*http.Request){
 			tenant, bearer("_platform:service"), headers(authctx.HeaderActorType, "customer"),

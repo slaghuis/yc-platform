@@ -1,5 +1,6 @@
 // Package integration calls other services' internal APIs through
-// yc-gateway (ADR-021): yc-message for password reset links.
+// yc-gateway (ADR-021): yc-message for password reset links and yc-orders
+// before deleting an account.
 package integration
 
 import (

@@ -167,6 +167,11 @@ tasks:
     cmds:
       - ./scripts/demo-phase7.sh
 
+  demo:phase8:
+    desc: Run the Phase 8 operations demo (monitor, alerts, DLQ replay, analytics, chargeback, GDPR) against the running stack (see scripts/demo-phase8.sh)
+    cmds:
+      - ./scripts/demo-phase8.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:

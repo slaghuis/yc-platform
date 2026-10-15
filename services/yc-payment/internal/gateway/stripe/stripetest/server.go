@@ -176,6 +176,30 @@ func (s *Server) Webhook(secret, eventType, object string) (body []byte, signatu
 	return body, stripe.Sign(secret, body, time.Now())
 }
 
+// Dispute opens a dispute (chargeback) on a captured intent for its full
+// amount and returns the signed charge.dispute.created event, its
+// Stripe-Signature header and the dispute's ID; ok is false for an unknown
+// or uncaptured intent.
+func (s *Server) Dispute(secret, intentID, reason string) (body []byte, signature, disputeID string, ok bool) {
+	s.mu.Lock()
+	pi := s.intents[intentID]
+	if pi == nil || pi.Status != "succeeded" {
+		s.mu.Unlock()
+		return nil, "", "", false
+	}
+	s.seq++
+	disputeID = fmt.Sprintf("dp_fake_%s_%d", s.run, s.seq)
+	body, _ = json.Marshal(map[string]any{
+		"id": fmt.Sprintf("evt_%s_%d", s.run, s.seq), "object": "event", "type": "charge.dispute.created",
+		"data": map[string]any{"object": map[string]any{
+			"id": disputeID, "object": "dispute", "amount": pi.AmountReceived, "currency": pi.Currency,
+			"payment_intent": pi.ID, "reason": reason, "status": "needs_response",
+		}},
+	})
+	s.mu.Unlock()
+	return body, stripe.Sign(secret, body, time.Now()), disputeID, true
+}
+
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
