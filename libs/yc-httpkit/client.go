@@ -96,7 +96,22 @@ func UpstreamStatus(err error) int {
 	return 0
 }
 
-const maxErrorBody = 4 << 10
+// UpstreamProblem decodes the problem+json body of a non-2xx response in
+// err's chain, e.g. to act on an upstream insufficient_stock. False when
+// there is no response or its body is not a problem.
+func UpstreamProblem(err error) (ycerrors.Problem, bool) {
+	var se *StatusError
+	if !stderrors.As(err, &se) {
+		return ycerrors.Problem{}, false
+	}
+	var p ycerrors.Problem
+	if json.Unmarshal(se.Body, &p) != nil || p.Code == "" {
+		return ycerrors.Problem{}, false
+	}
+	return p, true
+}
+
+const maxErrorBody = 16 << 10
 
 // DoJSON sends in (if non-nil) as JSON and decodes a 2xx response into out
 // (if non-nil). Failures are classified for ycerrors.WriteError: timeouts

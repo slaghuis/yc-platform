@@ -16,6 +16,9 @@ type Error struct {
 	Internal string       // operator-only, logged, never returned
 	Fields   []FieldError // for validation errors
 	Cause    error        // wrapped underlying error
+	// Extensions are extra problem members a client acts on, e.g. the
+	// shortages of insufficient_stock (RFC 9457 §3.2). User-safe only.
+	Extensions map[string]any
 }
 
 // FieldError is one field-level validation failure.
@@ -65,6 +68,25 @@ func (e *Error) WithInternal(format string, args ...any) *Error {
 	c := *e
 	c.Internal = fmt.Sprintf(format, args...)
 	return &c
+}
+
+// With returns a copy of e with the problem extension member key set. The
+// standard member names are reserved.
+func (e *Error) With(key string, value any) *Error {
+	if reservedMembers[key] {
+		panic("ycerrors: reserved problem member " + key)
+	}
+	c := *e
+	c.Extensions = make(map[string]any, len(e.Extensions)+1)
+	for k, v := range e.Extensions {
+		c.Extensions[k] = v
+	}
+	c.Extensions[key] = value
+	return &c
+}
+
+var reservedMembers = map[string]bool{
+	"type": true, "title": true, "status": true, "detail": true, "code": true, "correlation_id": true, "errors": true,
 }
 
 // As extracts the first *Error in err's chain.

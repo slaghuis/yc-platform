@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.intent.created.v1.json",
+  "title": "payment.intent.created.v1",
+  "description": "yc-payment recorded a transaction before calling the gateway.",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "session_id",
+    "gateway",
+    "amount",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session the payment belongs to."
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

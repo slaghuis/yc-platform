@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.webhook_signature_failed.v1.json",
+  "title": "payment.webhook_signature_failed.v1",
+  "description": "A webhook arrived with a missing or invalid signature. A potential security event.",
+  "type": "object",
+  "required": [
+    "gateway",
+    "reason",
+    "received_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

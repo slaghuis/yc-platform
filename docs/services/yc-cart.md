@@ -119,6 +119,11 @@ The contract is `services/yc-cart/api/openapi.yaml`. Implemented: the public end
 - **Deleted SKUs** (`product.sku.deleted.v1`, and the `sku_ids` of `product.deleted.v1`) are removed from every cart in the shop with `cart.item.removed.v1` reason `sku_deleted`.
 - **Not yet subscribed:** `identity.user.registered.v1` (not needed, see above), `identity.user.deleted.v1`, inventory, promotions, tenant lifecycle and checkout events.
 
+### Phase 4 Implementation Notes
+
+- **`GET /internal/carts/{user_id}/{type}`** (service callers, ADR-021) returns the cart's lines unpriced, with whether the type is convertible; yc-checkout snapshots them when a session starts. A cart not created yet has no lines. The clear and merge internal endpoints are not built: merging runs on the login event (Phase 3) and clearing on the checkout event below.
+- **Checkout completion.** On `checkout.completed.v1` yc-cart takes the checked-out quantities off the cart's lines, rather than emptying it, so items added during checkout stay. It records each session in `cart_conversions`, so a redelivered event changes nothing, and publishes `cart.converted.v1`.
+
 ## Database Schema
 
 Database: **`yc_cart`**

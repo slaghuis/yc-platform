@@ -4,6 +4,7 @@ Step-by-step procedures for operational scenarios.
 
 | Runbook | When to use | Status |
 |---|---|---|
+| [`checkout-stuck-session.md`](checkout-stuck-session.md) | A checkout session is stuck, or yc-checkout logs `alert=critical` | Written in Phase 4 |
 | [`dlq-replay.md`](dlq-replay.md) | Messages are landing in a DLQ | Stub — completed with yc-dlq-cli in Phase 1 |
 | [`gdpr-incident-response.md`](gdpr-incident-response.md) | GDPR cascade incomplete after 72h | Stub — completed with yc-audit in Phase 8 |
 | [`onboarding-tenant.md`](onboarding-tenant.md) | Provisioning a new tenant | Stub — completed with yc-tenant-cli in Phase 2 |

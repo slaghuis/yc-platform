@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.validation_failed.v1.json",
+  "title": "checkout.validation_failed.v1",
+  "description": "A confirm request was rejected because required data was missing or invalid (ADR-010).",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "fields",
+    "failed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "The request fields that failed."
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

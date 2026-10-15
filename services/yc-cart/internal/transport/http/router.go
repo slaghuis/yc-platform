@@ -25,6 +25,7 @@ type Carts interface {
 	RemoveItem(ctx context.Context, cartType, skuID string) error
 	MoveItem(ctx context.Context, from, skuID, to string, quantity int, displayCurrency string) (domain.View, error)
 	Clear(ctx context.Context, cartType string) error
+	InternalCart(ctx context.Context, userID, cartType string) (domain.Cart, domain.CartType, error)
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -48,7 +49,24 @@ func NewRouter(svc Carts, build httpkit.BuildInfo, checks []httpkit.Check) http.
 func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/carts", Roles: []string{string(authctx.ActorVisitor), string(authctx.ActorCustomer)}},
+		{Prefix: "/internal/carts", Methods: []string{http.MethodGet}},
 	}
+}
+
+func (h handlers) GetInternalCart(ctx context.Context, req api.GetInternalCartRequestObject) (api.GetInternalCartResponseObject, error) {
+	cart, t, err := h.svc.InternalCart(ctx, req.UserID.String(), req.CartType)
+	if err != nil {
+		return nil, err
+	}
+	out := api.GetInternalCart200JSONResponse{
+		CartID: cartID(cart.ID), UserID: req.UserID, CartType: t.Name, Convertible: t.Convertible,
+		Items: make([]api.InternalCartItem, len(cart.Items)),
+	}
+	for i, it := range cart.Items {
+		sku, _ := uuid.Parse(it.SKUID)
+		out.Items[i] = api.InternalCartItem{SkuID: sku, Quantity: it.Quantity, UnitPrice: it.UnitPrice, AddedAt: it.AddedAt.UTC()}
+	}
+	return out, nil
 }
 
 type handlers struct {

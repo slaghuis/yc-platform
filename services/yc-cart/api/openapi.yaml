@@ -147,6 +147,28 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  /internal/carts/{user_id}/{cart_type}:
+    get:
+      summary: Read a user's cart for a service
+      description: |
+        Service callers only (ADR-021). yc-checkout snapshots the lines when
+        a session starts. A cart that does not exist yet has no lines.
+        Only convertible cart types can be checked out.
+      operationId: getInternalCart
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CartType'
+      responses:
+        '200':
+          description: The cart's lines, unpriced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InternalCart' }
+        '404': { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     CartType:
@@ -255,6 +277,29 @@ components:
           properties:
             unit_price: { $ref: '#/components/schemas/Money' }
             line_total: { $ref: '#/components/schemas/Money' }
+        added_at: { type: string, format: date-time }
+
+    InternalCart:
+      type: object
+      required: [user_id, cart_type, convertible, items]
+      properties:
+        cart_id:
+          type: string
+          format: uuid
+          description: Absent when the cart has not been created yet.
+        user_id: { type: string, format: uuid }
+        cart_type: { type: string }
+        convertible: { type: boolean }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InternalCartItem' }
+    InternalCartItem:
+      type: object
+      required: [sku_id, quantity, unit_price, added_at]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        unit_price: { $ref: '#/components/schemas/Money' }
         added_at: { type: string, format: date-time }
 
     AddItemInput:

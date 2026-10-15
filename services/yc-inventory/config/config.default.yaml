@@ -1,11 +1,31 @@
 service: yc-inventory
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_INVENTORY_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_INVENTORY_ADVERTISE_URL:-http://yc-inventory:8080}
+  interval: 30s
+# Settings for shops that have not changed their own. The reservation TTL
+# is shorter than the 30-minute checkout session, so stock is not held
+# longer than the saga.
+reservation:
+  enabled: true
+  default_ttl_minutes: 15
+  min_ttl_minutes: 5
+  max_ttl_minutes: 30
+  sweeper_interval: 30s
+# Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
+idempotency:
+  retention: 24h
+  purge_interval: 1h

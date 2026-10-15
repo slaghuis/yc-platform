@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.voided.v1.json",
+  "title": "payment.voided.v1",
+  "description": "An authorization was voided (checkout compensation).",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "session_id",
+    "gateway",
+    "amount",
+    "voided_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session the payment belongs to."
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "voided_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

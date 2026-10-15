@@ -32,6 +32,10 @@ paths:
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - { name: category, in: query, schema: { type: string, format: uuid } }
         - { name: supplier_id, in: query, schema: { type: string, format: uuid } }
+        - name: in_stock
+          in: query
+          description: true keeps only products with an active SKU in stock.
+          schema: { type: boolean }
         - name: sort
           in: query
           description: |
@@ -329,6 +333,34 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  /internal/skus/batch:
+    get:
+      summary: Look up SKUs for a service
+      description: |
+        Service callers only (ADR-021). yc-checkout reads each line's SKU code,
+        product name, variant values and the digital and inventory-tracked
+        flags when a session starts. Deleted SKUs are returned with their
+        status; unknown IDs are listed in missing.
+      operationId: getSKUsBatch
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The SKUs found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SKUBatch' }
+        '400': { $ref: '#/components/responses/Problem' }
+
   /sysadmin/suppliers:
     post:
       summary: Create a supplier for a shop
@@ -517,13 +549,18 @@ components:
         updated_at: { type: string, format: date-time }
     ProductSummary:
       type: object
-      required: [product_id, name, description, is_digital, category_ids, skus]
+      required: [product_id, name, description, is_digital, in_stock, category_ids, skus]
       properties:
         product_id: { type: string, format: uuid }
         supplier_id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
         is_digital: { type: boolean }
+        in_stock:
+          type: boolean
+          description: |
+            An active SKU has stock available (yc-inventory). SKUs that are
+            not tracked, or in shops without inventory, are always in stock.
         category_ids:
           type: array
           items: { type: string, format: uuid }
@@ -621,6 +658,34 @@ components:
         status: { $ref: '#/components/schemas/Status' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    SKUBatch:
+      type: object
+      required: [skus, missing]
+      properties:
+        skus:
+          type: array
+          items: { $ref: '#/components/schemas/SKUDetail' }
+        missing:
+          type: array
+          items: { type: string, format: uuid }
+    SKUDetail:
+      type: object
+      required: [sku_id, product_id, sku_code, product_name, variant_values, is_digital, inventory_tracked, tax_class, status]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku_code: { type: string }
+        product_name: { type: string }
+        variant_values: { $ref: '#/components/schemas/VariantValues' }
+        is_digital: { type: boolean }
+        inventory_tracked: { type: boolean }
+        tax_class: { type: string }
+        weight_grams: { type: integer }
+        status:
+          type: string
+          description: active only when both the SKU and its product are active.
+          enum: [active, inactive, deleted]
 
     AttachImageRequest:
       type: object

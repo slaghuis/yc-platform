@@ -151,6 +151,16 @@ yc-checkout calls these synchronously during the saga (ADR-019):
 | PUT | `/admin/gateway-config` | Set gateway credentials | shop_admin |
 | POST | `/admin/gateway-config/test` | Test connectivity to gateway | shop_admin |
 
+### Phase 4 Implementation Notes
+
+The contract is `services/yc-payment/api/openapi.yaml`. Implemented: the Stripe driver (Variant A), the internal authorize, capture, void, refund, transaction and capability endpoints, the Stripe webhook, the admin transaction views and gateway settings. Not yet: Yoco and Variant B (`/internal/charge`, `payment.charged.v1`), `POST /admin/transactions/{id}/refund` (refunds go through yc-orders' admin cancel), chargebacks, and the tenant and user-deleted subscriptions.
+
+- **Stripe driver** is plain HTTP against the PaymentIntents API (no stripe-go): authorize creates a manual-capture PaymentIntent, capture and void are `capture` and `cancel`, and mutating calls carry Stripe's own `Idempotency-Key`. `stripetest` is an in-memory fake of that surface for tests; `cmd/fake-stripe` serves it on a port for the dev stack (`YC_PAYMENT_STRIPE_API_BASE`), and it honours `pm_card_visa`, `pm_card_chargeDeclined` and `pm_card_threeDSecure2Required`.
+- **Gateway settings** are per gateway: `PUT /admin/gateway-config/{gateway}` and `POST /admin/gateway-config/{gateway}/test`. The API key and webhook secret are sealed with AES-256-GCM under `YC_PAYMENT_CIPHER_KEY` (base64 of 32 bytes) and only ever returned as a hint (`sk_test_…4242`).
+- **Outcomes, not errors.** A declined authorisation is `200` with status `failed` and a `failure_reason`; 3-D Secure is `200` with status `pending` and the gateway's `next_action`. A refused capture is `400 payment_declined`; a gateway outage is `503 gateway_unavailable`; a shop without the gateway set up is `412`.
+- **Idempotency is native**, not the shared middleware: authorize and refund look up the transaction by `Idempotency-Key` and return its current state, so a retry after a timeout or a pending result learns the real outcome. Capture and void are idempotent by state. Void names the transaction or, for a caller that never learnt its ID, the authorize key; nothing to void is success, and a captured payment is `409`.
+- **Webhooks** (`POST /webhooks/stripe`) are a gateway callback route on the shop's host (ADR-020): no token; the body is verified with the shop's webhook secret (`Stripe-Signature`, 5-minute tolerance). `payment_intent.*` and refund events update the transaction and publish the matching event; anything verified gets `200`, a bad signature `401` and `payment.webhook_signature_failed.v1`. Locally, forward with `stripe listen --forward-to localhost:8090/webhooks/stripe -H "Host: demo-shop.localhost"`.
+
 ## Database Schema
 
 Database: **`yc_payment`**

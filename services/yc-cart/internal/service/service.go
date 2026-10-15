@@ -427,6 +427,74 @@ func (s *Service) SetDisplayCurrency(ctx context.Context, tenantID, userID, curr
 	})
 }
 
+// InternalCart returns userID's cart of cartType for a service caller
+// (yc-checkout). A cart not created yet has no ID and no lines.
+func (s *Service) InternalCart(ctx context.Context, userID, cartType string) (domain.Cart, domain.CartType, error) {
+	a, _ := authctx.FromContext(ctx)
+	if err := validateShopTenant(a.TenantID); err != nil {
+		return domain.Cart{}, domain.CartType{}, err
+	}
+	t, err := s.types.Get(cartType)
+	if err != nil {
+		return domain.Cart{}, domain.CartType{}, err
+	}
+	cart := domain.Cart{UserID: userID, Type: cartType}
+	err = dbkit.WithTenantTx(ctx, s.db, a.TenantID, func(tx pgx.Tx) error {
+		c, ok, err := s.repo.Get(ctx, tx, a.TenantID, userID, cartType, false)
+		if ok {
+			cart = c
+		}
+		return err
+	})
+	return cart, t, err
+}
+
+// ConvertCart removes the quantities of a completed checkout
+// (checkout.completed.v1) from userID's cart of cartType.
+func (s *Service) ConvertCart(ctx context.Context, tenantID, userID, cartType, sessionID, orderID string, checkedOut map[string]int) error {
+	if err := validateShopTenant(tenantID); err != nil {
+		return err
+	}
+	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
+		now := s.now()
+		first, err := s.repo.RecordConversion(ctx, tx, tenantID, sessionID, orderID, now)
+		if err != nil || !first {
+			return err
+		}
+		cart, ok, err := s.repo.Get(ctx, tx, tenantID, userID, cartType, true)
+		if err != nil || !ok {
+			return err
+		}
+		writes, deletes, removed := domain.ConvertItems(cart.Items, checkedOut)
+		if len(removed) == 0 {
+			return nil
+		}
+		for _, it := range writes {
+			if err := s.repo.PutItem(ctx, tx, tenantID, cart.ID, it, now); err != nil {
+				return err
+			}
+		}
+		for _, sku := range deletes {
+			if err := s.repo.DeleteItem(ctx, tx, cart.ID, sku); err != nil {
+				return err
+			}
+		}
+		if err := s.repo.Touch(ctx, tx, cart.ID, now); err != nil {
+			return err
+		}
+		items := make([]events.CartConvertedV1ItemsItem, 0, len(removed))
+		for _, it := range cart.Items {
+			if q, ok := removed[it.SKUID]; ok {
+				items = append(items, events.CartConvertedV1ItemsItem{SKUID: it.SKUID, Quantity: int64(q)})
+			}
+		}
+		return s.publish(ctx, tx, tenantID, events.TypeCartConvertedV1, events.CartConvertedV1{
+			CartID: cart.ID, UserID: userID, CartType: cartType, SessionID: sessionID, OrderID: orderID,
+			Items: items, ConvertedAt: now.UTC(),
+		})
+	})
+}
+
 // RemoveSKUs removes deleted SKUs from every cart in the shop.
 func (s *Service) RemoveSKUs(ctx context.Context, tenantID string, skuIDs []string) error {
 	if err := validateShopTenant(tenantID); err != nil {

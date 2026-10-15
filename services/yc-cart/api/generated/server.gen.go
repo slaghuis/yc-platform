@@ -110,6 +110,26 @@ type CartSummary struct {
 	Quantity int `json:"quantity"`
 }
 
+// InternalCart defines model for InternalCart.
+type InternalCart struct {
+	// CartID Absent when the cart has not been created yet.
+	CartID      *openapi_types.UUID `json:"cart_id,omitempty"`
+	CartType    string              `json:"cart_type"`
+	Convertible bool                `json:"convertible"`
+	Items       []InternalCartItem  `json:"items"`
+	UserID      openapi_types.UUID  `json:"user_id"`
+}
+
+// InternalCartItem defines model for InternalCartItem.
+type InternalCartItem struct {
+	AddedAt  time.Time          `json:"added_at"`
+	Quantity int                `json:"quantity"`
+	SkuID    openapi_types.UUID `json:"sku_id"`
+
+	// UnitPrice An amount in integer minor units of an ISO 4217 currency.
+	UnitPrice Money `json:"unit_price"`
+}
+
 // Money An amount in integer minor units of an ISO 4217 currency.
 type Money = money.Money
 
@@ -208,6 +228,9 @@ type ServerInterface interface {
 	// MoveItem Move an item to another cart
 	// (POST /carts/{cart_type}/items/{sku_id}/move)
 	MoveItem(w http.ResponseWriter, r *http.Request, cartType CartType, skuID SKUID, params MoveItemParams)
+	// GetInternalCart Read a user's cart for a service
+	// (GET /internal/carts/{user_id}/{cart_type})
+	GetInternalCart(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID, cartType CartType)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -253,6 +276,12 @@ func (_ Unimplemented) SetItemQuantity(w http.ResponseWriter, r *http.Request, c
 // MoveItem Move an item to another cart
 // (POST /carts/{cart_type}/items/{sku_id}/move)
 func (_ Unimplemented) MoveItem(w http.ResponseWriter, r *http.Request, cartType CartType, skuID SKUID, params MoveItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetInternalCart Read a user's cart for a service
+// (GET /internal/carts/{user_id}/{cart_type})
+func (_ Unimplemented) GetInternalCart(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID, cartType CartType) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -610,6 +639,41 @@ func (siw *ServerInterfaceWrapper) MoveItem(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// GetInternalCart operation middleware
+func (siw *ServerInterfaceWrapper) GetInternalCart(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_id" -------------
+	var userID openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_id", chi.URLParam(r, "user_id"), &userID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "cart_type" -------------
+	var cartType CartType
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cart_type", chi.URLParam(r, "cart_type"), &cartType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cart_type", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInternalCart(w, r, userID, cartType)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -743,6 +807,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/carts/{cart_type}/items/{sku_id}/move", wrapper.MoveItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/carts/{user_id}/{cart_type}", wrapper.GetInternalCart)
 	})
 
 	return r
@@ -1181,6 +1248,45 @@ func (response MoveItem409ApplicationProblemPlusJSONResponse) VisitMoveItemRespo
 	return err
 }
 
+type GetInternalCartRequestObject struct {
+	UserID   openapi_types.UUID `json:"user_id"`
+	CartType CartType           `json:"cart_type"`
+}
+
+type GetInternalCartResponseObject interface {
+	VisitGetInternalCartResponse(w http.ResponseWriter) error
+}
+
+type GetInternalCart200JSONResponse InternalCart
+
+func (response GetInternalCart200JSONResponse) VisitGetInternalCartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalCart404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetInternalCart404ApplicationProblemPlusJSONResponse) VisitGetInternalCartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// ListCarts List my carts
@@ -1204,6 +1310,9 @@ type StrictServerInterface interface {
 	// MoveItem Move an item to another cart
 	// (POST /carts/{cart_type}/items/{sku_id}/move)
 	MoveItem(ctx context.Context, request MoveItemRequestObject) (MoveItemResponseObject, error)
+	// GetInternalCart Read a user's cart for a service
+	// (GET /internal/carts/{user_id}/{cart_type})
+	GetInternalCart(ctx context.Context, request GetInternalCartRequestObject) (GetInternalCartResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1446,6 +1555,33 @@ func (sh *strictHandler) MoveItem(w http.ResponseWriter, r *http.Request, cartTy
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveItemResponseObject); ok {
 		if err := validResponse.VisitMoveItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInternalCart operation middleware
+func (sh *strictHandler) GetInternalCart(w http.ResponseWriter, r *http.Request, userID openapi_types.UUID, cartType CartType) {
+	var request GetInternalCartRequestObject
+
+	request.UserID = userID
+	request.CartType = cartType
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInternalCart(ctx, request.(GetInternalCartRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInternalCart")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInternalCartResponseObject); ok {
+		if err := validResponse.VisitGetInternalCartResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

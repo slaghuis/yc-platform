@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/inventory/inventory.stock.reservation_expired.v1.json",
+  "title": "inventory.stock.reservation_expired.v1",
+  "description": "A reservation reached its TTL before it was committed or released. yc-checkout compensates the session if it has not passed the point of no return.",
+  "type": "object",
+  "required": [
+    "reservation_id",
+    "session_id",
+    "items",
+    "expired_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "reservation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sku_id",
+          "quantity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "expired_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

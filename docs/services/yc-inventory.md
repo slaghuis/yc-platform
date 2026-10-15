@@ -96,6 +96,16 @@ None directly for customers; stock is exposed indirectly via search (yc-product'
 | GET | `/internal/stock/batch` | Bulk stock lookup (used by yc-product for projection sync) | service |
 | POST | `/internal/back-in-stock/subscribe` | Customer requests notification | service |
 
+### Phase 4 Implementation Notes
+
+The contract is `services/yc-inventory/api/openapi.yaml`. Implemented: the shop admin endpoints, the three reservation endpoints, the expiry sweeper and the stock events. Not yet: `/internal/stock/batch` (yc-product keeps `in_stock` from the stock events instead), back-in-stock subscriptions, and the tenant configuration-changed, tenant-deleted and user-deleted subscriptions.
+
+- **Shop settings** are `GET`/`PUT /admin/inventory/config`: `inventory_enabled` and the default, minimum and maximum reservation TTL (defaults 15, 5 and 30 minutes, from `reservation` in the config). A row is created on `platform.tenant.provisioned.v1`; until a shop changes them, the service defaults apply. Turning inventory off publishes `inventory.stock.restored.v1` for every out-of-stock SKU, and turning it on publishes `inventory.stock.depleted.v1` for them, so yc-product's `in_stock` follows.
+- **Movement history** is `GET /admin/stock/{sku_id}/history` rather than `/admin/stock/history/{sku_id}`, so every per-SKU route shares the `/admin/stock/{sku_id}` prefix.
+- **Stock rows** follow `inventory_tracked` on `product.sku.created.v1`, `product.sku.updated.v1` and `product.sku.deleted.v1`. A newly tracked SKU starts at zero and is announced as depleted. Untracking or deleting a SKU drops its row; active reservations keep their lines, and committing or releasing them skips the SKU.
+- **Reservations.** A shortage is a `409` problem (`error-handling.md`) with code `insufficient_stock` and a `shortages` member, rather than the `{"error": …}` body shown below. When nothing in the request is tracked, the response has no `reservation_id`. `ttl_minutes` is clamped to the shop's window.
+- **Idempotency** on the internal POSTs uses the shared `httpkit` Idempotency-Key middleware: responses are kept in `idempotency_keys` for 24 hours and replayed on a repeated key.
+
 ## Reservation Request
 
 ```json

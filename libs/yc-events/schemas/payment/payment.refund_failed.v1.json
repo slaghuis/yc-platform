@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.refund_failed.v1.json",
+  "title": "payment.refund_failed.v1",
+  "description": "The gateway refused or failed a refund.",
+  "type": "object",
+  "required": [
+    "refund_id",
+    "transaction_id",
+    "amount",
+    "reason",
+    "failed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "refund_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Short machine-readable reason, e.g. card_declined, insufficient_funds, authentication_failed, gateway_error."
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

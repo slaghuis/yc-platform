@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.confirmed.v1.json",
+  "title": "checkout.confirmed.v1",
+  "description": "The customer confirmed the checkout; the saga moves on to reserve, pay and create the order.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "payment_gateway",
+    "total",
+    "confirmed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "payment_gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "total": {
+      "$ref": "../common/money.v1.json"
+    },
+    "confirmed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

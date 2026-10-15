@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.expired.v1.json",
+  "title": "checkout.expired.v1",
+  "description": "The session's TTL passed before payment succeeded (ADR-011); compensation has finished.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "expired_state",
+    "expired_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "expired_state": {
+      "type": "string",
+      "enum": [
+        "STARTED",
+        "PRICING",
+        "RESERVING",
+        "AUTHORIZING",
+        "ORDER_CREATE",
+        "CAPTURING",
+        "CHARGING",
+        "CONFIRMING",
+        "COMPENSATING",
+        "COMPLETED",
+        "FAILED",
+        "EXPIRED"
+      ]
+    },
+    "expired_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

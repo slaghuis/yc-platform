@@ -194,6 +194,16 @@ Standard headers that every endpoint handles:
 - **The service stores processed keys** for 24h minimum. Replays return the previously-computed response.
 - Required on: `POST /checkout`, `POST /checkout/{id}/confirm`, `POST /admin/orders/{id}/refund`, and any other operation with financial or inventory consequences.
 
+**Implementation.** `httpkit.Idempotency` is the standard middleware. Place it after authentication; it stores the response to each POST that carries a key in the service's `idempotency_keys` table (copy `libs/yc-httpkit/idempotency.sql` into a migration, as yc-inventory and yc-orders do) and purges entries after `idempotency.retention` (24 h).
+
+- Keys are scoped to the tenant, the caller (service or actor), the method and the path.
+- A repeated key replays the stored status and body, with `Idempotent-Replayed: true`.
+- The same key with a different body is `422`; while the first request is still running it is `409`.
+- 5xx responses are not stored, so a retry runs again.
+- `Required: true` rejects a POST without a key (`400`).
+
+A service may instead be idempotent natively when replaying a stored response would be wrong, because a retry must learn the current state rather than the first answer: yc-payment's authorize and refund look the transaction up by key, and yc-checkout stores the confirm key on the session (`docs/services/yc-checkout.md`). `POST /checkout` itself does not take a key: a repeated start only leaves an extra quote that expires unused.
+
 ## 11. Content Types
 
 - **Request body**: `application/json`.

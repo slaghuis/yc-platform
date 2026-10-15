@@ -34,6 +34,8 @@ password:
 # 32 characters. A client with no secret is disabled.
 service_clients:
   yc-cart: ${YC_CART_SERVICE_SECRET}
+  yc-orders: ${YC_ORDERS_SERVICE_SECRET}
+  yc-checkout: ${YC_CHECKOUT_SERVICE_SECRET}
 
 # OAuth providers. A provider is enabled by a client ID and secret, or by
 # fake (development only: signs in whatever email the client passes as

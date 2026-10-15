@@ -56,6 +56,7 @@ type Error struct {
     Internal  string         // operator-only, logged, never returned
     Fields    []FieldError   // for validation errors
     Cause     error          // for wrapping
+    Extensions map[string]any // extra problem members, user-safe
 }
 
 type FieldError struct {
@@ -71,6 +72,14 @@ type FieldError struct {
 - `Internal` carries operator-only context, logged but never returned.
 - `Fields` for structured validation errors.
 - `Cause` is the wrapped underlying error (optional).
+- `Extensions` are extra top-level members of the problem body (RFC 9457 §3.2) for data a client acts on, set with `.With(key, value)`. For example, yc-inventory's `insufficient_stock` carries the `shortages` a storefront shows the customer:
+
+  ```go
+  return nil, ycerrors.New(ycerrors.CodeInsufficientStock, "Some items are not available in the quantity requested").
+      With("shortages", shortages)
+  ```
+
+  They are returned to the client, so they must be user-safe. The standard member names (`type`, `title`, `status`, `detail`, `code`, `correlation_id`, `errors`) are reserved. `Problem` reads unknown members back into `Extensions`, so a calling service (`httpkit.UpstreamProblem`) can act on them too.
 
 ## 4. Creating Errors
 

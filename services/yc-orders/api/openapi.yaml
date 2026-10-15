@@ -1,0 +1,419 @@
+openapi: 3.1.0
+info:
+  title: yc-orders
+  version: 0.1.0
+  description: |
+    Orders (docs/services/yc-orders.md). Phase 4 subset: the pending order
+    yc-checkout creates, confirms or abandons (ADR-019), the customer's
+    and shop admin's views, and admin cancellation with a refund through
+    yc-payment.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /internal routes are for service callers
+    (ADR-021) and require Idempotency-Key on POST; a repeated key replays
+    the first response (api-conventions.md §10). An order is a snapshot:
+    names, prices and taxes as checkout priced them. Orders that are
+    pending_payment or abandoned are hidden from customers and from admin
+    listings. The order number (e.g. DEMO-SHOP-000042) is given when the
+    order is confirmed. Errors are application/problem+json
+    (error-handling.md).
+
+paths:
+  /orders/mine:
+    get:
+      summary: List my orders, newest first
+      description: Customers only; a visitor sees a guest order by ID.
+      operationId: listMyOrders
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderList' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    get:
+      summary: Get one of my orders
+      description: |
+        The customer who placed it, or the visitor with the same visitor
+        token for a guest order (ADR-010).
+      operationId: getMyOrder
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/orders:
+    get:
+      summary: List the shop's orders, newest first
+      operationId: listOrders
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Without it, placed orders (received and cancelled).
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+      responses:
+        '200':
+          description: A page of orders.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    get:
+      summary: Get an order with its status history
+      operationId: getOrder
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/orders/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Cancel a placed order and refund its payment
+      description: |
+        Refunds what is left of the payment through yc-payment, then
+        cancels. Stock is not returned automatically; receive it back in
+        yc-inventory. Cancelling again returns the order; a refund the
+        gateway refuses is 409 and leaves the order as it was.
+      operationId: cancelOrder
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: The cancelled order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/orders:
+    post:
+      summary: Create a pending order
+      description: |
+        yc-checkout's ORDER_CREATE step, with Idempotency-Key
+        {session_id}:order. A checkout session has one order; creating it
+        again returns it. No event is published until confirmation.
+      operationId: createOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderInput' }
+      responses:
+        '201':
+          description: The pending order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    get:
+      summary: Get an order, whatever its status
+      operationId: getInternalOrder
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/orders/{id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Confirm a paid order
+      description: |
+        yc-checkout's CONFIRMING step, after capture: the order becomes
+        received, gets its number and order.placed.v1 is published.
+        Confirming a received order returns it; an abandoned one is 409.
+      operationId: confirmOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmInput' }
+      responses:
+        '200':
+          description: The placed order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/orders/{id}/abandon:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    post:
+      summary: Abandon a pending order
+      description: |
+        Checkout compensation. No event is published. Abandoning again,
+        or an order that was never created (status none), succeeds; a
+        placed order is 409.
+      operationId: abandonOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: The outcome.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AbandonResult' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    OrderID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64, description: Minor units (cents). }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    OrderStatus:
+      type: string
+      enum: [pending_payment, abandoned, received, cancelled]
+    GuestContact:
+      type: object
+      required: [email, phone_e164]
+      properties:
+        email: { type: string, maxLength: 254 }
+        phone_e164: { type: string, maxLength: 16 }
+    OrderItemInput:
+      type: object
+      required: [sku_id, name_snapshot, quantity, unit_price_minor, line_total_minor]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku_code: { type: string, maxLength: 100 }
+        name_snapshot: { type: string, minLength: 1, maxLength: 500 }
+        variant_values_snapshot: { type: object, additionalProperties: true }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        unit_price_minor: { type: integer, format: int64, description: Gross, as charged. }
+        line_total_minor: { type: integer, format: int64, description: Gross; tax is rounded per line, so not always unit price times quantity. }
+        tax_minor: { type: integer, format: int64, description: Tax included in the line total. }
+        is_digital: { type: boolean }
+    OrderItem:
+      type: object
+      required: [sku_id, sku_code, name_snapshot, quantity, unit_price, line_total, tax, is_digital]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku_code: { type: string }
+        name_snapshot: { type: string }
+        variant_values_snapshot: { type: object, additionalProperties: true }
+        quantity: { type: integer, format: int64 }
+        unit_price: { $ref: '#/components/schemas/Money' }
+        line_total: { $ref: '#/components/schemas/Money' }
+        tax: { $ref: '#/components/schemas/Money' }
+        is_digital: { type: boolean }
+    Payment:
+      type: object
+      required: [gateway]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        gateway: { type: string, maxLength: 50 }
+    CreateOrderInput:
+      type: object
+      required: [checkout_session_id, user_id, user_type, requires_shipping, items, currency, items_total_minor,
+        shipping_minor, tax_total_minor, total_minor, pricing_snapshot]
+      additionalProperties: false
+      properties:
+        checkout_session_id: { type: string, format: uuid }
+        user_id: { type: string, minLength: 1, maxLength: 100 }
+        user_type: { type: string, enum: [customer, visitor] }
+        guest_contact: { $ref: '#/components/schemas/GuestContact' }
+        delivery_address:
+          type: object
+          additionalProperties: true
+          description: Free-form address (ADR-015); required with physical items.
+        requires_shipping: { type: boolean }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/OrderItemInput' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        items_total_minor: { type: integer, format: int64 }
+        shipping_minor: { type: integer, format: int64 }
+        tax_total_minor: { type: integer, format: int64 }
+        total_minor: { type: integer, format: int64 }
+        pricing_snapshot: { type: object, additionalProperties: true, description: The full pricing result. }
+        shipping_option: { type: object, additionalProperties: true }
+        payment: { $ref: '#/components/schemas/Payment' }
+    ConfirmInput:
+      type: object
+      additionalProperties: false
+      properties:
+        payment_transaction_id: { type: string, format: uuid }
+    ReasonInput:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 500 }
+    AbandonResult:
+      type: object
+      required: [status]
+      properties:
+        order_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [abandoned, none]
+    HistoryEntry:
+      type: object
+      required: [to_status, created_at]
+      properties:
+        from_status: { $ref: '#/components/schemas/OrderStatus' }
+        to_status: { $ref: '#/components/schemas/OrderStatus' }
+        reason: { type: string }
+        created_at: { type: string, format: date-time }
+    OrderSummary:
+      type: object
+      required: [order_id, status, user_type, requires_shipping, total, item_count, created_at]
+      properties:
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        user_type: { type: string, enum: [customer, visitor] }
+        requires_shipping: { type: boolean }
+        total: { $ref: '#/components/schemas/Money' }
+        item_count: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        placed_at: { type: string, format: date-time }
+    Order:
+      type: object
+      required: [order_id, checkout_session_id, user_id, user_type, requires_shipping, status, items, items_total,
+        shipping, tax_total, total, refunded, created_at, updated_at]
+      properties:
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        checkout_session_id: { type: string, format: uuid }
+        user_id: { type: string }
+        user_type: { type: string, enum: [customer, visitor] }
+        guest_contact: { $ref: '#/components/schemas/GuestContact' }
+        delivery_address: { type: object, additionalProperties: true }
+        requires_shipping: { type: boolean }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        items_total: { $ref: '#/components/schemas/Money' }
+        shipping: { $ref: '#/components/schemas/Money' }
+        tax_total: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+        refunded: { $ref: '#/components/schemas/Money' }
+        payment: { $ref: '#/components/schemas/Payment' }
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/HistoryEntry' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        placed_at: { type: string, format: date-time }
+    OrderList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderSummary' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

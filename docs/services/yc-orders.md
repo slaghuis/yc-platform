@@ -157,6 +157,15 @@ When a visitor's order is complete and the visitor later registers with the same
 
 The create, confirm and abandon endpoints require `Idempotency-Key` and return the stored response on a repeated key. Confirm and abandon are idempotent on state: confirming a `received` order or abandoning an `abandoned` (or never-created) order succeeds without side effects.
 
+### Phase 4 Implementation Notes
+
+The contract is `services/yc-orders/api/openapi.yaml`. Implemented: the internal create, fetch, confirm and abandon endpoints, `GET /orders/mine` and `GET /orders/{id}` for the owner (customer or visitor), the admin list and detail, and admin cancel. Only `pending_payment`, `abandoned`, `received` and `cancelled` exist so far; packaging, shipping, returns, notes, admin refunds, guest-order claims, the verified-purchase check and all subscriptions come later. Only `order.placed.v1` and `order.cancelled.v1` are published.
+
+- **Order numbers** are given when the order is confirmed, not when it is created, so abandoned checkouts leave no gaps: `{TENANT}-{000042}`, e.g. `DEMO-SHOP-000042`, from a per-tenant counter.
+- **Line amounts** are gross, as checkout charged them. Tax is rounded per line, so a line total need not equal unit price times quantity; it must not be negative and must include its tax.
+- **Admin cancel** refunds what is left of the payment through yc-payment (`POST /internal/refund`, an internal call as client `yc-orders` with `YC_ORDERS_SERVICE_SECRET`, ADR-021), then cancels and publishes `order.cancelled.v1`. A refund the gateway refuses is `409` and leaves the order as it was. Stock is not returned automatically.
+- **Idempotency** on the internal POSTs uses the shared `httpkit` Idempotency-Key middleware (24-hour retention).
+
 ## Database Schema
 
 Database: **`yc_orders`**

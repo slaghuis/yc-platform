@@ -37,6 +37,7 @@ type Catalog interface {
 	GetProduct(ctx context.Context, id string) (domain.Product, error)
 	GetSKU(ctx context.Context, id string) (domain.SKU, error)
 	Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) (domain.Browse, *repository.Cursor, error)
+	SKUDetails(ctx context.Context, ids []string) ([]domain.SKUDetail, []string, error)
 
 	CreateCategory(ctx context.Context, in domain.CategoryInput) (domain.Category, error)
 	UpdateCategory(ctx context.Context, id string, in domain.CategoryInput) (domain.Category, error)
@@ -73,7 +74,35 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/admin/skus", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/categories", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/sysadmin/suppliers", Roles: []string{string(authctx.ActorSystemAdmin)}},
+		{Prefix: "/internal/skus", Methods: get},
 	}
+}
+
+func (h handlers) GetSKUsBatch(ctx context.Context, req api.GetSKUsBatchRequestObject) (api.GetSKUsBatchResponseObject, error) {
+	ids := make([]string, len(req.Params.Ids))
+	for i, id := range req.Params.Ids {
+		ids[i] = id.String()
+	}
+	found, missing, err := h.svc.SKUDetails(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := api.GetSKUsBatch200JSONResponse{Skus: make([]api.SKUDetail, len(found)), Missing: uuids(missing)}
+	for i, d := range found {
+		status := api.SKUDetailStatusInactive
+		switch {
+		case d.Active:
+			status = api.SKUDetailStatusActive
+		case d.Status == domain.StatusDeleted:
+			status = api.SKUDetailStatusDeleted
+		}
+		out.Skus[i] = api.SKUDetail{
+			SkuID: parseUUID(d.ID), ProductID: parseUUID(d.ProductID), SkuCode: d.Code, ProductName: d.ProductName,
+			VariantValues: d.VariantValues, IsDigital: d.IsDigital, InventoryTracked: d.InventoryTracked,
+			TaxClass: d.TaxClass, WeightGrams: d.WeightGrams, Status: status,
+		}
+	}
+	return out, nil
 }
 
 type handlers struct {
@@ -246,6 +275,7 @@ func (h handlers) BrowseProducts(ctx context.Context, req api.BrowseProductsRequ
 	if p.Sort != nil {
 		f.Sort = domain.Sort(*p.Sort)
 	}
+	f.InStock = deref(p.InStock)
 	res, next, err := h.svc.Browse(ctx, f, after, page.Size)
 	if err != nil {
 		return nil, err
@@ -388,7 +418,7 @@ func product(p domain.Product) api.Product {
 func summary(p domain.ProductSummary) api.ProductSummary {
 	out := api.ProductSummary{
 		ProductID: parseUUID(p.ID), SupplierID: optionalUUID(p.SupplierID), Name: p.Name,
-		Description: p.Description, IsDigital: p.IsDigital, CategoryIds: uuids(p.CategoryIDs),
+		Description: p.Description, IsDigital: p.IsDigital, InStock: p.InStock, CategoryIds: uuids(p.CategoryIDs),
 		PrimaryImageID: optionalUUID(p.PrimaryImageID), Skus: make([]api.SKUSummary, len(p.SKUs)),
 	}
 	for i, s := range p.SKUs {

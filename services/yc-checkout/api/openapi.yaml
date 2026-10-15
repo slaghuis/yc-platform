@@ -1,0 +1,434 @@
+openapi: 3.1.0
+info:
+  title: yc-checkout
+  version: 0.1.0
+  description: |
+    Checkout (docs/services/yc-checkout.md). Phase 4: the Variant A saga
+    (ADR-019). POST /checkout snapshots the caller's cart and prices it;
+    the quote is honoured until the session expires (ADR-011, 30 minutes).
+    Confirm runs RESERVING, AUTHORIZING, ORDER_CREATE, CAPTURING and
+    CONFIRMING inline, compensating any failure before capture.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). Customers and visitors (guest checkout,
+    ADR-010) see only their own sessions. Amounts are integer minor units
+    of the store currency. Errors are application/problem+json
+    (error-handling.md).
+
+paths:
+  /checkout:
+    post:
+      summary: Start a checkout from my cart
+      description: |
+        Reads the cart, the SKUs and an authoritative price with tax. Physical
+        items get the flat-fee Standard shipping option, selected; a
+        digital-only checkout has no shipping and needs no address. An empty
+        or non-convertible cart, an unavailable SKU (unavailable_skus) or an
+        unpriced one (unpriced) is 409. Publishes checkout.started.v1 and
+        checkout.priced.v1.
+      operationId: startCheckout
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartInput' }
+      responses:
+        '201':
+          description: The session, in PRICING.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}:
+    get:
+      summary: Get my session
+      description: Poll this after a 202 from confirm.
+      operationId: getCheckout
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}/shipping:
+    post:
+      summary: Choose a shipping option
+      description: Before confirm only. Publishes checkout.shipping_selected.v1.
+      operationId: selectShipping
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShippingInput' }
+      responses:
+        '200':
+          description: The session with its new totals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}/confirm:
+    post:
+      summary: Confirm and pay
+      description: |
+        Validates the guest contact, delivery address and shipping option
+        (ADR-010; 400 and checkout.validation_failed.v1 otherwise), then runs
+        the saga inline (ADR-019 rule 7). After 3-D Secure, call again with
+        the same Idempotency-Key; another key for a confirmed session is 409.
+        An expired session is 410.
+      operationId: confirmCheckout
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmInput' }
+      responses:
+        '200':
+          description: COMPLETED; the order is placed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '202':
+          description: |
+            Still in progress: the payment needs the customer (payment.next_action),
+            compensation is retrying, or the 60 s deadline passed. Poll GET
+            /checkout/{id}.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '422':
+          description: FAILED or EXPIRED, with failure.reason; compensation has finished.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}/cancel:
+    post:
+      summary: Cancel my checkout
+      description: |
+        Before confirm, or while the payment waits on the customer (the
+        authorization is voided and stock released). 409 once the saga runs
+        on its own.
+      operationId: cancelCheckout
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: The session, FAILED with reason cancelled (or still compensating).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/sessions:
+    get:
+      summary: List the shop's checkout sessions, newest first
+      operationId: listSessions
+      parameters:
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/State' }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of sessions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/sessions/{id}:
+    get:
+      summary: A session with its compensation log and history
+      operationId: getSession
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSession' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/sessions/{id}:
+    get:
+      summary: A session for a service
+      operationId: getInternalSession
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSession' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    SessionID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Money:
+      type: object
+      description: An amount in integer minor units of an ISO 4217 currency.
+      x-go-type: money.Money
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-money
+        name: money
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+    State:
+      type: string
+      enum: [PRICING, RESERVING, AUTHORIZING, ORDER_CREATE, CAPTURING, CONFIRMING, COMPLETED, COMPENSATING, FAILED, EXPIRED]
+    StartInput:
+      type: object
+      additionalProperties: false
+      properties:
+        cart_type: { type: string, maxLength: 32, description: Defaults to shopping. }
+    ShippingInput:
+      type: object
+      required: [shipping_option_id]
+      additionalProperties: false
+      properties:
+        shipping_option_id: { type: string, maxLength: 64 }
+    GuestContact:
+      type: object
+      required: [email, phone_e164]
+      additionalProperties: false
+      properties:
+        email: { type: string, maxLength: 254 }
+        phone_e164: { type: string, maxLength: 16, description: 'E.164, e.g. +27831234567.' }
+    ConfirmInput:
+      type: object
+      required: [payment_gateway_token]
+      additionalProperties: false
+      properties:
+        guest_contact: { $ref: '#/components/schemas/GuestContact' }
+        delivery_address:
+          type: object
+          additionalProperties: true
+          description: Free-form (ADR-015). Required when requires_shipping.
+        shipping_option_id: { type: string, maxLength: 64, description: Defaults to the selected option. }
+        payment_gateway: { type: string, maxLength: 32, description: Defaults to the shop's gateway (stripe). }
+        payment_gateway_token: { type: string, maxLength: 255, description: 'The gateway SDK payment method, e.g. pm_...' }
+        return_url: { type: string, maxLength: 2048, description: Where a 3-D Secure redirect returns to. }
+    SessionItem:
+      type: object
+      required: [sku_id, sku_code, name, quantity, is_digital, inventory_tracked, unit_price, line_total, tax]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku_code: { type: string }
+        name: { type: string }
+        variant_values: { type: object, additionalProperties: true }
+        quantity: { type: integer, format: int64 }
+        is_digital: { type: boolean }
+        inventory_tracked: { type: boolean }
+        unit_price: { $ref: '#/components/schemas/Money' }
+        line_total: { $ref: '#/components/schemas/Money' }
+        tax: { $ref: '#/components/schemas/Money' }
+    ShippingOption:
+      type: object
+      required: [id, name, amount]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+    Totals:
+      type: object
+      required: [items_total, tax_total, shipping, total]
+      properties:
+        items_total: { $ref: '#/components/schemas/Money' }
+        tax_total: { $ref: '#/components/schemas/Money' }
+        shipping: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+    PaymentState:
+      type: object
+      required: [gateway]
+      properties:
+        gateway: { type: string }
+        transaction_id: { type: string, format: uuid }
+        status: { type: string }
+        next_action:
+          type: object
+          additionalProperties: true
+          description: While the payment waits on the customer, what to do, as the gateway describes it.
+    ReservationState:
+      type: object
+      required: [reservation_id]
+      properties:
+        reservation_id: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+    OrderRef:
+      type: object
+      required: [order_id]
+      properties:
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+    Failure:
+      type: object
+      required: [state, reason]
+      properties:
+        state: { $ref: '#/components/schemas/State' }
+        reason:
+          type: string
+          description: insufficient_stock, payment_declined, capture_failed, reservation_expired, session_expired, cancelled or step_failed.
+        detail:
+          type: object
+          additionalProperties: true
+          description: For customers, only shortages or decline_reason.
+    Session:
+      type: object
+      required: [session_id, state, user_type, cart_type, items, requires_shipping, shipping_options, totals,
+        tax_inclusive, expires_at, created_at, updated_at]
+      properties:
+        session_id: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/State' }
+        user_type: { type: string, enum: [customer, visitor] }
+        cart_type: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SessionItem' }
+        requires_shipping: { type: boolean }
+        shipping_options:
+          type: array
+          items: { $ref: '#/components/schemas/ShippingOption' }
+        selected_shipping_option_id: { type: string }
+        totals: { $ref: '#/components/schemas/Totals' }
+        tax_inclusive: { type: boolean, description: Show gross prices when true, net otherwise. }
+        payment: { $ref: '#/components/schemas/PaymentState' }
+        reservation: { $ref: '#/components/schemas/ReservationState' }
+        order: { $ref: '#/components/schemas/OrderRef' }
+        failure: { $ref: '#/components/schemas/Failure' }
+        expires_at: { type: string, format: date-time }
+        confirmed_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CompensationEntry:
+      type: object
+      required: [step, result, at]
+      properties:
+        step: { type: string, enum: [payment_voided, order_abandoned, reservation_released] }
+        result: { type: string }
+        at: { type: string, format: date-time }
+    HistoryEntry:
+      type: object
+      required: [event_type, created_at]
+      properties:
+        event_type: { type: string }
+        from_state: { $ref: '#/components/schemas/State' }
+        to_state: { $ref: '#/components/schemas/State' }
+        payload: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    AdminSession:
+      allOf:
+        - $ref: '#/components/schemas/Session'
+        - type: object
+          required: [user_id, compensation_log, attempts]
+          properties:
+            user_id: { type: string }
+            guest_contact: { $ref: '#/components/schemas/GuestContact' }
+            delivery_address: { type: object, additionalProperties: true }
+            compensation_log:
+              type: array
+              items: { $ref: '#/components/schemas/CompensationEntry' }
+            attempts: { type: integer }
+            next_attempt_at: { type: string, format: date-time }
+            history:
+              type: array
+              items: { $ref: '#/components/schemas/HistoryEntry' }
+    SessionList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminSession' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

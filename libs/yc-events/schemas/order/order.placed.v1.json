@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.placed.v1.json",
+  "title": "order.placed.v1",
+  "description": "An order was confirmed after its payment succeeded (ADR-019 rule 3). Published only for paid orders.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "user_type",
+    "checkout_session_id",
+    "items",
+    "requires_shipping",
+    "items_total",
+    "shipping",
+    "tax_total",
+    "total",
+    "placed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_type": {
+      "type": "string",
+      "enum": [
+        "customer",
+        "visitor"
+      ]
+    },
+    "checkout_session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sku_id",
+          "sku_code",
+          "name_snapshot",
+          "quantity",
+          "unit_price",
+          "line_total"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sku_code": {
+            "type": "string"
+          },
+          "name_snapshot": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unit_price": {
+            "$ref": "../common/money.v1.json"
+          },
+          "line_total": {
+            "$ref": "../common/money.v1.json"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "requires_shipping": {
+      "type": "boolean"
+    },
+    "items_total": {
+      "$ref": "../common/money.v1.json"
+    },
+    "shipping": {
+      "$ref": "../common/money.v1.json"
+    },
+    "tax_total": {
+      "$ref": "../common/money.v1.json",
+      "description": "Tax included in the totals."
+    },
+    "total": {
+      "$ref": "../common/money.v1.json"
+    },
+    "payment_transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "guest_contact": {
+      "$ref": "../common/guest_contact.v1.json",
+      "description": "Present for visitor orders (ADR-010)."
+    },
+    "placed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

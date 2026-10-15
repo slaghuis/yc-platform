@@ -84,15 +84,15 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `inventory.stock.received.v1` | yc-inventory | yc-product | Stock received by admin |
-| `inventory.stock.adjusted.v1` | yc-inventory | yc-product | Admin adjusted stock (shrinkage, correction) |
+| `inventory.stock.received.v1` | yc-inventory | — | Stock received by admin |
+| `inventory.stock.adjusted.v1` | yc-inventory | — | Admin adjusted stock (shrinkage, correction) |
 | `inventory.stock.reserved.v1` | yc-inventory | — | Reservation created |
 | `inventory.stock.reservation_failed.v1` | yc-inventory | — | Reservation declined (shortage) |
 | `inventory.stock.reservation_released.v1` | yc-inventory | — | Reservation released (compensation or admin) |
 | `inventory.stock.reservation_expired.v1` | yc-inventory | yc-checkout | Reservation timed out |
 | `inventory.stock.committed.v1` | yc-inventory | — | Reservation committed to order |
 | `inventory.stock.depleted.v1` | yc-inventory | yc-cart, yc-product | Available dropped to 0 |
-| `inventory.stock.restored.v1` | yc-inventory | yc-cart | Available rose above 0 |
+| `inventory.stock.restored.v1` | yc-inventory | yc-cart, yc-product | Available rose above 0 |
 | `inventory.stock.low_threshold_reached.v1` | yc-inventory | yc-message | Available crossed below threshold |
 | `inventory.back_in_stock.subscribed.v1` | yc-inventory | — | Customer subscribed to a SKU |
 | `inventory.back_in_stock.notified.v1` | yc-inventory | yc-message | Notification issued (consumed by yc-message) |
