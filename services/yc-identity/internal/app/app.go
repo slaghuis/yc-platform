@@ -13,6 +13,7 @@ import (
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/services/yc-identity/internal/password"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/service"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/token"
 	transport "github.com/slaghuis/yc-platform/services/yc-identity/internal/transport/http"
@@ -101,7 +102,12 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		return nil, err
 	}
 
-	svc := service.New(db, bus, signer, service.Config{
+	hasher, err := password.NewHasher(cfg.Password.Argon2)
+	if err != nil {
+		return nil, err
+	}
+
+	svc := service.New(db, bus, signer, hasher, service.Config{
 		AccessTokenTTL:  cfg.JWT.AccessTokenTTL,
 		VisitorTokenTTL: cfg.JWT.VisitorTokenTTL,
 	})
@@ -110,6 +116,30 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		{Name: "nats", Fn: bus.Ping},
 	})
 	return a, nil
+}
+
+// BootstrapAdmin creates the system admin email if it does not exist yet
+// (`yc-identity bootstrap-admin`). It migrates and uses only the database:
+// no event is published and no token issued. It reports whether a user
+// was created.
+func BootstrapAdmin(ctx context.Context, cfg Config, email, pw, displayName string) (bool, error) {
+	if cfg.Database.MigrateOnStart {
+		if err := dbkit.Migrate(cfg.Database.URL, migrations.FS); err != nil {
+			return false, fmt.Errorf("migrate: %w", err)
+		}
+	}
+	db, err := dbkit.Connect(ctx, cfg.Database)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	hasher, err := password.NewHasher(cfg.Password.Argon2)
+	if err != nil {
+		return false, err
+	}
+	_, created, err := service.New(db, nil, nil, hasher, service.Config{}).
+		BootstrapSystemAdmin(ctx, email, pw, displayName)
+	return created, err
 }
 
 // Close stops the event bus, then closes the database pool.

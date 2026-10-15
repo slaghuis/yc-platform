@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.variant.added.v1.json",
+  "title": "product.variant.added.v1",
+  "description": "A shop admin added a variant axis (e.g. color) to a product.",
+  "type": "object",
+  "required": ["variant_id", "product_id", "axis_name", "values", "added_at"],
+  "additionalProperties": false,
+  "properties": {
+    "variant_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "axis_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "values": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "added_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

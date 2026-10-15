@@ -23,6 +23,11 @@
 2. **Static config still wins at cold start.** `tenant_hostname_map` in config is loaded first; database rows add to it. A hostname present in both must map to the same tenant, or startup fails.
 3. **No session or token storage.** Token validation results stay in the in-memory cache described in `yc-gateway.md`; revocation lists remain future scope.
 4. **`tenant_hosts` has no RLS.** It is a platform-wide table (ADR-017 allows this for "truly platform-wide tables"); only the gateway's provisioning handler writes it.
+5. **Platform hosts.** Hostnames listed in `platform_hosts` resolve to `_platform` (`yc-gateway.md`, Multi-Tenancy). Only system admins hold `_platform` tokens, so the existing rule "token tenant must equal host tenant" confines platform hosts to system admins. A platform host never issues visitor tokens: a request without a bearer token proceeds with no actor and reaches only routes marked `anonymous` (e.g. `/login`). System admins act on a shop by naming its tenant explicitly (`POST /sysadmin/suppliers {"tenant_id": ...}`), never by presenting a `_platform` token on a shop host.
+6. **Internal listener.** Registration endpoints (`/internal/register`, `/internal/deregister`, `/internal/routes`) are served on a second listener (`internal_http.listen`, default `:8091`) that must not be exposed outside the platform network. Until service tokens exist (ADR-019's internal-call client, Phase 4), network placement is their only protection. The public listener still never routes `/internal/`.
+7. **Registrations live in memory.** A registration replaces the service's previous routes and is published as `platform.service.registered.v1` through the outbox. The gateway polls each registered `health_url` every 5 seconds and deregisters after 3 consecutive failures (`platform.service.deregistered.v1`). Static routes are never deregistered, and a registered route may not reuse a static route's prefix. With several gateway instances each instance holds only the registrations it received; services register with every instance, or rely on static routes, until registrations are shared.
+
+*Amended 2026-10-14 (Phase 2): rules 5–7.*
 
 ## Consequences
 

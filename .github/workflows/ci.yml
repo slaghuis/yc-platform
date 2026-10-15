@@ -48,6 +48,25 @@ jobs:
         if: github.event_name == 'pull_request'
         run: ./schemas/yc-event-schemas/scripts/check_backward_compat.sh origin/${{ github.base_ref }}
 
+  generated:
+    name: Generated code up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: '**/go.sum'
+      - uses: arduino/setup-task@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Regenerate event types and OpenAPI servers
+        run: task gen --force
+      - name: Fail on drift
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
   test:
     name: Unit tests
     runs-on: ubuntu-latest

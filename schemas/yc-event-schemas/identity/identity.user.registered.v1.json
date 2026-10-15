@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.registered.v1.json",
+  "title": "identity.user.registered.v1",
+  "description": "A visitor registered and became a customer. The user keeps the visitor's user_id, so anything the visitor owned (e.g. a cart) stays with them. yc-preference seeds defaults; yc-message sends a welcome.",
+  "type": "object",
+  "required": ["user_id", "email", "role", "method", "registered_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Lowercased login email. PII (event-conventions §18)."
+    },
+    "display_name": {
+      "type": "string",
+      "description": "PII (event-conventions §18)."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["customer"]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["password", "google", "facebook"]
+    },
+    "registered_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

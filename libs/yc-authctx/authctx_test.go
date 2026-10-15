@@ -114,3 +114,39 @@ func TestRequire(t *testing.T) {
 		})
 	}
 }
+
+func TestAudience(t *testing.T) {
+	telemetry.InitForTest(t, "authctx-test")
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	h := authctx.Middleware(authctx.Audience(ok))
+
+	tests := []struct {
+		name      string
+		path      string
+		actorType string
+		want      int
+	}{
+		{"public visitor", "/products", "visitor", http.StatusNoContent},
+		{"public anonymous", "/login", "", http.StatusNoContent},
+		{"admin visitor", "/admin/products", "visitor", http.StatusForbidden},
+		{"admin anonymous", "/admin/products", "", http.StatusUnauthorized},
+		{"admin shop_admin", "/admin/products", "shop_admin", http.StatusNoContent},
+		{"admin system_admin", "/admin", "system_admin", http.StatusNoContent},
+		{"sysadmin shop_admin", "/sysadmin/suppliers", "shop_admin", http.StatusForbidden},
+		{"sysadmin system_admin", "/sysadmin/suppliers", "system_admin", http.StatusNoContent},
+		{"prefix lookalike", "/administrators", "visitor", http.StatusNoContent},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, http.NoBody)
+			if tt.actorType != "" {
+				req.Header.Set(authctx.HeaderActorID, "a1")
+				req.Header.Set(authctx.HeaderActorType, tt.actorType)
+				req.Header.Set(authctx.HeaderTenantID, "_platform")
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			assert.Equal(t, tt.want, rec.Code)
+		})
+	}
+}

@@ -13,6 +13,7 @@ import (
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/domain"
@@ -30,6 +31,11 @@ type Authenticator interface {
 	CreateVisitor(ctx context.Context, tenantID string) (domain.Identity, error)
 }
 
+// RouteMatcher finds the route for a request.
+type RouteMatcher interface {
+	Match(method, path string) (domain.Route, bool)
+}
+
 // CookieConfig is the visitor cookie.
 type CookieConfig struct {
 	Name   string `koanf:"name"`
@@ -40,13 +46,13 @@ type CookieConfig struct {
 type Gateway struct {
 	hosts  TenantResolver
 	auth   Authenticator
-	routes *domain.Routes
+	routes RouteMatcher
 	cookie CookieConfig
 	proxy  *httputil.ReverseProxy
 }
 
 // New returns a Gateway.
-func New(hosts TenantResolver, auth Authenticator, routes *domain.Routes, cookie CookieConfig) *Gateway {
+func New(hosts TenantResolver, auth Authenticator, routes RouteMatcher, cookie CookieConfig) *Gateway {
 	g := &Gateway{hosts: hosts, auth: auth, routes: routes, cookie: cookie}
 	g.proxy = &httputil.ReverseProxy{
 		Rewrite:      g.rewrite,
@@ -88,6 +94,22 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 		if !ok {
 			ycerrors.WriteError(w, r, ycerrors.New(ycerrors.CodeNotFound, "Route not found").
 				WithInternal("%s %s", r.Method, r.URL.Path))
+			return
+		}
+
+		// Platform hosts never issue visitors (ADR-020 rule 5): without a
+		// token only anonymous routes are reachable, with no actor.
+		if tenantID == eventbus.PlatformTenantID && authctx.BearerToken(r.Header) == "" {
+			if !route.Anonymous {
+				ycerrors.WriteError(w, r, ycerrors.Unauthorized("Sign in required"))
+				return
+			}
+			ctx := authctx.WithAuth(r.Context(), authctx.AuthContext{
+				TenantID:      tenantID,
+				CorrelationID: authctx.CorrelationID(r.Context()),
+			})
+			ctx = context.WithValue(ctx, routeKey{}, route)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 

@@ -95,11 +95,12 @@ func setup(t *testing.T) (http.Handler, *fakeIdentity, chan upstreamSeen) {
 	routes, err := domain.NewRoutes([]domain.Route{
 		{Prefix: "/me", Methods: []string{"GET"}, Upstream: up},
 		{Prefix: "/account", Upstream: up, Roles: []authctx.ActorType{authctx.ActorCustomer}},
+		{Prefix: "/login", Upstream: up, Anonymous: true},
 	})
 	require.NoError(t, err)
 
 	id := &fakeIdentity{}
-	gw := transport.New(hosts{"shop-a.test": "shop-a", "shop-b.test": "shop-b"}, id, routes,
+	gw := transport.New(hosts{"shop-a.test": "shop-a", "shop-b.test": "shop-b", "admin.test": "_platform"}, id, routes,
 		transport.CookieConfig{Name: "yc_visitor"})
 	return transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil), id, seen
 }
@@ -225,6 +226,51 @@ func TestRejections(t *testing.T) {
 			assert.Empty(t, seen)
 		})
 	}
+}
+
+func TestPlatformHost(t *testing.T) {
+	t.Run("anonymous route proceeds without an actor or visitor", func(t *testing.T) {
+		h, id, seen := setup(t)
+
+		w := do(h, "POST", "admin.test", "/login", cookie("shop-a:visitor"))
+
+		require.Equal(t, http.StatusTeapot, w.Code)
+		got := <-seen
+		assert.Equal(t, "_platform", got.Tenant)
+		assert.Empty(t, got.Actor)
+		assert.Empty(t, got.ActorType)
+		assert.Empty(t, got.Auth)
+		assert.Empty(t, w.Result().Cookies())
+		assert.Zero(t, id.issued)
+	})
+
+	t.Run("other routes need a token", func(t *testing.T) {
+		h, id, seen := setup(t)
+
+		w := do(h, "GET", "admin.test", "/me")
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Empty(t, seen)
+		assert.Zero(t, id.issued)
+	})
+
+	t.Run("system admin token is forwarded", func(t *testing.T) {
+		h, _, seen := setup(t)
+
+		w := do(h, "GET", "admin.test", "/me", bearer("_platform:system_admin"))
+
+		require.Equal(t, http.StatusTeapot, w.Code)
+		assert.Equal(t, "system_admin", (<-seen).ActorType)
+	})
+
+	t.Run("platform token on a shop host is refused", func(t *testing.T) {
+		h, _, seen := setup(t)
+
+		w := do(h, "GET", "shop-a.test", "/me", bearer("_platform:system_admin"))
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+		assert.Empty(t, seen)
+	})
 }
 
 func TestIdentityDown(t *testing.T) {

@@ -16,3 +16,10 @@ jwt:
   private_key_file: ${YC_IDENTITY_JWT_PRIVATE_KEY_FILE}
   access_token_ttl: 15m
   visitor_token_ttl: 24h
+# Argon2id cost (docs/services/yc-identity.md, Password Storage). Existing
+# hashes keep verifying with the parameters they were made with.
+password:
+  argon2:
+    time: 2
+    memory_kb: 65536
+    threads: 2

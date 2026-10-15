@@ -224,7 +224,10 @@ var initialisms = map[string]string{
 // PascalCase, honouring common initialisms: "user_id" → "UserID".
 func pascal(s string) string {
 	var b strings.Builder
-	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '.' || r == '_' || r == '-' }) {
+	isSep := func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9')
+	}
+	for _, part := range strings.FieldsFunc(s, isSep) {
 		if up, ok := initialisms[part]; ok {
 			b.WriteString(up)
 			continue

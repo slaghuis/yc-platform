@@ -94,6 +94,25 @@ func Require(types ...ActorType) func(http.Handler) http.Handler {
 	}
 }
 
+// Audience enforces the audience encoded in the URL (api-conventions.md
+// §3): /admin/ admits shop_admin and system_admin, /sysadmin/ admits
+// system_admin. Other paths pass; handlers check finer rules. Mount it
+// after Middleware.
+func Audience(next http.Handler) http.Handler {
+	admin := Require(ActorShopAdmin, ActorSystemAdmin)(next)
+	sysadmin := Require(ActorSystemAdmin)(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch p := r.URL.Path; {
+		case p == "/admin" || strings.HasPrefix(p, "/admin/"):
+			admin.ServeHTTP(w, r)
+		case p == "/sysadmin" || strings.HasPrefix(p, "/sysadmin/"):
+			sysadmin.ServeHTTP(w, r)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
 func setOrDelete(h http.Header, key, value string) {
 	if value == "" {
 		h.Del(key)

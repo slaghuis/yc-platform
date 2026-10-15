@@ -1,11 +1,31 @@
 service: yc-pricing
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_PRICING_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_PRICING_ADVERTISE_URL:-http://yc-pricing:8080}
+  interval: 30s
+# Exchange rates for display conversion (ADR-014). Frankfurter serves ECB
+# reference rates without a key; exchangerate_host needs one.
+rates:
+  provider: ${YC_PRICING_RATES_PROVIDER:-frankfurter}
+  frankfurter_url: https://api.frankfurter.dev/v1
+  exchangerate_host:
+    url: https://api.exchangerate.host
+    access_key: ${YC_PRICING_EXCHANGERATE_HOST_KEY}
+  timeout: 10s
+  refresh_interval: 1h
+  stale_after: 24h
+  # Refreshed besides every shop's store currency.
+  base_currencies: []

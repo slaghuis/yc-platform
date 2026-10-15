@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.sku.updated.v1.json",
+  "title": "product.sku.updated.v1",
+  "description": "A shop admin changed a SKU. Carries the SKU's new state, including its tax class (ADR-016).",
+  "type": "object",
+  "required": ["sku_id", "product_id", "sku_code", "variant_values", "is_inventory_tracked", "tax_class", "status", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sku_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "variant_values": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "is_inventory_tracked": {
+      "type": "boolean"
+    },
+    "tax_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "inactive"]
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

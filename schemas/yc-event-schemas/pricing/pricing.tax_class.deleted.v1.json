@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.tax_class.deleted.v1.json",
+  "title": "pricing.tax_class.deleted.v1",
+  "description": "A shop admin removed a tax class. SKUs still classified with it are priced without tax until reclassified.",
+  "type": "object",
+  "required": ["class_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "class_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

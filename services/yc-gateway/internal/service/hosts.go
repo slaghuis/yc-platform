@@ -28,10 +28,18 @@ type Hosts struct {
 	current atomic.Pointer[map[string]string]
 }
 
-// NewHosts validates the static map and returns a registry holding only
-// it; call Load to add the database rows.
-func NewHosts(db *pgxpool.Pool, static map[string]string) (*Hosts, error) {
+// NewHosts validates the static map and the platform hostnames (which
+// resolve to _platform, ADR-020 rule 5) and returns a registry holding
+// only them; call Load to add the database rows.
+func NewHosts(db *pgxpool.Pool, static map[string]string, platform []string) (*Hosts, error) {
 	h := &Hosts{db: db, static: map[string]string{}}
+	for _, host := range platform {
+		norm := NormalizeHost(host)
+		if norm == "" {
+			return nil, fmt.Errorf("platform_hosts: invalid hostname %q", host)
+		}
+		h.static[norm] = eventbus.PlatformTenantID
+	}
 	for host, tenant := range static {
 		norm := NormalizeHost(host)
 		if norm == "" {
@@ -39,6 +47,9 @@ func NewHosts(db *pgxpool.Pool, static map[string]string) (*Hosts, error) {
 		}
 		if err := validateShopTenant(tenant); err != nil {
 			return nil, fmt.Errorf("tenant_hosts: %s: %w", host, err)
+		}
+		if _, ok := h.static[norm]; ok {
+			return nil, fmt.Errorf("tenant_hosts: %s is also a platform host", host)
 		}
 		h.static[norm] = tenant
 	}

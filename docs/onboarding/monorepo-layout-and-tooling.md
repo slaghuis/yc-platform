@@ -284,14 +284,21 @@ Money arithmetic in minor units. No floats. Currency-aware addition, subtraction
 
 ```go
 type Money struct {
-    AmountMinor int64
-    Currency    string
+    AmountMinor int64  `json:"amount_minor"`
+    Currency    string `json:"currency"`
 }
 
-func (m Money) Add(other Money) (Money, error)
-func (m Money) ApplyRate(rate decimal.Decimal) Money
-func Allocate(total Money, ratios []decimal.Decimal) []Money   // sum == total guaranteed
+func (m Money) Add(other Money) (Money, error)            // ErrCurrencyMismatch, ErrOverflow
+func (m Money) Times(qty int64) (Money, error)
+func (m Money) Mul(r Rate) (Money, error)                 // percentages; rounds half away from zero
+func (m Money) Convert(to string, r Rate) (Money, error)  // exchange rates in major units; handles JPY/KWD exponents
+func Allocate(total Money, weights []int64) ([]Money, error) // largest remainder; sum == total guaranteed
+
+type Rate struct{ /* exact decimal, math/big.Rat */ }
+func ParseRate(s string) (Rate, error)                    // "0.15"; JSON number or string
 ```
+
+Rates are exact decimals (`math/big`), never floats, so the library has no third-party dependencies.
 
 ### `yc-events`
 Generated Go types for every event in `yc-event-schemas`, plus the schema `Validator` passed to yc-eventbus. `task gen:events` (`tools/yc-schema-gen`) writes `types_gen.go` and the embedded `schemas/` copy. Services import these types rather than hand-crafting JSON.

@@ -43,18 +43,26 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 	if err != nil {
 		return err
 	}
-	serveErr := httpkit.Serve(ctx, cfg.HTTP, a.Handler)
+	// Either listener failing stops both.
+	serveCtx, stop := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	var publicErr, internalErr error
+	wg.Go(func() { defer stop(); publicErr = httpkit.Serve(serveCtx, cfg.HTTP, a.Handler) })
+	wg.Go(func() { defer stop(); internalErr = httpkit.Serve(serveCtx, cfg.InternalHTTP, a.InternalHandler) })
+	wg.Wait()
 
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	return errors.Join(serveErr, a.Close(closeCtx))
+	return errors.Join(publicErr, internalErr, a.Close(closeCtx))
 }
 
 // App is the wired service. Telemetry must be initialised first.
 type App struct {
-	Handler http.Handler
-	Hosts   *service.Hosts
-	closers []func(context.Context) error
+	Handler         http.Handler // public listener
+	InternalHandler http.Handler // internal listener (ADR-020 rule 6)
+	Hosts           *service.Hosts
+	Registry        *service.Registry
+	closers         []func(context.Context) error
 }
 
 // New migrates the database (when configured), loads the tenant hostname
@@ -83,7 +91,7 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	}
 	a.closers = append(a.closers, func(context.Context) error { db.Close(); return nil })
 
-	if a.Hosts, err = service.NewHosts(db, cfg.staticHosts()); err != nil {
+	if a.Hosts, err = service.NewHosts(db, cfg.staticHosts(), cfg.PlatformHosts); err != nil {
 		return nil, err
 	}
 	if err := a.Hosts.Load(ctx); err != nil {
@@ -114,12 +122,21 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		return nil, err
 	}
 
+	if a.Registry, err = service.NewRegistry(routes, db, bus, cfg.Registry); err != nil {
+		return nil, err
+	}
+	pollCtx, stopPoll := context.WithCancel(context.WithoutCancel(ctx))
+	var pollWG sync.WaitGroup
+	pollWG.Go(func() { a.Registry.Poll(pollCtx) })
+	a.closers = append(a.closers, func(context.Context) error { stopPoll(); pollWG.Wait(); return nil })
+
 	identity := integration.NewIdentity(cfg.Upstreams[identityUpstream], cfg.IdentityTimeout, cfg.TokenCacheTTL, time.Now)
-	gw := transport.New(a.Hosts, identity, routes, cfg.VisitorCookie)
+	gw := transport.New(a.Hosts, identity, a.Registry, cfg.VisitorCookie)
 	a.Handler = transport.NewRouter(gw, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
 	})
+	a.InternalHandler = transport.NewInternalRouter(a.Registry, build)
 	return a, nil
 }
 

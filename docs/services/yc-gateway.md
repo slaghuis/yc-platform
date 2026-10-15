@@ -65,25 +65,36 @@ Token validation results are **cached in memory** (default TTL: 60 seconds, neve
 
 ### Service Registration
 
-At startup, each backend service calls:
+At startup, each backend service calls the gateway's **internal listener** (`internal_http.listen`, default `:8091`; ADR-020 rule 6) through `httpkit.KeepRegistered`:
 
 ```
 POST /internal/register
 {
   "service_name": "yc-product",
+  "instance_id": "yc-product-7d9f",          // defaults to the hostname
   "base_url": "http://yc-product:8080",
+  "version": "1.4.0",
+  "health_url": "/healthz",                  // path under base_url
   "routes": [
-    { "method": "GET",  "path": "/products",       "auth": "any" },
-    { "method": "POST", "path": "/admin/products", "auth": "shop_admin" },
-    ...
-  ],
-  "health_url": "/healthz"
+    { "prefix": "/products", "methods": ["GET"] },
+    { "prefix": "/admin/products", "roles": ["shop_admin", "system_admin"] },
+    { "prefix": "/login", "methods": ["POST"], "anonymous": true }
+  ]
 }
+→ 204; 400 for an invalid body or a static prefix; 409 for another service's prefix
 ```
 
-- Routes are stored in-memory in the gateway
-- Routes are **also** declared in a static configuration file for cold-start availability — service self-registration **augments** but does not replace static config
-- Backend service deregistration happens automatically on health check failure (3 consecutive failures over 15 seconds)
+Route fields mean what they mean in static config: longest prefix wins, empty `methods` admits any method, empty `roles` admits any actor (visitors included), `anonymous` admits token-less requests on platform hosts.
+
+- Registrations are held in memory, one per service name; a registration replaces the service's previous routes. Services re-register every `gateway.interval` (default 30 s), so a restarted gateway relearns them; an unchanged re-registration is a no-op.
+- Routes are **also** declared in a static configuration file for cold-start availability — self-registration **augments** static config, and a registered route may not reuse a static prefix.
+- The gateway polls each registration's `health_url` every `registry.health_interval` (5 s) and deregisters after `registry.failure_threshold` (3) consecutive failures. Services call `POST /internal/deregister {"service_name", "instance_id"}` on shutdown.
+- Registration and deregistration publish `platform.service.registered.v1` / `platform.service.deregistered.v1` through the outbox.
+- Each gateway instance holds only the registrations it received (ADR-020 rule 7).
+
+### Platform Hosts
+
+Hostnames in `platform_hosts` resolve to `_platform` (ADR-020 rule 5). They never issue visitor tokens: a request without a bearer token reaches only `anonymous` routes (e.g. `POST /login`) and is forwarded with `X-YC-Tenant-ID: _platform` and no actor; any other route returns 401. Bearer tokens must be `_platform` tokens, which only system admins hold. System admins act on a shop by naming its tenant in the request, never by using a shop host.
 
 ### Request Routing
 
@@ -119,11 +130,13 @@ Dynamically defined by registered services. Gateway has no fixed public API beyo
 
 ### Internal Endpoints
 
+Served only on the internal listener (`:8091`); the public listener never routes `/internal/`.
+
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/register` | Register a service and its routes | service token |
-| POST | `/internal/deregister` | Deregister a service | service token |
-| GET | `/internal/routes` | List all registered routes | system_admin |
+| POST | `/internal/register` | Register a service and its routes | network placement (service token in Phase 4) |
+| POST | `/internal/deregister` | Deregister a service instance | network placement (service token in Phase 4) |
+| GET | `/internal/routes` | List static and registered routes | network placement |
 
 ## Database
 
@@ -144,7 +157,7 @@ CREATE TABLE processed_events ( ... );
 
 - `tenant_hosts` is written by the `platform.tenant.provisioned.v1` handler and loaded into memory at startup, after `tenant_hosts` from config, and reloaded every `tenant_hosts_refresh` so every instance learns new tenants. It has no RLS: it is read before a tenant is known.
 - A provisioning event that claims a hostname owned by another tenant (in config or `tenant_hosts`) is rejected whole and dead-lettered as poison.
-- Service registrations are held in memory. On restart, services re-register (or static config is loaded).
+- Service registrations are held in memory. On restart, services re-register within `gateway.interval` (static routes apply meanwhile).
 - Token validation results are cached in memory only.
 
 ## Published Events
@@ -185,6 +198,8 @@ Defaults live in `services/yc-gateway/config/config.default.yaml`; override with
 ```yaml
 http:
   listen: ":8080"
+internal_http:                  # registration endpoints; never expose publicly
+  listen: ":8091"
 database:
   url: ${YC_GATEWAY_DB_URL}
 upstreams:                      # backend base URLs by name
@@ -193,9 +208,16 @@ routes:                         # longest prefix wins; empty roles admit any act
   - prefix: /me
     methods: [GET]
     upstream: identity
-  # - prefix: /admin/products
-  #   upstream: product
-  #   roles: [shop_admin]
+  - prefix: /login
+    methods: [POST]
+    upstream: identity
+    anonymous: true             # reachable without a token on platform hosts
+registry:                       # health polling of registered services
+  health_interval: 5s
+  health_timeout: 2s
+  failure_threshold: 3
+platform_hosts:                 # resolve to _platform; system admins only
+  - admin.example.com
 tenant_hosts:                   # static hostname → tenant, before the tenant_hosts table
   - hostname: shop1.example.com
     tenant_id: shop1

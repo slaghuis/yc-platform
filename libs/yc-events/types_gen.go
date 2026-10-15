@@ -9,37 +9,138 @@ import (
 // Event types with a schema.
 const (
 	TypeIdentityUserLoggedInV1        = "identity.user.logged_in.v1"
+	TypeIdentityUserPromotedV1        = "identity.user.promoted.v1"
+	TypeIdentityUserRegisteredV1      = "identity.user.registered.v1"
 	TypeIdentityVisitorCreatedV1      = "identity.visitor.created.v1"
+	TypeImageDeletedV1                = "image.deleted.v1"
+	TypeImageProcessedV1              = "image.processed.v1"
+	TypeImageProcessingFailedV1       = "image.processing_failed.v1"
+	TypeImageUploadedV1               = "image.uploaded.v1"
 	TypePlatformServiceDeregisteredV1 = "platform.service.deregistered.v1"
 	TypePlatformServiceRegisteredV1   = "platform.service.registered.v1"
 	TypePlatformTenantProvisionedV1   = "platform.tenant.provisioned.v1"
+	TypePricingBasePriceRemovedV1     = "pricing.base_price.removed.v1"
+	TypePricingBasePriceSetV1         = "pricing.base_price.set.v1"
+	TypePricingConfigChangedV1        = "pricing.config.changed.v1"
+	TypePricingExchangeRatesStaleV1   = "pricing.exchange_rates_stale.v1"
+	TypePricingExchangeRatesUpdatedV1 = "pricing.exchange_rates_updated.v1"
+	TypePricingTaxClassCreatedV1      = "pricing.tax_class.created.v1"
+	TypePricingTaxClassDeletedV1      = "pricing.tax_class.deleted.v1"
+	TypePricingTaxClassUpdatedV1      = "pricing.tax_class.updated.v1"
+	TypeProductCategoryCreatedV1      = "product.category.created.v1"
+	TypeProductCategoryDeletedV1      = "product.category.deleted.v1"
+	TypeProductCategoryUpdatedV1      = "product.category.updated.v1"
+	TypeProductCreatedV1              = "product.created.v1"
+	TypeProductDeletedV1              = "product.deleted.v1"
+	TypeProductImageAttachedV1        = "product.image_attached.v1"
+	TypeProductImageDetachedV1        = "product.image_detached.v1"
+	TypeProductSKUCreatedV1           = "product.sku.created.v1"
+	TypeProductSKUDeletedV1           = "product.sku.deleted.v1"
+	TypeProductSKUUpdatedV1           = "product.sku.updated.v1"
+	TypeProductSupplierCreatedV1      = "product.supplier.created.v1"
+	TypeProductSupplierDeletedV1      = "product.supplier.deleted.v1"
+	TypeProductSupplierUpdatedV1      = "product.supplier.updated.v1"
+	TypeProductUpdatedV1              = "product.updated.v1"
+	TypeProductVariantAddedV1         = "product.variant.added.v1"
 )
 
 // EventTypes lists every event type with a schema, sorted.
 var EventTypes = []string{
 	TypeIdentityUserLoggedInV1,
+	TypeIdentityUserPromotedV1,
+	TypeIdentityUserRegisteredV1,
 	TypeIdentityVisitorCreatedV1,
+	TypeImageDeletedV1,
+	TypeImageProcessedV1,
+	TypeImageProcessingFailedV1,
+	TypeImageUploadedV1,
 	TypePlatformServiceDeregisteredV1,
 	TypePlatformServiceRegisteredV1,
 	TypePlatformTenantProvisionedV1,
+	TypePricingBasePriceRemovedV1,
+	TypePricingBasePriceSetV1,
+	TypePricingConfigChangedV1,
+	TypePricingExchangeRatesStaleV1,
+	TypePricingExchangeRatesUpdatedV1,
+	TypePricingTaxClassCreatedV1,
+	TypePricingTaxClassDeletedV1,
+	TypePricingTaxClassUpdatedV1,
+	TypeProductCategoryCreatedV1,
+	TypeProductCategoryDeletedV1,
+	TypeProductCategoryUpdatedV1,
+	TypeProductCreatedV1,
+	TypeProductDeletedV1,
+	TypeProductImageAttachedV1,
+	TypeProductImageDetachedV1,
+	TypeProductSKUCreatedV1,
+	TypeProductSKUDeletedV1,
+	TypeProductSKUUpdatedV1,
+	TypeProductSupplierCreatedV1,
+	TypeProductSupplierDeletedV1,
+	TypeProductSupplierUpdatedV1,
+	TypeProductUpdatedV1,
+	TypeProductVariantAddedV1,
 }
 
 // Enum values.
 const (
-	ActorTypeVisitor                                     = "visitor"
-	ActorTypeCustomer                                    = "customer"
-	ActorTypeShopAdmin                                   = "shop_admin"
-	ActorTypeSystemAdmin                                 = "system_admin"
-	ActorTypeService                                     = "service"
-	IdentityUserLoggedInV1RoleCustomer                   = "customer"
-	IdentityUserLoggedInV1RoleShopAdmin                  = "shop_admin"
-	IdentityUserLoggedInV1RoleSystemAdmin                = "system_admin"
-	IdentityUserLoggedInV1MethodPassword                 = "password"
-	IdentityUserLoggedInV1MethodGoogle                   = "google"
-	IdentityUserLoggedInV1MethodFacebook                 = "facebook"
-	PlatformServiceDeregisteredV1ReasonShutdown          = "shutdown"
-	PlatformServiceDeregisteredV1ReasonHealthCheckFailed = "health_check_failed"
-	PlatformServiceDeregisteredV1ReasonManual            = "manual"
+	ActorTypeVisitor                                      = "visitor"
+	ActorTypeCustomer                                     = "customer"
+	ActorTypeShopAdmin                                    = "shop_admin"
+	ActorTypeSystemAdmin                                  = "system_admin"
+	ActorTypeService                                      = "service"
+	IdentityUserLoggedInV1RoleCustomer                    = "customer"
+	IdentityUserLoggedInV1RoleShopAdmin                   = "shop_admin"
+	IdentityUserLoggedInV1RoleSystemAdmin                 = "system_admin"
+	IdentityUserLoggedInV1MethodPassword                  = "password"
+	IdentityUserLoggedInV1MethodGoogle                    = "google"
+	IdentityUserLoggedInV1MethodFacebook                  = "facebook"
+	IdentityUserPromotedV1FromRoleVisitor                 = "visitor"
+	IdentityUserPromotedV1FromRoleCustomer                = "customer"
+	IdentityUserPromotedV1FromRoleShopAdmin               = "shop_admin"
+	IdentityUserPromotedV1ToRoleCustomer                  = "customer"
+	IdentityUserPromotedV1ToRoleShopAdmin                 = "shop_admin"
+	IdentityUserRegisteredV1RoleCustomer                  = "customer"
+	IdentityUserRegisteredV1MethodPassword                = "password"
+	IdentityUserRegisteredV1MethodGoogle                  = "google"
+	IdentityUserRegisteredV1MethodFacebook                = "facebook"
+	ImageProcessedV1VariantsItemVariantOriginal           = "original"
+	ImageProcessedV1VariantsItemVariantXlarge             = "xlarge"
+	ImageProcessedV1VariantsItemVariantLarge              = "large"
+	ImageProcessedV1VariantsItemVariantMedium             = "medium"
+	ImageProcessedV1VariantsItemVariantThumbnail          = "thumbnail"
+	ImageProcessedV1VariantsItemFormatJpeg                = "jpeg"
+	ImageProcessedV1VariantsItemFormatPng                 = "png"
+	ImageProcessedV1VariantsItemFormatWebp                = "webp"
+	ImageProcessedV1VariantsItemFormatGif                 = "gif"
+	ImageProcessingFailedV1ReasonUnsupportedFormat        = "unsupported_format"
+	ImageProcessingFailedV1ReasonCorrupt                  = "corrupt"
+	ImageProcessingFailedV1ReasonTooLarge                 = "too_large"
+	ImageProcessingFailedV1ReasonBadDimensions            = "bad_dimensions"
+	ImageProcessingFailedV1ReasonStorageError             = "storage_error"
+	ImageUploadedV1ContentTypeImageJpeg                   = "image/jpeg"
+	ImageUploadedV1ContentTypeImagePng                    = "image/png"
+	ImageUploadedV1ContentTypeImageWebp                   = "image/webp"
+	ImageUploadedV1ContentTypeImageGif                    = "image/gif"
+	PlatformServiceDeregisteredV1ReasonShutdown           = "shutdown"
+	PlatformServiceDeregisteredV1ReasonHealthCheckFailed  = "health_check_failed"
+	PlatformServiceDeregisteredV1ReasonManual             = "manual"
+	PricingExchangeRatesStaleV1ProviderFrankfurter        = "frankfurter"
+	PricingExchangeRatesStaleV1ProviderExchangerateHost   = "exchangerate_host"
+	PricingExchangeRatesUpdatedV1ProviderFrankfurter      = "frankfurter"
+	PricingExchangeRatesUpdatedV1ProviderExchangerateHost = "exchangerate_host"
+	ProductCreatedV1StatusActive                          = "active"
+	ProductCreatedV1StatusInactive                        = "inactive"
+	ProductSKUCreatedV1StatusActive                       = "active"
+	ProductSKUCreatedV1StatusInactive                     = "inactive"
+	ProductSKUUpdatedV1StatusActive                       = "active"
+	ProductSKUUpdatedV1StatusInactive                     = "inactive"
+	ProductSupplierCreatedV1StatusActive                  = "active"
+	ProductSupplierCreatedV1StatusInactive                = "inactive"
+	ProductSupplierUpdatedV1StatusActive                  = "active"
+	ProductSupplierUpdatedV1StatusInactive                = "inactive"
+	ProductUpdatedV1StatusActive                          = "active"
+	ProductUpdatedV1StatusInactive                        = "inactive"
 )
 
 // Actor is the common/actor.v1.json fragment.
@@ -112,6 +213,36 @@ type IdentityUserLoggedInV1 struct {
 // EventType returns identity.user.logged_in.v1.
 func (IdentityUserLoggedInV1) EventType() string { return TypeIdentityUserLoggedInV1 }
 
+// IdentityUserPromotedV1 is the payload of identity.user.promoted.v1.
+//
+// A system admin raised a user's role. The envelope actor is the system admin. Tokens issued before the promotion stop validating.
+type IdentityUserPromotedV1 struct {
+	UserID     string    `json:"user_id"`
+	FromRole   string    `json:"from_role"`
+	ToRole     string    `json:"to_role"`
+	PromotedAt time.Time `json:"promoted_at"`
+}
+
+// EventType returns identity.user.promoted.v1.
+func (IdentityUserPromotedV1) EventType() string { return TypeIdentityUserPromotedV1 }
+
+// IdentityUserRegisteredV1 is the payload of identity.user.registered.v1.
+//
+// A visitor registered and became a customer. The user keeps the visitor's user_id, so anything the visitor owned (e.g. a cart) stays with them. yc-preference seeds defaults; yc-message sends a welcome.
+type IdentityUserRegisteredV1 struct {
+	UserID string `json:"user_id"`
+	// Lowercased login email. PII (event-conventions §18).
+	Email string `json:"email"`
+	// PII (event-conventions §18).
+	DisplayName  *string   `json:"display_name,omitempty"`
+	Role         string    `json:"role"`
+	Method       string    `json:"method"`
+	RegisteredAt time.Time `json:"registered_at"`
+}
+
+// EventType returns identity.user.registered.v1.
+func (IdentityUserRegisteredV1) EventType() string { return TypeIdentityUserRegisteredV1 }
+
 // IdentityVisitorCreatedV1 is the payload of identity.visitor.created.v1.
 //
 // yc-identity created an anonymous visitor and issued its first visitor token. The envelope actor is the visitor; its access_token_jti is the issued token.
@@ -125,6 +256,73 @@ type IdentityVisitorCreatedV1 struct {
 
 // EventType returns identity.visitor.created.v1.
 func (IdentityVisitorCreatedV1) EventType() string { return TypeIdentityVisitorCreatedV1 }
+
+// ImageDeletedV1 is the payload of image.deleted.v1.
+//
+// An image and its variants were deleted. yc-product removes references to it.
+type ImageDeletedV1 struct {
+	ImageID   string    `json:"image_id"`
+	OwnerRef  *string   `json:"owner_ref,omitempty"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns image.deleted.v1.
+func (ImageDeletedV1) EventType() string { return TypeImageDeletedV1 }
+
+// ImageProcessedV1VariantsItem is a nested object.
+type ImageProcessedV1VariantsItem struct {
+	Variant string `json:"variant"`
+	Format  string `json:"format"`
+	Width   int64  `json:"width"`
+	Height  int64  `json:"height"`
+	Bytes   int64  `json:"bytes"`
+	URL     string `json:"url"`
+}
+
+// ImageProcessedV1 is the payload of image.processed.v1.
+//
+// All variants of an image are stored and servable.
+type ImageProcessedV1 struct {
+	ImageID     string                         `json:"image_id"`
+	OwnerRef    *string                        `json:"owner_ref,omitempty"`
+	Width       int64                          `json:"width"`
+	Height      int64                          `json:"height"`
+	Variants    []ImageProcessedV1VariantsItem `json:"variants"`
+	ProcessedAt time.Time                      `json:"processed_at"`
+}
+
+// EventType returns image.processed.v1.
+func (ImageProcessedV1) EventType() string { return TypeImageProcessedV1 }
+
+// ImageProcessingFailedV1 is the payload of image.processing_failed.v1.
+//
+// An accepted upload could not be processed; the image is marked failed and never served.
+type ImageProcessingFailedV1 struct {
+	ImageID  string    `json:"image_id"`
+	OwnerRef *string   `json:"owner_ref,omitempty"`
+	Reason   string    `json:"reason"`
+	Detail   *string   `json:"detail,omitempty"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns image.processing_failed.v1.
+func (ImageProcessingFailedV1) EventType() string { return TypeImageProcessingFailedV1 }
+
+// ImageUploadedV1 is the payload of image.uploaded.v1.
+//
+// An image upload was accepted and its original stored. yc-image consumes this itself to generate variants.
+type ImageUploadedV1 struct {
+	ImageID string `json:"image_id"`
+	// Optional owner, e.g. product:<uuid>.
+	OwnerRef       *string   `json:"owner_ref,omitempty"`
+	ContentType    string    `json:"content_type"`
+	Bytes          int64     `json:"bytes"`
+	ChecksumSha256 string    `json:"checksum_sha256"`
+	UploadedAt     time.Time `json:"uploaded_at"`
+}
+
+// EventType returns image.uploaded.v1.
+func (ImageUploadedV1) EventType() string { return TypeImageUploadedV1 }
 
 // PlatformServiceDeregisteredV1 is the payload of platform.service.deregistered.v1.
 //
@@ -179,3 +377,339 @@ type PlatformTenantProvisionedV1 struct {
 
 // EventType returns platform.tenant.provisioned.v1.
 func (PlatformTenantProvisionedV1) EventType() string { return TypePlatformTenantProvisionedV1 }
+
+// PricingBasePriceRemovedV1 is the payload of pricing.base_price.removed.v1.
+//
+// A SKU no longer has a base price, because the SKU was deleted. It cannot be priced until a new price is set.
+type PricingBasePriceRemovedV1 struct {
+	SKUID     string    `json:"sku_id"`
+	RemovedAt time.Time `json:"removed_at"`
+}
+
+// EventType returns pricing.base_price.removed.v1.
+func (PricingBasePriceRemovedV1) EventType() string { return TypePricingBasePriceRemovedV1 }
+
+// PricingBasePriceSetV1 is the payload of pricing.base_price.set.v1.
+//
+// A SKU's base price was set or changed, in the store currency (ADR-014). Gross when the tenant prices tax-inclusive, net otherwise (ADR-016). yc-product updates its search projection.
+type PricingBasePriceSetV1 struct {
+	SKUID string `json:"sku_id"`
+	Price Money  `json:"price"`
+	// The price this one replaces; absent for a SKU's first price.
+	PreviousPrice  *Money    `json:"previous_price,omitempty"`
+	IsTaxInclusive bool      `json:"is_tax_inclusive"`
+	ValidFrom      time.Time `json:"valid_from"`
+}
+
+// EventType returns pricing.base_price.set.v1.
+func (PricingBasePriceSetV1) EventType() string { return TypePricingBasePriceSetV1 }
+
+// PricingConfigChangedV1 is the payload of pricing.config.changed.v1.
+//
+// A tenant's pricing configuration was created (on provisioning) or changed by a shop admin. Carries the new configuration.
+type PricingConfigChangedV1 struct {
+	StoreCurrency  string `json:"store_currency"`
+	IsTaxInclusive bool   `json:"is_tax_inclusive"`
+	// ISO 3166-1 alpha-2 country, optionally with an ISO 3166-2 subdivision (ZA, ZA-WC).
+	DefaultJurisdiction string    `json:"default_jurisdiction"`
+	ChangedAt           time.Time `json:"changed_at"`
+}
+
+// EventType returns pricing.config.changed.v1.
+func (PricingConfigChangedV1) EventType() string { return TypePricingConfigChangedV1 }
+
+// PricingExchangeRatesStaleV1 is the payload of pricing.exchange_rates_stale.v1.
+//
+// Rate fetches have failed for longer than the stale threshold; display conversion uses the last known rates. Published on _platform for alerting.
+type PricingExchangeRatesStaleV1 struct {
+	BaseCurrency    string    `json:"base_currency"`
+	Provider        string    `json:"provider"`
+	LastFetchedAt   time.Time `json:"last_fetched_at"`
+	StaleForSeconds int64     `json:"stale_for_seconds"`
+}
+
+// EventType returns pricing.exchange_rates_stale.v1.
+func (PricingExchangeRatesStaleV1) EventType() string { return TypePricingExchangeRatesStaleV1 }
+
+// PricingExchangeRatesUpdatedV1 is the payload of pricing.exchange_rates_updated.v1.
+//
+// yc-pricing refreshed its exchange rate cache from the rate provider (ADR-014). Published on _platform: rates are platform-wide.
+type PricingExchangeRatesUpdatedV1 struct {
+	BaseCurrency string    `json:"base_currency"`
+	Provider     string    `json:"provider"`
+	RateCount    int64     `json:"rate_count"`
+	FetchedAt    time.Time `json:"fetched_at"`
+}
+
+// EventType returns pricing.exchange_rates_updated.v1.
+func (PricingExchangeRatesUpdatedV1) EventType() string { return TypePricingExchangeRatesUpdatedV1 }
+
+// PricingTaxClassCreatedV1RulesItem is a nested object.
+type PricingTaxClassCreatedV1RulesItem struct {
+	Jurisdiction string `json:"jurisdiction"`
+	RuleName     string `json:"rule_name"`
+	// Exact decimal, e.g. "0.15".
+	Rate string `json:"rate"`
+	// line_total, or line_total_including_<rule_name> for compound taxes.
+	Base      string `json:"base"`
+	SortOrder int64  `json:"sort_order"`
+}
+
+// PricingTaxClassCreatedV1 is the payload of pricing.tax_class.created.v1.
+//
+// A shop admin defined a tax class and its rules (ADR-016).
+type PricingTaxClassCreatedV1 struct {
+	ClassID     string                              `json:"class_id"`
+	DisplayName string                              `json:"display_name"`
+	Rules       []PricingTaxClassCreatedV1RulesItem `json:"rules"`
+	CreatedAt   time.Time                           `json:"created_at"`
+}
+
+// EventType returns pricing.tax_class.created.v1.
+func (PricingTaxClassCreatedV1) EventType() string { return TypePricingTaxClassCreatedV1 }
+
+// PricingTaxClassDeletedV1 is the payload of pricing.tax_class.deleted.v1.
+//
+// A shop admin removed a tax class. SKUs still classified with it are priced without tax until reclassified.
+type PricingTaxClassDeletedV1 struct {
+	ClassID   string    `json:"class_id"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns pricing.tax_class.deleted.v1.
+func (PricingTaxClassDeletedV1) EventType() string { return TypePricingTaxClassDeletedV1 }
+
+// PricingTaxClassUpdatedV1RulesItem is a nested object.
+type PricingTaxClassUpdatedV1RulesItem struct {
+	Jurisdiction string `json:"jurisdiction"`
+	RuleName     string `json:"rule_name"`
+	// Exact decimal, e.g. "0.15".
+	Rate string `json:"rate"`
+	// line_total, or line_total_including_<rule_name> for compound taxes.
+	Base      string `json:"base"`
+	SortOrder int64  `json:"sort_order"`
+}
+
+// PricingTaxClassUpdatedV1 is the payload of pricing.tax_class.updated.v1.
+//
+// A shop admin changed a tax class or its rules (ADR-016). Carries the class's full new rule set.
+type PricingTaxClassUpdatedV1 struct {
+	ClassID     string                              `json:"class_id"`
+	DisplayName string                              `json:"display_name"`
+	Rules       []PricingTaxClassUpdatedV1RulesItem `json:"rules"`
+	UpdatedAt   time.Time                           `json:"updated_at"`
+}
+
+// EventType returns pricing.tax_class.updated.v1.
+func (PricingTaxClassUpdatedV1) EventType() string { return TypePricingTaxClassUpdatedV1 }
+
+// ProductCategoryCreatedV1 is the payload of product.category.created.v1.
+//
+// A shop admin created a category.
+type ProductCategoryCreatedV1 struct {
+	CategoryID string    `json:"category_id"`
+	ParentID   *string   `json:"parent_id,omitempty"`
+	Name       string    `json:"name"`
+	Slug       string    `json:"slug"`
+	SortOrder  int64     `json:"sort_order"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// EventType returns product.category.created.v1.
+func (ProductCategoryCreatedV1) EventType() string { return TypeProductCategoryCreatedV1 }
+
+// ProductCategoryDeletedV1 is the payload of product.category.deleted.v1.
+//
+// A shop admin deleted a category. Products leave it; child categories move to its parent.
+type ProductCategoryDeletedV1 struct {
+	CategoryID string    `json:"category_id"`
+	DeletedAt  time.Time `json:"deleted_at"`
+}
+
+// EventType returns product.category.deleted.v1.
+func (ProductCategoryDeletedV1) EventType() string { return TypeProductCategoryDeletedV1 }
+
+// ProductCategoryUpdatedV1 is the payload of product.category.updated.v1.
+//
+// A shop admin changed a category. Carries the category's new state.
+type ProductCategoryUpdatedV1 struct {
+	CategoryID string    `json:"category_id"`
+	ParentID   *string   `json:"parent_id,omitempty"`
+	Name       string    `json:"name"`
+	Slug       string    `json:"slug"`
+	SortOrder  int64     `json:"sort_order"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// EventType returns product.category.updated.v1.
+func (ProductCategoryUpdatedV1) EventType() string { return TypeProductCategoryUpdatedV1 }
+
+// ProductCreatedV1 is the payload of product.created.v1.
+//
+// A shop admin created a product.
+type ProductCreatedV1 struct {
+	ProductID   string    `json:"product_id"`
+	SupplierID  *string   `json:"supplier_id,omitempty"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	IsDigital   bool      `json:"is_digital"`
+	CategoryIds []string  `json:"category_ids"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// EventType returns product.created.v1.
+func (ProductCreatedV1) EventType() string { return TypeProductCreatedV1 }
+
+// ProductDeletedV1 is the payload of product.deleted.v1.
+//
+// A shop admin soft-deleted a product and, with it, its SKUs. yc-image deletes images owned by the product.
+type ProductDeletedV1 struct {
+	ProductID string `json:"product_id"`
+	// SKUs deleted with the product; no separate product.sku.deleted.v1 is published for them.
+	SKUIds    []string  `json:"sku_ids"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns product.deleted.v1.
+func (ProductDeletedV1) EventType() string { return TypeProductDeletedV1 }
+
+// ProductImageAttachedV1 is the payload of product.image_attached.v1.
+//
+// A shop admin attached a yc-image image to a product.
+type ProductImageAttachedV1 struct {
+	ProductID  string    `json:"product_id"`
+	ImageID    string    `json:"image_id"`
+	SortOrder  int64     `json:"sort_order"`
+	IsPrimary  bool      `json:"is_primary"`
+	AttachedAt time.Time `json:"attached_at"`
+}
+
+// EventType returns product.image_attached.v1.
+func (ProductImageAttachedV1) EventType() string { return TypeProductImageAttachedV1 }
+
+// ProductImageDetachedV1 is the payload of product.image_detached.v1.
+//
+// A shop admin detached an image from a product. The image itself remains in yc-image.
+type ProductImageDetachedV1 struct {
+	ProductID  string    `json:"product_id"`
+	ImageID    string    `json:"image_id"`
+	DetachedAt time.Time `json:"detached_at"`
+}
+
+// EventType returns product.image_detached.v1.
+func (ProductImageDetachedV1) EventType() string { return TypeProductImageDetachedV1 }
+
+// ProductSKUCreatedV1 is the payload of product.sku.created.v1.
+//
+// A shop admin created a SKU. yc-pricing records its tax class (ADR-016); yc-inventory records whether stock is tracked (ADR-012).
+type ProductSKUCreatedV1 struct {
+	SKUID     string `json:"sku_id"`
+	ProductID string `json:"product_id"`
+	SKUCode   string `json:"sku_code"`
+	// Variant axis → value, e.g. {"color": "Red", "size": "M"}.
+	VariantValues      map[string]any `json:"variant_values"`
+	IsInventoryTracked bool           `json:"is_inventory_tracked"`
+	// Tenant tax class ID defined in yc-pricing, e.g. za-standard.
+	TaxClass  string    `json:"tax_class"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// EventType returns product.sku.created.v1.
+func (ProductSKUCreatedV1) EventType() string { return TypeProductSKUCreatedV1 }
+
+// ProductSKUDeletedV1 is the payload of product.sku.deleted.v1.
+//
+// A shop admin soft-deleted a SKU. yc-pricing expires its base price.
+type ProductSKUDeletedV1 struct {
+	SKUID     string    `json:"sku_id"`
+	ProductID string    `json:"product_id"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns product.sku.deleted.v1.
+func (ProductSKUDeletedV1) EventType() string { return TypeProductSKUDeletedV1 }
+
+// ProductSKUUpdatedV1 is the payload of product.sku.updated.v1.
+//
+// A shop admin changed a SKU. Carries the SKU's new state, including its tax class (ADR-016).
+type ProductSKUUpdatedV1 struct {
+	SKUID              string         `json:"sku_id"`
+	ProductID          string         `json:"product_id"`
+	SKUCode            string         `json:"sku_code"`
+	VariantValues      map[string]any `json:"variant_values"`
+	IsInventoryTracked bool           `json:"is_inventory_tracked"`
+	TaxClass           string         `json:"tax_class"`
+	Status             string         `json:"status"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+}
+
+// EventType returns product.sku.updated.v1.
+func (ProductSKUUpdatedV1) EventType() string { return TypeProductSKUUpdatedV1 }
+
+// ProductSupplierCreatedV1 is the payload of product.supplier.created.v1.
+//
+// A system admin created a supplier for the tenant.
+type ProductSupplierCreatedV1 struct {
+	SupplierID string    `json:"supplier_id"`
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// EventType returns product.supplier.created.v1.
+func (ProductSupplierCreatedV1) EventType() string { return TypeProductSupplierCreatedV1 }
+
+// ProductSupplierDeletedV1 is the payload of product.supplier.deleted.v1.
+//
+// A system admin deleted a supplier. Its products keep existing without a supplier.
+type ProductSupplierDeletedV1 struct {
+	SupplierID string    `json:"supplier_id"`
+	DeletedAt  time.Time `json:"deleted_at"`
+}
+
+// EventType returns product.supplier.deleted.v1.
+func (ProductSupplierDeletedV1) EventType() string { return TypeProductSupplierDeletedV1 }
+
+// ProductSupplierUpdatedV1 is the payload of product.supplier.updated.v1.
+//
+// A system admin changed a supplier. Carries the supplier's new state.
+type ProductSupplierUpdatedV1 struct {
+	SupplierID string    `json:"supplier_id"`
+	Name       string    `json:"name"`
+	Status     string    `json:"status"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// EventType returns product.supplier.updated.v1.
+func (ProductSupplierUpdatedV1) EventType() string { return TypeProductSupplierUpdatedV1 }
+
+// ProductUpdatedV1 is the payload of product.updated.v1.
+//
+// A shop admin changed a product. Carries the product's new state.
+type ProductUpdatedV1 struct {
+	ProductID   string    `json:"product_id"`
+	SupplierID  *string   `json:"supplier_id,omitempty"`
+	Name        string    `json:"name"`
+	Status      string    `json:"status"`
+	IsDigital   bool      `json:"is_digital"`
+	CategoryIds []string  `json:"category_ids"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// EventType returns product.updated.v1.
+func (ProductUpdatedV1) EventType() string { return TypeProductUpdatedV1 }
+
+// ProductVariantAddedV1 is the payload of product.variant.added.v1.
+//
+// A shop admin added a variant axis (e.g. color) to a product.
+type ProductVariantAddedV1 struct {
+	VariantID string    `json:"variant_id"`
+	ProductID string    `json:"product_id"`
+	AxisName  string    `json:"axis_name"`
+	Values    []string  `json:"values"`
+	AddedAt   time.Time `json:"added_at"`
+}
+
+// EventType returns product.variant.added.v1.
+func (ProductVariantAddedV1) EventType() string { return TypeProductVariantAddedV1 }

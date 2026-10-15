@@ -2,6 +2,10 @@ service: yc-gateway
 environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
+# Registration endpoints (ADR-020 rule 6). Never expose outside the
+# platform network: it has no authentication until service tokens exist.
+internal_http:
+  listen: ":8091"
 log:
   level: ${LOG_LEVEL:-info}
 database:
@@ -18,10 +22,33 @@ upstreams:
 
 # Static routes (docs/services/yc-gateway.md, Routing). Longest prefix wins;
 # empty roles admit any actor, visitors included. /internal/ is never routed.
+# Services add their own routes by registering; a registered route may not
+# reuse a static prefix.
 routes:
   - prefix: /me
     methods: [GET]
     upstream: identity
+  - prefix: /register
+    methods: [POST]
+    upstream: identity
+  - prefix: /login
+    methods: [POST]
+    upstream: identity
+    anonymous: true
+  - prefix: /admin/users
+    upstream: identity
+    roles: [shop_admin, system_admin]
+
+# Registered services are polled at health_url; failure_threshold
+# consecutive failures deregister them (ADR-020 rule 7).
+registry:
+  health_interval: 5s
+  health_timeout: 2s
+  failure_threshold: 3
+
+# Hostnames that resolve to _platform: system admins only, no visitors
+# (ADR-020 rule 5).
+platform_hosts: []
 
 # Static hostname → tenant map, loaded before tenant_hosts (ADR-020). Tenants
 # are normally added by platform.tenant.provisioned.v1.

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.deleted.v1.json",
+  "title": "product.deleted.v1",
+  "description": "A shop admin soft-deleted a product and, with it, its SKUs. yc-image deletes images owned by the product.",
+  "type": "object",
+  "required": ["product_id", "sku_ids", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sku_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "description": "SKUs deleted with the product; no separate product.sku.deleted.v1 is published for them."
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

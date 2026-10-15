@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.sku.deleted.v1.json",
+  "title": "product.sku.deleted.v1",
+  "description": "A shop admin soft-deleted a SKU. yc-pricing expires its base price.",
+  "type": "object",
+  "required": ["sku_id", "product_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

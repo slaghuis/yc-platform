@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.promoted.v1.json",
+  "title": "identity.user.promoted.v1",
+  "description": "A system admin raised a user's role. The envelope actor is the system admin. Tokens issued before the promotion stop validating.",
+  "type": "object",
+  "required": ["user_id", "from_role", "to_role", "promoted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "from_role": {
+      "type": "string",
+      "enum": ["visitor", "customer", "shop_admin"]
+    },
+    "to_role": {
+      "type": "string",
+      "enum": ["customer", "shop_admin"]
+    },
+    "promoted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

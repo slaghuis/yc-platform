@@ -97,6 +97,17 @@ Direct upload is simpler for v1 but presigned upload avoids streaming large file
 |---|---|---|---|
 | POST | `/internal/images/bulk-delete` | Bulk delete by owner reference | service |
 
+### Phase 2 Implementation Notes
+
+The contract is `services/yc-image/api/openapi.yaml`. Differences from the tables above:
+
+- **Admin paths.** yc-gateway routes by prefix and grants roles per prefix, so the shop-admin operations live under `/admin/images`: `POST /admin/images` (multipart: `file`, optional `owner_ref`), `POST /admin/images/upload-url`, `POST /admin/images/{id}/finalize` and `DELETE /admin/images/{id}`. `/images` is read-only (GET) and open to anyone. System admins act on a shop through shop-admin tokens; `_platform` cannot own images.
+- **Processing is asynchronous through yc-image's own consumer** of `image.uploaded.v1` (durable `yc-image-processor`, 2-minute ack wait), so it survives restarts and retries. Uploads return 202 with status `processing`. The upload is checked synchronously (type sniffed from the bytes, dimensions, pixel count, aspect ratio, size), but an image that only fails when fully decoded, such as a truncated file, becomes `failed` with reason `corrupt` and `image.processing_failed.v1` is published.
+- **Variants.** Each of xlarge/large/medium/thumbnail is rendered as WebP and JPEG (CatmullRom, scaled from the previous size, never enlarged). The original is re-encoded in its own format (GIF becomes PNG), which strips EXIF and other metadata. JPEG EXIF orientation is not applied yet. `GET /images/{id}/variants/{variant}` redirects (302) to WebP unless `format=jpeg`; the original has a single format.
+- **Presigned uploads** sign the declared `Content-Type`, which must be an image type, and the client must send it (`headers` in the response). The bucket is publicly readable, so an unvalidated upload can never be served as anything but an image. `finalize` returns 409 until something has been uploaded and fails the image (400) if it is not a valid image.
+- **Storage keys** are `<tenant>/<image>/<variant>.<ext>`; the staged upload is `<tenant>/<image>/upload` and is deleted after processing. URLs are `storage.public_base_url` + key (the bucket's public-read URL in dev, `http://localhost:9000/yc-images`). Delete removes every object under the image's prefix; files are immutable (`Cache-Control: immutable`).
+- **Not yet:** the internal bulk delete, deleting images when their owner is deleted, CDN purge, HEIC/AVIF and per-tenant quotas.
+
 ## Database Schema
 
 Database: **`yc_image`**
@@ -168,6 +179,7 @@ CREATE POLICY tenant_isolation ON images
 
 | Event | Action |
 |---|---|
+| `image.uploaded.v1` (its own) | Render the variants and mark the image ready or failed |
 | `product.deleted.v1` | Delete images with `owner_ref = "product:<id>"` |
 | `product.sku.deleted.v1` | Delete images with `owner_ref = "sku:<id>"` |
 | `review.rejected.v1` | Delete images attached to the review (if any) |
