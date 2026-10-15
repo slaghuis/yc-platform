@@ -1,6 +1,6 @@
 # ADR-030: Admin Invitations and Platform Team
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-15
 **Context:** v1 has two ways to create an administrator, and neither works from a console. The first system admin comes from `yc-identity bootstrap-admin` on the server; there is no way to add a second. Shop admins register as customers on their shop and a system admin promotes them (`POST /admin/users/{id}/promote`, `role: shop_admin` only), which needs the two people to coordinate and is the first item in backlog-v2 P1. `platform.tenant.provisioned.v1` already carries `primary_admin_email` ("invited by yc-message"), but nothing acts on it. Demote and suspend are in yc-identity's spec but were never built. The console (yc-platform-admin) needs to manage the platform team, and creating a shop there should hand it to its first shop admin without a manual step. Versioned event schemas are immutable, so `identity.user.registered.v1` (role `customer` only) and `identity.user.promoted.v1` (to `shop_admin` at most) cannot describe an invited administrator.
 

@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	"github.com/slaghuis/yc-platform/services/yc-message/internal/domain"
 )
 
@@ -24,12 +25,26 @@ type SendRequest struct {
 	Context map[string]any
 }
 
+// platformSendTypes are the messages Send accepts for the platform tenant:
+// those for system admins, who belong to no shop.
+var platformSendTypes = map[domain.Type]bool{domain.TypePasswordReset: true}
+
 // Send queues a message for another service, such as a password reset
 // from yc-identity, whose context must not travel on the event bus.
 func (s *Service) Send(ctx context.Context, r SendRequest) (domain.Message, error) {
+	tenantID := callerTenant(ctx)
 	v := ycerrors.Validation()
 	if !r.Type.Valid() {
 		v.Field("type", "invalid", "Unknown message type")
+	}
+	if tenantID == eventbus.PlatformTenantID {
+		if r.Type.Valid() && !platformSendTypes[r.Type] {
+			v.Field("type", "invalid", "Messages of type "+string(r.Type)+" belong to a shop")
+		}
+		// System admins have no preferences to resolve an address from.
+		if r.Address == "" {
+			v.Field("address", "required", "An address is required for the platform")
+		}
 	}
 	if r.Reference == "" {
 		v.Field("reference", "required", "Reference is required")
@@ -61,7 +76,7 @@ func (s *Service) Send(ctx context.Context, r SendRequest) (domain.Message, erro
 		}
 	}
 	var m domain.Message
-	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+	err := s.inAnyTenant(ctx, tenantID, func(tx pgx.Tx, tenantID string) error {
 		var err error
 		m, err = s.queue(ctx, tx, tenantID, request{Type: r.Type, Reference: "send:" + r.Reference, To: to, Context: r.Context})
 		return err

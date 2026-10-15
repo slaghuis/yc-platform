@@ -94,6 +94,20 @@ func LoadConfig() (Config, error) {
 	return cfg, err
 }
 
+// splitList splits comma-separated entries: an environment override of a
+// list arrives as one string.
+func splitList(items []string) []string {
+	var out []string
+	for _, item := range items {
+		for s := range strings.SplitSeq(item, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
 // Validate reports missing or inconsistent settings.
 func (c *Config) Validate() error {
 	var errs []error
@@ -157,13 +171,12 @@ func (c *Config) routes() ([]domain.Route, error) {
 	return routes, nil
 }
 
+func (c *Config) platformHosts() []string { return splitList(c.PlatformHosts) }
+
 func (c *Config) trustedProxies() ([]netip.Prefix, error) {
-	prefixes := make([]netip.Prefix, 0, len(c.TrustedProxies))
-	for _, s := range c.TrustedProxies {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
+	entries := splitList(c.TrustedProxies)
+	prefixes := make([]netip.Prefix, 0, len(entries))
+	for _, s := range entries {
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
 			addr, aerr := netip.ParseAddr(s)

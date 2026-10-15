@@ -1,6 +1,6 @@
 # ADR-031: Demo Environment Hosting
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-15
 **Context:** ADR-026 kept the platform target-neutral and deferred the hosting choice "with the first tenant", requiring its own ADR. The first public deployment is now near: `yellowcommerce.co.za` (marketing site and console) and `yellowcommercedemo.co.za` (a demonstration shop for a fictitious customer). Real domains need TLS, and Yoco and Stripe webhooks need public HTTPS (`runbooks/onboarding-tenant.md`). No paying tenant depends on it, it runs one replica per service anyway (ADR-026 rule 5), and Docker Compose is already the reference deployment that the load and chaos tests ran against. `pipeline.yaml` names Kubernetes contexts that don't exist (backlog-v2 P1).
 

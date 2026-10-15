@@ -92,7 +92,7 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	}
 	a.closers = append(a.closers, func(context.Context) error { db.Close(); return nil })
 
-	if a.Hosts, err = service.NewHosts(db, cfg.staticHosts(), cfg.PlatformHosts); err != nil {
+	if a.Hosts, err = service.NewHosts(db, cfg.staticHosts(), cfg.platformHosts()); err != nil {
 		return nil, err
 	}
 	if err := a.Hosts.Load(ctx); err != nil {

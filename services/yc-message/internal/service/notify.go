@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"net/http"
-	"net/url"
 
 	"github.com/jackc/pgx/v5"
 
@@ -55,7 +54,7 @@ func (s *Service) OrderShipped(ctx context.Context, tenantID, eventID string, p 
 	}
 	return s.orderMessage(ctx, tenantID, eventID, domain.TypeOrderShipped, p.OrderID, map[string]any{
 		"tracking_number": p.TrackingNumber, "carrier": carrier,
-		"tracking_url": s.shopURL(tenantID) + "/shipping/tracking/" + url.PathEscape(p.TrackingNumber),
+		"tracking_url": s.links(tenantID).Tracking(p.TrackingNumber),
 	})
 }
 
@@ -91,7 +90,7 @@ func (s *Service) CartAbandoned(ctx context.Context, tenantID, eventID string, p
 		return s.skipped(ctx, err, domain.TypeCartAbandoned, p.CartID)
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeCartAbandoned, to, map[string]any{
-		"item_count": p.ItemCount, "quantity": p.Quantity, "cart_url": s.shopURL(tenantID) + "/cart",
+		"item_count": p.ItemCount, "quantity": p.Quantity, "cart_url": s.links(tenantID).Cart(),
 	})
 }
 
@@ -105,7 +104,7 @@ func (s *Service) ReviewPrompt(ctx context.Context, tenantID, eventID string, p 
 	products := make([]map[string]any, len(p.Products))
 	for i, pr := range p.Products {
 		products[i] = map[string]any{
-			"name": pr.Name, "review_url": s.shopURL(tenantID) + "/products/" + url.PathEscape(pr.ProductID) + "#review",
+			"name": pr.Name, "review_url": s.links(tenantID).Review(pr.ProductID),
 		}
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeReviewPrompt, to, map[string]any{
@@ -170,7 +169,7 @@ func (s *Service) skipped(ctx context.Context, err error, t domain.Type, subject
 }
 
 func (s *Service) orderURL(tenantID, orderID string) string {
-	return s.shopURL(tenantID) + "/orders/" + url.PathEscape(orderID)
+	return s.links(tenantID).Order(orderID)
 }
 
 func eventMoney(m events.Money) string {

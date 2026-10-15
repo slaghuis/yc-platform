@@ -22,7 +22,7 @@ Conventions for HTTP APIs exposed by services and consumed through yc-gateway. T
 | Prefix | Audience | Auth |
 |---|---|---|
 | `/` (root) | Public — visitors and customers | Any token |
-| `/admin/` | Shop admins | Role: shop_admin or system_admin |
+| `/admin/` | Shop admins | Role: shop_admin (system_admin only where the route says so, e.g. yc-identity `/admin/users`) |
 | `/sysadmin/` | System admins | Role: system_admin |
 | `/internal/` | Service-to-service | Service token |
 | `/webhooks/` | External providers | Signature verification |
@@ -286,9 +286,9 @@ These endpoints are **always unauthenticated** and must be fast.
 
 ## 18. CORS
 
-- yc-gateway handles CORS centrally.
-- Services do not set CORS headers.
-- Allowed origins configured per tenant.
+- Browsers do not call yc-gateway: they call their frontend, whose server calls the gateway (ADR-027). The gateway and the services set no CORS headers.
+- Direct browser or third-party access, when added, comes with per-tenant CORS in yc-gateway and its own ADR (ADR-027 rule 16).
+- Object storage allows presigned `PUT` uploads from shop hostnames only (ADR-027 rule 15).
 
 ## 19. Rate Limiting
 
@@ -304,5 +304,26 @@ When an endpoint is to be removed:
 2. Add response header `Deprecation: true` and `Sunset: <date>`.
 3. Announce in release notes.
 4. Minimum deprecation period: 90 days before removal.
+
+## 21. Storefront URL Contract
+
+Services that put links in emails or redirects link to **frontend pages**, never to API paths. On a shop's hostnames the storefront owns every path except `/webhooks/` (ADR-027 rule 12):
+
+| Page | Built by |
+|---|---|
+| `/` | yc-message (`shop_url`) |
+| `/products/{product_id}#review` | yc-message review prompt |
+| `/cart` | yc-message abandoned cart |
+| `/orders/{order_id}` | yc-message order emails |
+| `/shipping/tracking/{tracking_number}` | yc-message shipped email |
+| `/account/reset-password?token=…` | yc-identity `password.reset_url` |
+| `/account/accept-invite?token=…` | yc-identity invitations (ADR-030) |
+| `/oauth/{provider}/callback` | yc-identity `oauth.<provider>.redirect_url` |
+| `/checkout/{session_id}/return` | the storefront itself, as the `return_url` it sends to yc-checkout confirm for hosted payments |
+
+- Path segments taken from data are escaped (`url.PathEscape`).
+- yc-message builds its links in one place (`internal/domain/links.go`), and `links_test.go` pins the paths; a failing test there means emails link to pages the storefront does not serve.
+- Adding or moving a link is a breaking change for the frontends: update ADR-027's table, this section and the storefront in the same release, and call it out in the release notes (ADR-028 rule 12).
+- Platform hosts follow the same rule: the console owns every path, including `/account/reset-password` and `/account/accept-invite` for system admins.
 
 ---

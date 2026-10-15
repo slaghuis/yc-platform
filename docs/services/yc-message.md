@@ -158,7 +158,7 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 
 - **Message types:** `welcome`, `password_reset`, `channel_verification`, `order_confirmation`, `order_shipped`, `order_delivered`, `order_cancelled`, `order_refunded`, `cart_abandoned` and `review_prompt`, each with an email and an SMS default in `en`. Defaults are embedded in the binary (`internal/domain/defaults.go`), not seeded into the database.
 - **Templates:** `GET /admin/templates` lists the shop's templates and the defaults; `GET`, `PUT` and `DELETE /admin/templates/{type}/{channel}/{locale}` read, override and remove one (removing restores the default); `POST .../test` sends it with sample values to an address the admin gives. A template must render against the type's sample context. Lookup order: the shop's template for the locale, its language, the shop's `en`, the default.
-- **Links** in messages use `messages.shop_url` with `{tenant}` replaced (`http://{tenant}.localhost:8090` in the dev stack).
+- **Links** in messages use `messages.shop_url` with `{tenant}` replaced (`http://{tenant}.localhost:8070` in the dev stack: the storefront behind the dev edge). The paths are the storefront URL contract (api-conventions §21), built in `internal/domain/links.go`.
 - **Delivery:** the dispatcher runs every `messages.dispatch_interval` (2 s) and when a message is queued; `messages.max_attempts` (5) with `messages.retry_backoff` (30 s, doubling, capped at an hour). Statuses: `queued`, `sent`, `delivered`, `failed`, `bounced`. Sent and failed password reset and verification messages have their body replaced with `[redacted]`.
 - **Fake SMS** (`sms.driver: fake`, development only) mails each SMS to `<digits>@sms.test` through SMTP; `POST /webhooks/fake-sms` with the provider message ID marks it `delivered` or `bounced` when `sms.fake_webhook` is on.
 - **Verification:** `POST /internal/channels/verify-start` and `verify-confirm` are called by yc-preference; codes are 6 digits, hashed, 15 minutes, 5 tries, one resend a minute. `preference.channel.added.v1` starts a verification for email and SMS channels.
@@ -170,6 +170,10 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 - **Milestones:** `analytics.milestone.reached.v1` becomes a `milestone` email to the shop admins.
 - **Missing recipients:** when yc-preference answers 404 for a customer, the message is skipped; any other failure (including 503 while yc-preference is down) retries the event, so it dead-letters after `MaxRetries` and can be replayed with `yc-dlq-cli`. `nats.retry_backoff` (`YC_MESSAGE_EVENT_RETRY_BACKOFF`, comma-separated durations) shortens the redelivery backoff for demos.
 - **GDPR:** see GDPR Behavior.
+
+### Phase 10 Implementation Notes
+
+- **Platform sends:** `POST /internal/send` from a `_platform` caller is accepted for `password_reset` only and must carry an `address` (system admins have no yc-preference record). It is queued and sent under `_platform`. Before this, yc-message refused the request and yc-identity logged "password reset link not sent" while still answering 202, so system admins never received reset emails.
 
 ## Database Schema
 

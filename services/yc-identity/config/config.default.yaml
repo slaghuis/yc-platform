@@ -68,10 +68,10 @@ oauth:
   google:
     client_id: ${YC_IDENTITY_GOOGLE_CLIENT_ID}
     client_secret: ${YC_IDENTITY_GOOGLE_CLIENT_SECRET}
-    redirect_url: "https://{host}/auth/callback/google"
+    redirect_url: "https://{host}/oauth/google/callback"
     fake: ${YC_IDENTITY_OAUTH_FAKE:-false}
   facebook:
     client_id: ${YC_IDENTITY_FACEBOOK_CLIENT_ID}
     client_secret: ${YC_IDENTITY_FACEBOOK_CLIENT_SECRET}
-    redirect_url: "https://{host}/auth/callback/facebook"
+    redirect_url: "https://{host}/oauth/facebook/callback"
     fake: ${YC_IDENTITY_OAUTH_FAKE:-false}

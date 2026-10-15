@@ -114,9 +114,12 @@ services:
       YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET:-dev-review-service-secret-32-chars!}
       YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET:-dev-shipping-service-secret-32char}
       # Password reset links go out through yc-message (gateway internal
-      # listener); the dev shops are plain HTTP on the gateway's port.
+      # listener). Reset and OAuth pages belong to the frontends behind the
+      # dev edge (--profile frontends, plain HTTP on YC_EDGE_PORT, default 8070, ADR-027).
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
-      YC_IDENTITY__PASSWORD__RESET_URL: http://{host}/account/reset-password?token={token}
+      YC_IDENTITY__PASSWORD__RESET_URL: http://{host}:${YC_EDGE_PORT:-8070}/account/reset-password?token={token}
+      YC_IDENTITY__OAUTH__GOOGLE__REDIRECT_URL: http://{host}:${YC_EDGE_PORT:-8070}/oauth/google/callback
+      YC_IDENTITY__OAUTH__FACEBOOK__REDIRECT_URL: http://{host}:${YC_EDGE_PORT:-8070}/oauth/facebook/callback
       # Dev only: fake Google/Facebook sign-in; reset links in the log too.
       YC_IDENTITY_OAUTH_FAKE: ${YC_IDENTITY_OAUTH_FAKE:-true}
       YC_IDENTITY_LOG_RESET_LINKS: ${YC_IDENTITY_LOG_RESET_LINKS:-false}
@@ -147,8 +150,11 @@ services:
       # admin.localhost resolves to _platform: system admins only.
       YC_GATEWAY__PLATFORM_HOSTS: admin.localhost
       YC_GATEWAY_RATE_LIMIT: ${YC_GATEWAY_RATE_LIMIT:-true}
-      # The load test trusts its own containers to simulate many clients.
-      YC_GATEWAY__TRUSTED_PROXIES: ${YC_GATEWAY_TRUSTED_PROXIES:-}
+      # Dev trusts every private range: the dev edge and the frontends (on
+      # the host, reaching the gateway from Docker's bridge) forward the
+      # browser's address (ADR-027 rule 3). The load test narrows it to its
+      # own network.
+      YC_GATEWAY__TRUSTED_PROXIES: ${YC_GATEWAY_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -418,7 +424,8 @@ services:
 
   # Turns events into customer emails and SMS (ADR-023): email through
   # MailHog, SMS through the fake driver, which mails each one to
-  # <number>@sms.test. Links point at http://<tenant>.localhost:8090.
+  # <number>@sms.test. Links point at the storefront behind the dev edge,
+  # http://<tenant>.localhost:8070 (YC_EDGE_PORT).
   yc-message:
     profiles: [app]
     build:
@@ -433,7 +440,7 @@ services:
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
       SMTP_ADDR: mailhog:1025
-      YC_MESSAGE_SHOP_URL: http://{tenant}.localhost:8090
+      YC_MESSAGE_SHOP_URL: http://{tenant}.localhost:${YC_EDGE_PORT:-8070}
       YC_MESSAGE_SYSTEM_ADMIN_EMAILS: ${YC_MESSAGE_SYSTEM_ADMIN_EMAILS:-ops@yourcommerce.test}
       YC_MESSAGE_EVENT_RETRY_BACKOFF: ${YC_MESSAGE_EVENT_RETRY_BACKOFF:-}
       NATS_URL: nats://nats:4222
@@ -513,6 +520,33 @@ services:
     ports:
       - "8098:8080"
     depends_on: *infra
+
+  # The dev edge (ADR-027 rules 1-2): admin.localhost to the console, every
+  # other *.localhost to the shop, and /webhooks/ on shop hosts to the
+  # gateway, on YC_EDGE_PORT (default 8070; the reset, OAuth and message
+  # links above use the same port). The frontends run on the host (pnpm
+  # dev); point the edge elsewhere with YC_EDGE_ADMIN_UPSTREAM and
+  # YC_EDGE_SHOP_UPSTREAM.
+  edge:
+    profiles: [frontends]
+    image: caddy:2.10-alpine
+    container_name: yc-edge
+    restart: unless-stopped
+    environment:
+      YC_EDGE_PORT: ${YC_EDGE_PORT:-8070}
+      YC_EDGE_ADMIN_UPSTREAM: ${YC_EDGE_ADMIN_UPSTREAM:-host.docker.internal:3000}
+      YC_EDGE_SHOP_UPSTREAM: ${YC_EDGE_SHOP_UPSTREAM:-host.docker.internal:3001}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./deploy/compose/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    ports:
+      - "${YC_EDGE_PORT:-8070}:${YC_EDGE_PORT:-8070}"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   pgdata:

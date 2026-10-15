@@ -10,7 +10,7 @@ v1 (`implementation-plan.md`, Phases 0–9) delivered the platform as APIs only.
 
 Each frontend repository has its own `docs/implementation-plan.md`; this document owns the platform phases and the cross-repository schedule.
 
-The decisions are ADR-027 (edge topology and backend-for-frontend), ADR-028 (frontend stack and API contract), ADR-029 (tenant registry), ADR-030 (admin invitations and platform team) and ADR-031 (demo hosting). All five are **Proposed**; Phase 10 starts by accepting or amending them.
+The decisions are ADR-027 (edge topology and backend-for-frontend), ADR-028 (frontend stack and API contract), ADR-029 (tenant registry), ADR-030 (admin invitations and platform team) and ADR-031 (demo hosting). All five were accepted at the start of Phase 10.
 
 ---
 
@@ -77,10 +77,10 @@ Make the platform consumable by a backend-for-frontend, locally, with no new ser
 
 - Accept or amend ADR-027 to ADR-031; record the outcome in `docs/adr/README.md`
 - Merge Phase 9, tag `v1.0.0` on `main`, and start semver tags (ADR-028 rule 12)
-- **Dev edge:** a `frontends` Compose profile with Caddy on `:8080` routing `admin.localhost` to the console (default `host.docker.internal:3000`) and `yc-demo.localhost` to the shop (`host.docker.internal:3001`), with `/webhooks/*` on shop hosts to yc-gateway (ADR-027 rules 1–2)
+- **Dev edge:** a `frontends` Compose profile with Caddy on `YC_EDGE_PORT` (default `:8070`; `:8080` is commonly taken) routing `admin.localhost` to the console (default `host.docker.internal:3000`) and `yc-demo.localhost` to the shop (`host.docker.internal:3001`), with `/webhooks/*` on shop hosts to yc-gateway (ADR-027 rules 1–2)
 - **yc-gateway configuration:** dev `trusted_proxies` covering the edge and the host's Docker bridge address; a test proving that a request forwarded by a trusted proxy is rate-limited by the browser's address
 - **Dev tenant:** a new `task devstack:seed` provisions `yc-demo` with `yc-demo.localhost` (the frontends' development shop), creates the bootstrap system admin, and a shop admin for `yc-demo` by register-then-promote
-- **Links to storefront pages:** dev `YC_IDENTITY__PASSWORD__RESET_URL` and OAuth `redirect_url` pointing at the edge (`http://{host}:8080/...`), yc-message `shop_url` at `http://{tenant}.localhost:8080` until Phase 11 replaces it
+- **Links to storefront pages:** dev `YC_IDENTITY__PASSWORD__RESET_URL` and OAuth `redirect_url` pointing at the edge (`http://{host}:8070/...`), yc-message `shop_url` at `http://{tenant}.localhost:8070` until Phase 11 replaces it
 - **Object storage CORS** for presigned `PUT` from shop hostnames (ADR-027 rule 15)
 - **Storefront URL contract** documented in `docs/standards/api-conventions.md` (new section, pointing at ADR-027 rule 12), and a test in yc-message asserting the link paths it builds
 - `docs/onboarding/frontend-development.md`: running the stack for frontend work, dev hostnames, seeding, the bootstrap system admin, creating a dev shop admin
@@ -94,7 +94,7 @@ Make the platform consumable by a backend-for-frontend, locally, with no new ser
 
 ```
 task devstack:up && task devstack:app && task devstack:seed
-docker compose --profile frontends up -d                          # the dev edge on :8080
+docker compose --profile frontends up -d                          # the dev edge on :8070 (task devstack:edge)
 curl -H 'Host: yc-demo.localhost' localhost:8090/products        # catalogue through the gateway
 curl -H 'Host: admin.localhost' -X POST localhost:8090/login ...  # system admin token
 git tag v1.1.0-alpha.1
@@ -103,7 +103,7 @@ git tag v1.1.0-alpha.1
 ### Exit criteria
 
 - The dev edge routes both hostnames and webhooks as ADR-027 describes
-- A password-reset email in MailHog links to `http://yc-demo.localhost:8080/account/reset-password?token=…`
+- A password-reset email in MailHog links to `http://yc-demo.localhost:8070/account/reset-password?token=…`
 - `v1.0.0` and `v1.1.0-alpha.1` tags exist; the frontends can pin the latter
 
 ---
@@ -225,8 +225,6 @@ Everything else stays in `backlog-v2.md`. The service-token-for-route-registrati
 
 | Decision | Needed by | Owner |
 |---|---|---|
-| Accept, amend or reject ADR-027 to ADR-031 | Start of Phase 10 | Platform owner |
 | The fictitious customer: name, product range, brand | S1 (placeholder brand until then) | Product owner |
 | Hosting provider and mail provider (ADR-031) | Start of Phase 13 | Platform owner |
 | Product marketing beyond what v1 supports (promotions, campaigns) | After v1.1; see yc-platform-shop requirements | Product owner |
-| GitHub repositories and visibility for the two frontends | Phase 10 | Platform owner |

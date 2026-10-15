@@ -157,6 +157,16 @@ tasks:
       - docker compose --profile app up -d --build
       - ./scripts/wait-for-stack.sh --app
 
+  devstack:seed:
+    desc: Seed the dev stack for frontend work (system admin, yc-demo shop and shop admin, bucket CORS)
+    cmds:
+      - ./scripts/seed-dev.sh
+
+  devstack:edge:
+    desc: Start the dev edge for the frontends (Caddy on YC_EDGE_PORT, default 8070)
+    cmds:
+      - docker compose --profile frontends up -d edge
+
   demo:phase1:
     desc: Run the Phase 1 milestone demo against the running stack (see scripts/demo-phase1.sh)
     cmds:
