@@ -126,7 +126,7 @@ tasks:
       - ./scripts/wait-for-stack.sh
 
   devstack:app:
-    desc: Build and start the Phase 1 services (yc-identity, yc-gateway, yc-monitor) on the dev stack
+    desc: Build and start the application services (gateway, identity, monitor, product, pricing, image) on the dev stack
     cmds:
       - ./scripts/gen-dev-jwt-keys.sh
       - docker compose --profile app up -d --build
@@ -136,6 +136,11 @@ tasks:
     desc: Run the Phase 1 milestone demo against the running stack (see scripts/demo-phase1.sh)
     cmds:
       - ./scripts/demo-phase1.sh
+
+  demo:phase2:
+    desc: Run the Phase 2 milestone demo against the running stack (see scripts/demo-phase2.sh)
+    cmds:
+      - ./scripts/demo-phase2.sh
 
   devstack:down:
     desc: Stop local dev stack

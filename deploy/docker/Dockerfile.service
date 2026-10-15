@@ -21,13 +21,14 @@ COPY services/ services/
 COPY test/ test/
 COPY tools/ tools/
 
-# Build with cache mounts
+# Build with cache mounts. nodynamic stops gen2brain/webp (yc-image) linking
+# purego's dynamic loader, which distroless/static cannot run.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd services/${SERVICE} && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
-      -trimpath \
+      -trimpath -tags=nodynamic \
       -ldflags="-s -w -X main.version=$(git describe --tags --always 2>/dev/null || echo dev) -X main.builtAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       -o /out/service \
       ./cmd/${SERVICE}

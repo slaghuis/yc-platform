@@ -99,6 +99,17 @@ Access tokens are **JWTs** signed by yc-identity. Claims include:
 
 OpenAPI spec stub lives at `/services/yc-identity/api/openapi.yaml`.
 
+### Phase 2 Implementation Notes
+
+The contract is `services/yc-identity/api/openapi.yaml`. Implemented: `/visitor` (through the gateway), `/register`, `/login`, `/me`, `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/promote` and `/internal/validate-token`. Refresh tokens, logout, OAuth, password reset, demote, suspend and delete come later.
+
+- **Passwords** are hashed with Argon2id (`password.argon2`: time 2, 64 MiB, 2 threads by default; weaker settings are rejected at start-up).
+- **Registration** turns the calling visitor into a customer in place: the user ID is kept, so the visitor's cart and history follow, and the visitor token stops validating. A caller without a visitor gets a new customer. Emails are unique per tenant.
+- **Login** looks the email up in the tenant yc-gateway resolved and returns the same 401 for an unknown email and a wrong password. On the platform host (`admin.localhost` in dev) that tenant is `_platform`, so only system admins can log in there. `identity.user.login_failed.v1` is not published yet.
+- **The first system admin** is created by `yc-identity bootstrap-admin --email <email>`, with the password from `YC_BOOTSTRAP_ADMIN_PASSWORD` or stdin. It is idempotent: an existing email is left unchanged.
+- **Shop admins** register as customers on their shop, and a system admin promotes them (`{"role": "shop_admin"}`). Only customers can be promoted, and only to shop_admin of their own tenant. Promotion publishes `identity.user.promoted.v1`, and tokens issued before it stop validating because `/internal/validate-token` checks the user's current role.
+- **Listing users**: shop admins see their own tenant; system admins see every tenant or filter with `tenant_id`. Results are newest first, cursor-paginated.
+
 ## Database Schema
 
 Database: **`yc_identity`**

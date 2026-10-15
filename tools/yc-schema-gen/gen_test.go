@@ -15,6 +15,7 @@ func TestPascal(t *testing.T) {
 		"phone_e164":                  "PhoneE164",
 		"base_url":                    "BaseURL",
 		"health_check_failed":         "HealthCheckFailed",
+		"image/jpeg":                  "ImageJpeg",
 	} {
 		if got := pascal(in); got != want {
 			t.Errorf("pascal(%q) = %q, want %q", in, got, want)

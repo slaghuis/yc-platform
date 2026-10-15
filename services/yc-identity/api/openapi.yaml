@@ -1,20 +1,23 @@
 openapi: 3.1.0
 info:
   title: yc-identity
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Authentication and user identity (docs/services/yc-identity.md).
-    Phase 1 subset: visitor tokens, token validation and the caller's own user.
-    Public routes are reached through yc-gateway, which sets the X-YC-* headers;
+    Phase 2 subset: visitor tokens, email + password registration and login,
+    the caller's own user, user administration and token validation.
+
+    Public routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /admin/ requires shop_admin or system_admin;
     /internal/ routes are reachable only inside the platform network.
+    Errors are application/problem+json (error-handling.md).
 
 paths:
   /visitor:
     post:
       summary: Issue a visitor token for the tenant yc-gateway resolved
       operationId: createVisitor
-      parameters:
-        - $ref: '#/components/parameters/TenantID'
       responses:
         '201':
           description: Visitor created; identity.visitor.created.v1 is published.
@@ -23,21 +26,121 @@ paths:
               schema: { $ref: '#/components/schemas/Session' }
         '400': { $ref: '#/components/responses/Problem' }
 
+  /register:
+    post:
+      summary: Register with email and password
+      description: |
+        The calling visitor becomes a customer in place and keeps its user ID.
+        Publishes identity.user.registered.v1. The visitor token stops
+        validating; use the returned customer token.
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /login:
+    post:
+      summary: Log in with email and password
+      description: |
+        Looks the email up in the tenant yc-gateway resolved; on an admin
+        host that is _platform, so only system admins can log in there.
+        Publishes identity.user.logged_in.v1.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+
   /me:
     get:
       summary: The caller's own user
       operationId: getMe
-      parameters:
-        - $ref: '#/components/parameters/TenantID'
-        - $ref: '#/components/parameters/ActorID'
-        - $ref: '#/components/parameters/ActorType'
       responses:
         '200':
           description: The user.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Me' }
+              schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/users:
+    get:
+      summary: List users
+      description: |
+        Shop admins see their own tenant. System admins see every tenant and
+        may filter by tenant_id. Newest first.
+      operationId: listUsers
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: email, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of users.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/users/{id}:
+    get:
+      summary: Get a user
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/users/{id}/promote:
+    post:
+      summary: Promote a user (system_admin)
+      description: |
+        Raises a customer to shop_admin of their own tenant. Publishes
+        identity.user.promoted.v1; the user's existing tokens stop validating.
+      operationId: promoteUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromoteRequest' }
+      responses:
+        '200':
+          description: The promoted user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
   /internal/validate-token:
@@ -56,7 +159,7 @@ paths:
                 token: { type: string }
       responses:
         '200':
-          description: The token is valid and its user is active.
+          description: The token is valid, its user is active and still has the token's role.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenIdentity' }
@@ -65,36 +168,58 @@ paths:
 
 components:
   parameters:
-    TenantID:
-      name: X-YC-Tenant-ID
-      in: header
-      required: true
-      description: Set by yc-gateway from the request hostname.
-      schema: { type: string }
-    ActorID:
-      name: X-YC-Actor-ID
-      in: header
+    UserID:
+      name: id
+      in: path
       required: true
       schema: { type: string, format: uuid }
-    ActorType:
-      name: X-YC-Actor-Type
-      in: header
-      required: true
-      schema: { $ref: '#/components/schemas/ActorType' }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
 
   schemas:
     ActorType:
       type: string
       enum: [visitor, customer, shop_admin, system_admin, service]
+    Role:
+      type: string
+      enum: [visitor, customer, shop_admin, system_admin]
     Session:
       type: object
-      required: [access_token, token_type, expires_at, user_id, tenant_id]
+      required: [access_token, token_type, expires_at, user_id, tenant_id, role]
       properties:
         access_token: { type: string, description: RS256 JWT }
         token_type: { type: string, const: Bearer }
         expires_at: { type: string, format: date-time }
         user_id: { type: string, format: uuid }
         tenant_id: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 10, maxLength: 128 }
+        display_name: { type: string, maxLength: 100 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string }
+        password: { type: string }
+    PromoteRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [shop_admin] }
     TokenIdentity:
       type: object
       required: [tenant_id, actor_id, actor_type, jti, expires_at]
@@ -104,15 +229,38 @@ components:
         actor_type: { $ref: '#/components/schemas/ActorType' }
         jti: { type: string, format: uuid }
         expires_at: { type: string, format: date-time }
-    Me:
+    User:
       type: object
       required: [user_id, tenant_id, role, status, created_at]
       properties:
         user_id: { type: string, format: uuid }
         tenant_id: { type: string }
-        role: { type: string, enum: [visitor, customer, shop_admin, system_admin] }
+        email: { type: string, description: Absent for visitors. }
+        display_name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
         status: { type: string, enum: [active, suspended, deleted] }
         created_at: { type: string, format: date-time }
+    UserList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
     Problem:
       type: object
       description: RFC 9457 problem details (docs/standards/error-handling.md).

@@ -11,6 +11,7 @@ import (
 const (
 	retentionYear = 365 * 24 * time.Hour
 	retentionDLQ  = 90 * 24 * time.Hour
+	retentionWeek = 7 * 24 * time.Hour
 )
 
 // DLQStreamName captures every dead-letter subject, yc.<tenant>.<domain>.dlq.v1.
@@ -57,3 +58,23 @@ func IdentityStream() StreamConfig { return DomainStream("identity", retentionYe
 
 // PlatformStream is the platform domain (unlimited retention, ADR-004).
 func PlatformStream() StreamConfig { return DomainStream("platform", 0) }
+
+// ProductStream is the product domain (1-year retention, ADR-004).
+func ProductStream() StreamConfig {
+	return DomainStream("product", retentionYear,
+		"product.created.v1", "product.updated.v1", "product.deleted.v1",
+		"product.image_attached.v1", "product.image_detached.v1")
+}
+
+// PricingStream is the pricing domain (1-year retention, ADR-004).
+func PricingStream() StreamConfig {
+	return DomainStream("pricing", retentionYear,
+		"pricing.exchange_rates_updated.v1", "pricing.exchange_rates_stale.v1")
+}
+
+// ImageStream is the image domain (7-day retention, ADR-004). Every image
+// event names the aggregate only, so all are listed.
+func ImageStream() StreamConfig {
+	return DomainStream("image", retentionWeek,
+		"image.uploaded.v1", "image.processed.v1", "image.processing_failed.v1", "image.deleted.v1")
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.base_price.removed.v1.json",
+  "title": "pricing.base_price.removed.v1",
+  "description": "A SKU no longer has a base price, because the SKU was deleted. It cannot be priced until a new price is set.",
+  "type": "object",
+  "required": ["sku_id", "removed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "removed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

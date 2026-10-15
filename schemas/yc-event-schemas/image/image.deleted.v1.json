@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/image/image.deleted.v1.json",
+  "title": "image.deleted.v1",
+  "description": "An image and its variants were deleted. yc-product removes references to it.",
+  "type": "object",
+  "required": ["image_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "image_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_ref": {
+      "type": "string",
+      "pattern": "^[a-z]+:[0-9a-f-]{36}$"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

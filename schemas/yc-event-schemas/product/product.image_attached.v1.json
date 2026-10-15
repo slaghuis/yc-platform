@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.image_attached.v1.json",
+  "title": "product.image_attached.v1",
+  "description": "A shop admin attached a yc-image image to a product.",
+  "type": "object",
+  "required": ["product_id", "image_id", "sort_order", "is_primary", "attached_at"],
+  "additionalProperties": false,
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "image_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sort_order": {
+      "type": "integer"
+    },
+    "is_primary": {
+      "type": "boolean"
+    },
+    "attached_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

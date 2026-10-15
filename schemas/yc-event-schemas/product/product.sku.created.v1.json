@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.sku.created.v1.json",
+  "title": "product.sku.created.v1",
+  "description": "A shop admin created a SKU. yc-pricing records its tax class (ADR-016); yc-inventory records whether stock is tracked (ADR-012).",
+  "type": "object",
+  "required": ["sku_id", "product_id", "sku_code", "variant_values", "is_inventory_tracked", "tax_class", "status", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sku_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "variant_values": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Variant axis → value, e.g. {\"color\": \"Red\", \"size\": \"M\"}."
+    },
+    "is_inventory_tracked": {
+      "type": "boolean"
+    },
+    "tax_class": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Tenant tax class ID defined in yc-pricing, e.g. za-standard."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "inactive"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

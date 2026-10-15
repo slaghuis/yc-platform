@@ -24,6 +24,12 @@ type Route struct {
 	Upstream *url.URL
 	// Roles admitted; empty admits any actor, visitors included.
 	Roles []authctx.ActorType
+	// Anonymous routes admit requests without a token on platform hosts,
+	// where no visitor is issued (ADR-020 rule 5).
+	Anonymous bool
+	// Service is the registered service that owns the route; "" for
+	// static routes.
+	Service string
 }
 
 // Admits reports whether an actor of type t may use the route.
@@ -63,13 +69,23 @@ func NewRoutes(routes []Route) (*Routes, error) {
 				return nil, fmt.Errorf("route %q: unknown role %q", r.Prefix, role)
 			}
 		}
-		for i, m := range r.Methods {
-			r.Methods[i] = strings.ToUpper(m)
+		if r.Anonymous && len(r.Roles) > 0 {
+			return nil, fmt.Errorf("route %q: an anonymous route cannot require roles", r.Prefix)
 		}
+		methods := make([]string, len(r.Methods))
+		for i, m := range r.Methods {
+			methods[i] = strings.ToUpper(m)
+		}
+		r.Methods = methods
 		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return len(out[i].Prefix) > len(out[j].Prefix) })
 	return &Routes{byLength: out}, nil
+}
+
+// All returns the routes, longest prefix first.
+func (t *Routes) All() []Route {
+	return slices.Clone(t.byLength)
 }
 
 // Match returns the route with the longest prefix of path that allows

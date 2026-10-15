@@ -35,6 +35,8 @@ linters:
       locale: UK
       ignore-rules:
         - unauthorized # HTTP status name and yc-errors code
+        - color # the standard library's image/color
+        - finalize # yc-image's /finalize endpoint (docs/services/yc-image.md)
     revive:
       rules:
         - name: exported

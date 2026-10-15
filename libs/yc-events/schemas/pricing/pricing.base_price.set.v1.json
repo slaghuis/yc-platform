@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.base_price.set.v1.json",
+  "title": "pricing.base_price.set.v1",
+  "description": "A SKU's base price was set or changed, in the store currency (ADR-014). Gross when the tenant prices tax-inclusive, net otherwise (ADR-016). yc-product updates its search projection.",
+  "type": "object",
+  "required": ["sku_id", "price", "is_tax_inclusive", "valid_from"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "price": {
+      "$ref": "../common/money.v1.json"
+    },
+    "previous_price": {
+      "$ref": "../common/money.v1.json",
+      "description": "The price this one replaces; absent for a SKU's first price."
+    },
+    "is_tax_inclusive": {
+      "type": "boolean"
+    },
+    "valid_from": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

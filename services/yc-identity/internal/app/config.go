@@ -9,6 +9,7 @@ import (
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	defaults "github.com/slaghuis/yc-platform/services/yc-identity/config"
+	"github.com/slaghuis/yc-platform/services/yc-identity/internal/password"
 )
 
 // Config is the service configuration (config/config.default.yaml).
@@ -21,6 +22,12 @@ type Config struct {
 	NATS        NATSConfig           `koanf:"nats"`
 	Telemetry   TelemetryConfig      `koanf:"telemetry"`
 	JWT         JWTConfig            `koanf:"jwt"`
+	Password    PasswordConfig       `koanf:"password"`
+}
+
+// PasswordConfig is the `password:` block.
+type PasswordConfig struct {
+	Argon2 password.Params `koanf:"argon2"`
 }
 
 // LogConfig is the `log:` block.
@@ -76,6 +83,9 @@ func (c *Config) Validate() error {
 	}
 	if c.JWT.VisitorTokenTTL <= 0 || c.JWT.AccessTokenTTL <= 0 {
 		errs = append(errs, errors.New("jwt token TTLs must be positive"))
+	}
+	if err := c.Password.Argon2.Validate(); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

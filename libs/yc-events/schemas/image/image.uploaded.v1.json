@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/image/image.uploaded.v1.json",
+  "title": "image.uploaded.v1",
+  "description": "An image upload was accepted and its original stored. yc-image consumes this itself to generate variants.",
+  "type": "object",
+  "required": ["image_id", "content_type", "bytes", "checksum_sha256", "uploaded_at"],
+  "additionalProperties": false,
+  "properties": {
+    "image_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_ref": {
+      "type": "string",
+      "pattern": "^[a-z]+:[0-9a-f-]{36}$",
+      "description": "Optional owner, e.g. product:<uuid>."
+    },
+    "content_type": {
+      "type": "string",
+      "enum": ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "checksum_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uploaded_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

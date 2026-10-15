@@ -3,11 +3,13 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -87,6 +89,19 @@ func get(t *testing.T, srv *httptest.Server, host, path string, out any) result 
 	return result{StatusCode: resp.StatusCode, Header: resp.Header, Cookies: resp.Cookies()}
 }
 
+func post(t *testing.T, srv *httptest.Server, path string, body any) int {
+	t.Helper()
+	b, err := json.Marshal(body)
+	require.NoError(t, err)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+path, bytes.NewReader(b))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
+
 func provision(t *testing.T, bus *eventbus.Client, tenant string, hosts ...string) {
 	t.Helper()
 	require.NoError(t, bus.PublishDirect(context.Background(), eventbus.Event{
@@ -112,6 +127,7 @@ func TestGateway(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_GATEWAY__UPSTREAMS__IDENTITY", fakeIdentity(t))
 	t.Setenv("YC_GATEWAY_COOKIE_SECURE", "false")
+	t.Setenv("YC_GATEWAY__REGISTRY__HEALTH_INTERVAL", "100ms")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	require.NoError(t, cfg.Validate())
@@ -193,6 +209,74 @@ func TestGateway(t *testing.T) {
 		assert.Equal(t, "shop-a", tenant)
 		_, ok := a.Hosts.Resolve("shop-b.test")
 		assert.False(t, ok, "the whole event is rejected")
+	})
+
+	t.Run("registered service is routed, then deregistered when unhealthy", func(t *testing.T) {
+		var healthy atomic.Bool
+		healthy.Store(true)
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/healthz" {
+				if !healthy.Load() {
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"path": r.URL.Path, "tenant": r.Header.Get(authctx.HeaderTenantID)})
+		}))
+		defer backend.Close()
+		internal := httptest.NewServer(a.InternalHandler)
+		defer internal.Close()
+
+		reg := httpkit.Registration{
+			ServiceName: "yc-product", InstanceID: "product-1", BaseURL: backend.URL, HealthURL: "/healthz",
+			Routes: []httpkit.RegisteredRoute{{Prefix: "/products", Methods: []string{"GET"}}},
+		}
+		require.Equal(t, http.StatusNoContent, post(t, internal, "/internal/register", reg))
+		require.Equal(t, http.StatusNoContent, post(t, internal, "/internal/register", reg), "re-registration is idempotent")
+
+		static := reg
+		static.ServiceName, static.Routes = "yc-other", []httpkit.RegisteredRoute{{Prefix: "/me"}}
+		assert.Equal(t, http.StatusBadRequest, post(t, internal, "/internal/register", static), "static prefix")
+		taken := reg
+		taken.ServiceName = "yc-other"
+		assert.Equal(t, http.StatusConflict, post(t, internal, "/internal/register", taken), "another service's prefix")
+
+		var got map[string]string
+		require.Equal(t, http.StatusOK, get(t, srv, "shop-a.test", "/products/42", &got).StatusCode)
+		assert.Equal(t, map[string]string{"path": "/products/42", "tenant": "shop-a"}, got)
+
+		var routes struct{ Routes []map[string]any }
+		require.Equal(t, http.StatusOK, get(t, internal, "x", "/internal/routes", &routes).StatusCode)
+		assert.Contains(t, routes.Routes, map[string]any{
+			"prefix": "/products", "methods": []any{"GET"}, "upstream": backend.URL, "service": "yc-product",
+		})
+
+		healthy.Store(false)
+		require.Eventually(t, func() bool {
+			return get(t, srv, "shop-a.test", "/products/42", nil).StatusCode == http.StatusNotFound
+		}, 10*time.Second, 50*time.Millisecond)
+
+		db, err := pgxpool.New(ctx, dbURL)
+		require.NoError(t, err)
+		defer db.Close()
+		var types []string
+		rows, err := db.Query(ctx, `SELECT envelope->>'event_type' FROM outbox
+			WHERE envelope->>'event_type' LIKE 'platform.service.%' ORDER BY created_at`)
+		require.NoError(t, err)
+		for rows.Next() {
+			var s string
+			require.NoError(t, rows.Scan(&s))
+			types = append(types, s)
+		}
+		require.NoError(t, rows.Err())
+		assert.Equal(t, []string{"platform.service.registered.v1", "platform.service.deregistered.v1"}, types)
+
+		assert.Equal(t, http.StatusNotFound, post(t, internal, "/internal/deregister",
+			httpkit.Deregistration{ServiceName: "yc-product", InstanceID: "product-1"}), "already gone")
+	})
+
+	t.Run("internal paths are not served publicly", func(t *testing.T) {
+		assert.Equal(t, http.StatusNotFound, get(t, srv, "shop-a.test", "/internal/routes", nil).StatusCode)
 	})
 
 	t.Run("health and readiness need no tenant", func(t *testing.T) {

@@ -1,0 +1,523 @@
+openapi: 3.1.0
+info:
+  title: yc-pricing
+  version: 0.1.0
+  description: |
+    Prices, tax and display currency (docs/services/yc-pricing.md, ADR-014,
+    ADR-016). Phase 2 subset: base prices, tax classes, the BasePrice → Tax →
+    DisplayCurrency pipeline and exchange rates.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /admin/ requires shop_admin and acts on the
+    caller's shop. Amounts are integer minor units. Errors are
+    application/problem+json (error-handling.md).
+
+paths:
+  /prices/evaluate:
+    post:
+      summary: Price SKUs
+      description: |
+        Prices each line in the store currency with tax, and optionally
+        converts the result for display. The display currency is taken from
+        the body, then the display_currency query parameter, then the
+        X-YC-Display-Currency header. SKUs that cannot be priced are listed
+        in unpriced and left out of the totals.
+      operationId: evaluatePrices
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluateRequest' }
+      responses:
+        '200':
+          description: The evaluation, with its audit trail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /prices/sku/{id}:
+    get:
+      summary: Price one unit of a SKU
+      operationId: getSKUPrice
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - { name: jurisdiction, in: query, schema: { type: string } }
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      responses:
+        '200':
+          description: The evaluation of quantity 1.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/prices:
+    get:
+      summary: List current base prices
+      operationId: listPrices
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of prices, by SKU ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BasePriceList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/prices/sku/{id}:
+    get:
+      summary: A SKU's price history
+      operationId: getPriceHistory
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: Prices, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PriceHistory' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Set a SKU's base price
+      description: |
+        The price is in the store currency and is interpreted with the shop's
+        tax_inclusive setting at the time it is set.
+      operationId: setPrice
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPriceRequest' }
+      responses:
+        '200':
+          description: The current price.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BasePrice' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Remove a SKU's base price
+      operationId: removePrice
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/pricing-config:
+    get:
+      summary: The shop's pricing configuration
+      operationId: getPricingConfig
+      responses:
+        '200':
+          description: The configuration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingConfig' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace the shop's pricing configuration
+      description: The store currency cannot change while base prices exist (ADR-014).
+      operationId: putPricingConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PricingConfigInput' }
+      responses:
+        '200':
+          description: The configuration.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingConfig' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/tax-classes:
+    get:
+      summary: List tax classes
+      operationId: listTaxClasses
+      responses:
+        '200':
+          description: Every class with its rules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxClassList' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/tax-classes/{class_id}:
+    parameters:
+      - $ref: '#/components/parameters/ClassID'
+    get:
+      summary: A tax class
+      operationId: getTaxClass
+      responses:
+        '200':
+          description: The class with its rules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxClass' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Create or replace a tax class
+      description: Replaces the class's name and all of its rules.
+      operationId: putTaxClass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaxClassInput' }
+      responses:
+        '200':
+          description: Replaced.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxClass' }
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaxClass' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a tax class no SKU uses
+      operationId: deleteTaxClass
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      description: SKU ID.
+      schema: { type: string, format: uuid }
+    ClassID:
+      name: class_id
+      in: path
+      required: true
+      schema: { type: string, maxLength: 50 }
+    DisplayCurrencyQuery:
+      name: display_currency
+      in: query
+      schema: { type: string }
+    DisplayCurrencyHeader:
+      name: X-YC-Display-Currency
+      in: header
+      schema: { type: string }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Money:
+      type: object
+      description: An amount in integer minor units of an ISO 4217 currency.
+      x-go-type: money.Money
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-money
+        name: money
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+
+    EvaluateRequest:
+      type: object
+      required: [lines]
+      additionalProperties: false
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/LineRequest' }
+        jurisdiction:
+          type: string
+          description: Delivery country or subdivision, e.g. ZA; defaults to the shop's.
+        display_currency: { type: string }
+    LineRequest:
+      type: object
+      required: [sku_id, quantity]
+      additionalProperties: false
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1, maximum: 10000 }
+
+    PricingResult:
+      type: object
+      description: |
+        Store-currency amounts are authoritative. tax_inclusive is the shop's
+        display preference: show gross when true, net otherwise.
+      required: [store_currency, tax_inclusive, jurisdiction, lines, unpriced, totals, audit_trail, evaluated_at]
+      properties:
+        store_currency: { type: string }
+        tax_inclusive: { type: boolean }
+        jurisdiction: { type: string }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/PricedLine' }
+        unpriced:
+          type: array
+          items: { $ref: '#/components/schemas/Unpriced' }
+        totals: { $ref: '#/components/schemas/Totals' }
+        display: { $ref: '#/components/schemas/Display' }
+        audit_trail:
+          type: array
+          items: { $ref: '#/components/schemas/AuditEntry' }
+        evaluated_at: { type: string, format: date-time }
+    PricedLine:
+      type: object
+      required: [sku_id, quantity, tax_class, unit_price, price_includes_tax, net, tax, gross, taxes]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64 }
+        tax_class: { type: string }
+        unit_price: { $ref: '#/components/schemas/Money' }
+        price_includes_tax: { type: boolean }
+        net: { $ref: '#/components/schemas/Money' }
+        tax: { $ref: '#/components/schemas/Money' }
+        gross: { $ref: '#/components/schemas/Money' }
+        taxes:
+          type: array
+          items: { $ref: '#/components/schemas/LineTax' }
+    LineTax:
+      type: object
+      required: [jurisdiction, rule, rate, base, base_amount, amount]
+      properties:
+        jurisdiction: { type: string }
+        rule: { type: string }
+        rate: { type: string, description: 'Exact decimal, e.g. "0.15".' }
+        base: { type: string }
+        base_amount: { $ref: '#/components/schemas/Money' }
+        amount: { $ref: '#/components/schemas/Money' }
+    Unpriced:
+      type: object
+      required: [sku_id, reason]
+      properties:
+        sku_id: { type: string, format: uuid }
+        reason:
+          type: string
+          enum: [no_base_price, unknown_sku, unknown_tax_class]
+    Totals:
+      type: object
+      required: [subtotal_excl_tax, tax_total, grand_total, tax_breakdown]
+      properties:
+        subtotal_excl_tax: { $ref: '#/components/schemas/Money' }
+        tax_total: { $ref: '#/components/schemas/Money' }
+        grand_total: { $ref: '#/components/schemas/Money' }
+        tax_breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/TaxTotal' }
+    TaxTotal:
+      type: object
+      required: [rule, rate, amount]
+      properties:
+        rule: { type: string }
+        rate: { type: string }
+        amount: { $ref: '#/components/schemas/Money' }
+    Display:
+      type: object
+      description: Cosmetic conversion; amounts are converted one by one.
+      required: [currency, rate, provider, rate_fetched_at, lines, totals]
+      properties:
+        currency: { type: string }
+        rate: { type: string, description: Units of currency per unit of the store currency. }
+        provider: { type: string }
+        rate_fetched_at: { type: string, format: date-time }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/DisplayLine' }
+        totals: { $ref: '#/components/schemas/DisplayTotals' }
+    DisplayLine:
+      type: object
+      required: [sku_id, unit_price, net, tax, gross]
+      properties:
+        sku_id: { type: string, format: uuid }
+        unit_price: { $ref: '#/components/schemas/Money' }
+        net: { $ref: '#/components/schemas/Money' }
+        tax: { $ref: '#/components/schemas/Money' }
+        gross: { $ref: '#/components/schemas/Money' }
+    DisplayTotals:
+      type: object
+      required: [subtotal_excl_tax, tax_total, grand_total]
+      properties:
+        subtotal_excl_tax: { $ref: '#/components/schemas/Money' }
+        tax_total: { $ref: '#/components/schemas/Money' }
+        grand_total: { $ref: '#/components/schemas/Money' }
+    AuditEntry:
+      type: object
+      required: [evaluator, detail]
+      properties:
+        evaluator: { type: string }
+        detail:
+          type: object
+          additionalProperties: true
+
+    SetPriceRequest:
+      type: object
+      required: [price]
+      additionalProperties: false
+      properties:
+        price: { $ref: '#/components/schemas/Money' }
+    BasePrice:
+      type: object
+      required: [sku_id, price, tax_inclusive, valid_from]
+      properties:
+        sku_id: { type: string, format: uuid }
+        price: { $ref: '#/components/schemas/Money' }
+        tax_inclusive: { type: boolean }
+        valid_from: { type: string, format: date-time }
+    BasePriceList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BasePrice' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PricePeriod:
+      type: object
+      required: [price, tax_inclusive, valid_from]
+      properties:
+        price: { $ref: '#/components/schemas/Money' }
+        tax_inclusive: { type: boolean }
+        valid_from: { type: string, format: date-time }
+        valid_to: { type: string, format: date-time }
+        set_by: { type: string }
+    PriceHistory:
+      type: object
+      required: [sku_id, items]
+      properties:
+        sku_id: { type: string, format: uuid }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PricePeriod' }
+
+    PricingConfigInput:
+      type: object
+      required: [store_currency, tax_inclusive, default_jurisdiction]
+      additionalProperties: false
+      properties:
+        store_currency: { type: string }
+        tax_inclusive: { type: boolean }
+        default_jurisdiction: { type: string }
+    PricingConfig:
+      type: object
+      required: [store_currency, tax_inclusive, default_jurisdiction, updated_at]
+      properties:
+        store_currency: { type: string }
+        tax_inclusive: { type: boolean }
+        default_jurisdiction: { type: string }
+        updated_at: { type: string, format: date-time }
+
+    TaxRule:
+      type: object
+      required: [jurisdiction, rule_name, rate, base, sort_order]
+      additionalProperties: false
+      properties:
+        jurisdiction: { type: string, description: 'ISO 3166 code, e.g. ZA or CA-QC.' }
+        rule_name: { type: string }
+        rate: { type: string, description: 'Exact decimal, e.g. "0.15".' }
+        base:
+          type: string
+          description: line_total, or line_total_including_<rule_name> for a compound tax.
+        sort_order: { type: integer }
+    TaxClassInput:
+      type: object
+      required: [display_name, rules]
+      additionalProperties: false
+      properties:
+        display_name: { type: string }
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/TaxRule' }
+    TaxClass:
+      type: object
+      required: [class_id, display_name, rules, created_at, updated_at]
+      properties:
+        class_id: { type: string }
+        display_name: { type: string }
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/TaxRule' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TaxClassList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TaxClass' }
+
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

@@ -50,9 +50,9 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `product.supplier.deleted.v1` | yc-product | — | Supplier deleted |
 | `product.created.v1` | yc-product | yc-analytics | Product created |
 | `product.updated.v1` | yc-product | yc-analytics | Product updated |
-| `product.deleted.v1` | yc-product | yc-image, yc-review | Product soft-deleted |
+| `product.deleted.v1` | yc-product | yc-image, yc-pricing, yc-review | Product soft-deleted |
 | `product.sku.created.v1` | yc-product | yc-analytics, yc-inventory, yc-pricing | SKU created (carries `inventory.tracked`, `tax_class`) |
-| `product.sku.updated.v1` | yc-product | yc-analytics, yc-cart, yc-inventory | SKU updated |
+| `product.sku.updated.v1` | yc-product | yc-analytics, yc-cart, yc-inventory, yc-pricing | SKU updated |
 | `product.sku.deleted.v1` | yc-product | yc-cart, yc-image, yc-inventory, yc-pricing | SKU soft-deleted |
 | `product.variant.added.v1` | yc-product | — | Variant axis added |
 | `product.variant.removed.v1` | yc-product | — | Variant axis removed |
@@ -76,7 +76,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `pricing.promotion.ended.v1` | yc-pricing | yc-product | Promotion ends |
 | `pricing.promotion.updated.v1` | yc-pricing | — | Promotion changed |
 | `pricing.promotion.deleted.v1` | yc-pricing | — | Promotion removed |
-| `pricing.config.changed.v1` | yc-pricing | yc-audit | Tenant pricing config changed |
+| `pricing.config.changed.v1` | yc-pricing | yc-audit, yc-pricing (fetches rates for a new store currency) | Tenant pricing config created or changed |
 | `pricing.exchange_rates_updated.v1` | yc-pricing | — | Rate cache refreshed |
 | `pricing.exchange_rates_stale.v1` | yc-pricing | yc-monitor | Rate fetch has failed for > 24h |
 
@@ -221,7 +221,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
-| `image.uploaded.v1` | yc-image | — | Upload accepted, processing started |
+| `image.uploaded.v1` | yc-image | yc-image (renders the variants) | Upload accepted, processing started |
 | `image.processed.v1` | yc-image | — | All variants ready; CDN URLs populated |
 | `image.processing_failed.v1` | yc-image | — | Validation or processing failed |
 | `image.deleted.v1` | yc-image | yc-product | Image deleted (triggers downstream cleanup) |

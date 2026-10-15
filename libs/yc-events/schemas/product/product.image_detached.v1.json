@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.image_detached.v1.json",
+  "title": "product.image_detached.v1",
+  "description": "A shop admin detached an image from a product. The image itself remains in yc-image.",
+  "type": "object",
+  "required": ["product_id", "image_id", "detached_at"],
+  "additionalProperties": false,
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "image_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "detached_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

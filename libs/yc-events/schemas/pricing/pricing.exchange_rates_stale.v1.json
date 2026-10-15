@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.exchange_rates_stale.v1.json",
+  "title": "pricing.exchange_rates_stale.v1",
+  "description": "Rate fetches have failed for longer than the stale threshold; display conversion uses the last known rates. Published on _platform for alerting.",
+  "type": "object",
+  "required": ["base_currency", "provider", "last_fetched_at", "stale_for_seconds"],
+  "additionalProperties": false,
+  "properties": {
+    "base_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["frankfurter", "exchangerate_host"]
+    },
+    "last_fetched_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stale_for_seconds": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

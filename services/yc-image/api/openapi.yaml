@@ -1,0 +1,214 @@
+openapi: 3.1.0
+info:
+  title: yc-image
+  version: 0.1.0
+  description: |
+    Image uploads, variants and URLs (docs/services/yc-image.md). Phase 2
+    subset.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /admin/ requires shop_admin and acts on the
+    caller's shop. Uploads are accepted with status processing; variants are
+    rendered asynchronously and the image becomes ready (or failed).
+    Errors are application/problem+json (error-handling.md).
+
+paths:
+  /admin/images:
+    post:
+      summary: Upload an image directly
+      operationId: uploadImage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                owner_ref: { type: string, description: 'Optional owner, e.g. product:<uuid>.' }
+      responses:
+        '202':
+          description: Accepted for processing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/images/upload-url:
+    post:
+      summary: Request a presigned upload URL
+      description: |
+        Creates a pending image. PUT the file to upload_url with the
+        returned headers (the Content-Type is signed), then call finalize.
+      operationId: requestUploadURL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadURLRequest' }
+      responses:
+        '201':
+          description: The pending image and where to upload it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadURL' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/images/{id}/finalize:
+    post:
+      summary: Finalise a presigned upload
+      operationId: finalizeUpload
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '202':
+          description: Accepted for processing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/images/{id}:
+    delete:
+      summary: Delete an image and its files
+      operationId: deleteImage
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /images/{id}:
+    get:
+      summary: Image metadata and variant URLs
+      description: Images that are not ready are visible to admins only.
+      operationId: getImage
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The image.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /images/{id}/variants/{variant}:
+    get:
+      summary: Redirect to a variant
+      operationId: getImageVariant
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - name: variant
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/VariantName' }
+        - name: format
+          in: query
+          description: webp (default) or jpeg; the original has a single format.
+          schema: { type: string, enum: [webp, jpeg] }
+      responses:
+        '302':
+          description: The variant's URL.
+          headers:
+            Location:
+              required: true
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    VariantName:
+      type: string
+      enum: [original, xlarge, large, medium, thumbnail]
+    Image:
+      type: object
+      required: [image_id, status, content_type, variants, created_at]
+      properties:
+        image_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, processing, ready, failed]
+        content_type: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        bytes: { type: integer, format: int64 }
+        checksum_sha256: { type: string }
+        owner_ref: { type: string }
+        failure_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        processed_at: { type: string, format: date-time }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/Variant' }
+    Variant:
+      type: object
+      required: [variant, format, width, height, bytes, url]
+      properties:
+        variant: { $ref: '#/components/schemas/VariantName' }
+        format: { type: string, enum: [jpeg, png, webp] }
+        width: { type: integer }
+        height: { type: integer }
+        bytes: { type: integer, format: int64 }
+        url: { type: string }
+    UploadURLRequest:
+      type: object
+      required: [content_type, bytes]
+      additionalProperties: false
+      properties:
+        content_type: { type: string }
+        bytes: { type: integer, format: int64 }
+        owner_ref: { type: string }
+    UploadURL:
+      type: object
+      required: [image, upload_url, method, headers, expires_at]
+      properties:
+        image: { $ref: '#/components/schemas/Image' }
+        upload_url: { type: string }
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        expires_at: { type: string, format: date-time }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.supplier.updated.v1.json",
+  "title": "product.supplier.updated.v1",
+  "description": "A system admin changed a supplier. Carries the supplier's new state.",
+  "type": "object",
+  "required": ["supplier_id", "name", "status", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "supplier_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "inactive"]
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

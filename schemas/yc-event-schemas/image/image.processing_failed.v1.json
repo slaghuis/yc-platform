@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/image/image.processing_failed.v1.json",
+  "title": "image.processing_failed.v1",
+  "description": "An accepted upload could not be processed; the image is marked failed and never served.",
+  "type": "object",
+  "required": ["image_id", "reason", "failed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "image_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "owner_ref": {
+      "type": "string",
+      "pattern": "^[a-z]+:[0-9a-f-]{36}$"
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["unsupported_format", "corrupt", "too_large", "bad_dimensions", "storage_error"]
+    },
+    "detail": {
+      "type": "string"
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

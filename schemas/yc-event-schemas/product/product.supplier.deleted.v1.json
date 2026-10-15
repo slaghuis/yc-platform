@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.supplier.deleted.v1.json",
+  "title": "product.supplier.deleted.v1",
+  "description": "A system admin deleted a supplier. Its products keep existing without a supplier.",
+  "type": "object",
+  "required": ["supplier_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "supplier_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

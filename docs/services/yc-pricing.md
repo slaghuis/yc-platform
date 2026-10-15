@@ -116,7 +116,7 @@ Evaluators are registered in a configurable pipeline. Order is tenant-overridabl
 
 ## Exchange Rates
 
-- Fetched from a configurable provider (`openexchangerates.org`, `exchangerate.host`)
+- Fetched from a configurable provider (Frankfurter by default; `exchangerate.host` with an access key)
 - Cached in Postgres with timestamp
 - TTL: 1 hour (configurable)
 - On fetch failure: use the last-known rate; log a warning; after 24 hours of staleness, emit `pricing.exchange_rates_stale.v1` for alerting
@@ -152,6 +152,21 @@ Evaluators are registered in a configurable pipeline. Order is tenant-overridabl
 |---|---|---|---|
 | POST | `/internal/evaluate` | Full pricing evaluation (used by yc-checkout, yc-cart) | service |
 | GET | `/internal/prices/sku/{id}` | Base price lookup | service |
+
+### Phase 2 Implementation Notes
+
+The contract is `services/yc-pricing/api/openapi.yaml`. Differences from the tables above:
+
+- **Pipeline** is BasePrice → Tax → DisplayCurrency. Promotions, the `/promotions` endpoints and the internal endpoints arrive in Phase 3.
+- **`POST /prices/evaluate`** takes `{"lines": [{"sku_id", "quantity"}], "jurisdiction"?, "display_currency"?}`. SKUs that cannot be priced are returned in `unpriced` with a reason (`no_base_price`, `unknown_sku`, `unknown_tax_class`) and left out of the totals. `GET /prices/sku/{id}` evaluates quantity 1 and returns 404 when the SKU is unpriced. Responses are not cached yet.
+- **Display currency** comes from the body, then the `display_currency` query parameter, then the `X-YC-Display-Currency` header. A currency with no known rate is a 400 (`display_currency: unavailable`). Converted amounts are in `display`; store-currency amounts never change.
+- **Tax-inclusive meaning is per price.** A base price records the shop's `tax_inclusive` setting when it was set, and is always evaluated that way. Changing the setting affects only prices set afterwards. `tax_inclusive` in the result is the shop's display preference (gross when true, net when false).
+- **Tax maths.** Taxes are computed on line totals and rounded half away from zero. Inclusive prices are divided by the combined multiplier (1 + Σ effective rates, compounding included), so R200.00 at 15% VAT gives net R173.91 and VAT R26.09. The last rule absorbs any rounding cent, so net + tax = gross exactly. Rules for a subdivision (`ZA-WC`) fall back to the country (`ZA`). A class with no rules for the jurisdiction is untaxed, and the audit trail notes it.
+- **Tax classes** are managed one at a time: `PUT /admin/tax-classes/{class_id}` creates (201) or replaces (200) the name and all rules, and `DELETE` refuses a class that live SKUs use (409). `GET /admin/prices/sku/{id}` returns the price history.
+- **The store currency cannot change while base prices exist** (409). A shop's config is created from `platform.tenant.provisioned.v1` and never overwritten by redelivery.
+- **SKU tax classes** come from `product.sku.created/updated/deleted.v1`, consumed by one durable consumer so they apply in order. Older events are ignored, and a deleted SKU is never revived. Deleting a SKU (or a product, through `product.deleted.v1`) removes its base price and publishes `pricing.base_price.removed.v1`.
+- **Exchange rates.** The default provider is Frankfurter (ECB reference rates, no key); `exchangerate_host` needs `rates.exchangerate_host.access_key`. Rates for every store currency (plus `rates.base_currencies`) are refreshed at startup and then hourly; a new or changed store currency is fetched straight away, through yc-pricing's own consumer of `pricing.config.changed.v1`. Only the latest rate per pair is kept; a missing pair is derived from its inverse. When fetches have failed for `rates.stale_after` (24h), `pricing.exchange_rates_stale.v1` is published at most once per period, and the last known rate is still used.
+- The service registers its routes with yc-gateway at startup (`gateway.internal_url`).
 
 ## Database Schema
 
@@ -263,7 +278,10 @@ CREATE POLICY tenant_isolation ON base_prices
 | Event | Action |
 |---|---|
 | `product.sku.created.v1` | Create a `base_prices` row with 0 (or default); shop_admin must set real price |
+| `product.sku.updated.v1` | Track the SKU's tax class and status |
 | `product.sku.deleted.v1` | Expire `base_prices` and any promotions targeting the SKU |
+| `product.deleted.v1` | Expire the base prices of the product's SKUs |
+| `pricing.config.changed.v1` (its own) | Fetch exchange rates for a new store currency straight away |
 | `platform.tenant.provisioned.v1` | Create `tenant_pricing_config` with defaults |
 | `platform.tenant.deleted.v1` | Delete all pricing data for tenant |
 

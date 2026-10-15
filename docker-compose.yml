@@ -81,9 +81,11 @@ services:
       - "1025:1025"        # SMTP
       - "8025:8025"        # UI
 
-  # ─── Phase 1 application services (profile "app") ─────────
+  # ─── Application services (profile "app") ─────────────────
   # `task devstack:app` builds and starts them; `task devstack:up` does not.
-  # Host ports match the local `task run` ports in .env.example.
+  # Host ports match the local `task run` ports in .env.example. Product,
+  # pricing and image register their routes with the gateway's internal
+  # listener (:8091, not published to the host).
   yc-identity:
     profiles: [app]
     build: &service-build
@@ -120,6 +122,8 @@ services:
       YC_GATEWAY_DB_URL: postgres://yc_gateway_app:devpass@postgres:5432/yc_gateway?sslmode=disable
       YC_GATEWAY__UPSTREAMS__IDENTITY: http://yc-identity:8080
       YC_GATEWAY_COOKIE_SECURE: "false"
+      # admin.localhost resolves to _platform: system admins only.
+      YC_GATEWAY__PLATFORM_HOSTS: admin.localhost
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none
@@ -143,6 +147,72 @@ services:
     ports:
       - "8082:8080"
     depends_on: *infra
+
+  yc-product:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-product }
+    image: yc-platform/yc-product:dev
+    container_name: yc-product
+    restart: unless-stopped
+    environment:
+      YC_PRODUCT_DB_URL: postgres://yc_product_app:devpass@postgres:5432/yc_product?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8083:8080"
+    depends_on: *infra
+
+  yc-pricing:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-pricing }
+    image: yc-platform/yc-pricing:dev
+    container_name: yc-pricing
+    restart: unless-stopped
+    environment:
+      YC_PRICING_DB_URL: postgres://yc_pricing_app:devpass@postgres:5432/yc_pricing?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      # Exchange rates come from api.frankfurter.dev (needs internet access).
+      YC_PRICING_RATES_PROVIDER: ${YC_PRICING_RATES_PROVIDER:-frankfurter}
+      YC_PRICING_EXCHANGERATE_HOST_KEY: ${YC_PRICING_EXCHANGERATE_HOST_KEY:-}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8084:8080"
+    depends_on: *infra
+
+  yc-image:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-image }
+    image: yc-platform/yc-image:dev
+    container_name: yc-image
+    restart: unless-stopped
+    environment:
+      YC_IMAGE_DB_URL: postgres://yc_image_app:devpass@postgres:5432/yc_image?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      # The service talks to SeaweedFS inside the network; browsers use the
+      # published port for presigned uploads and image URLs.
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_BASE_URL: http://localhost:9000/yc-images
+      S3_ACCESS_KEY_ID: devkey
+      S3_SECRET_ACCESS_KEY: devsecret
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8085:8080"
+    depends_on:
+      <<: *infra
+      seaweedfs: { condition: service_healthy }
 
 volumes:
   pgdata:

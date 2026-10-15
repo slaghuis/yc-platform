@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.exchange_rates_updated.v1.json",
+  "title": "pricing.exchange_rates_updated.v1",
+  "description": "yc-pricing refreshed its exchange rate cache from the rate provider (ADR-014). Published on _platform: rates are platform-wide.",
+  "type": "object",
+  "required": ["base_currency", "provider", "rate_count", "fetched_at"],
+  "additionalProperties": false,
+  "properties": {
+    "base_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["frankfurter", "exchangerate_host"]
+    },
+    "rate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

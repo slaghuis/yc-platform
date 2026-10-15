@@ -1,11 +1,39 @@
 service: yc-image
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_IMAGE_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+# Without internal_url the gateway's static routes must cover the service.
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_IMAGE_ADVERTISE_URL:-http://yc-image:8080}
+  interval: 30s
+# S3-compatible object storage (SeaweedFS in dev). public_endpoint is the
+# S3 URL browsers use for presigned uploads; public_base_url prefixes
+# object keys in served image URLs (the bucket's public-read URL or a CDN).
+storage:
+  endpoint: ${S3_ENDPOINT:-http://localhost:9000}
+  public_endpoint: ${S3_PUBLIC_ENDPOINT}
+  region: us-east-1
+  bucket: ${S3_BUCKET_IMAGES:-yc-images}
+  access_key: ${S3_ACCESS_KEY_ID}
+  secret_key: ${S3_SECRET_ACCESS_KEY}
+  public_base_url: ${S3_PUBLIC_BASE_URL:-http://localhost:9000/yc-images}
+  presign_ttl: 15m
+limits:
+  max_upload_bytes: 20971520
+  max_dimension: 10000
+  max_pixels: 40000000
+  max_aspect_ratio: 20
+processing:
+  jpeg_quality: 85
+  webp_quality: 80

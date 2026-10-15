@@ -135,6 +135,20 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 | GET | `/internal/skus/{id}` | Full SKU record (used by cart, checkout, inventory) | service |
 | GET | `/internal/skus/batch` | Bulk fetch SKUs by ID | service |
 
+### Phase 2 Implementation Notes
+
+The contract is `services/yc-product/api/openapi.yaml`. Differences from the tables above:
+
+- **Suppliers** are managed at `/sysadmin/suppliers` (create, list, get, update, delete). A system admin logs in on the platform host and names the shop in the body (`{"tenant_id": "shop-a", ...}`); the write runs in that shop's tenant and the event carries its `tenant_id`. A supplier referenced by any product (deleted products included) cannot be deleted (409).
+- **/admin/** endpoints act on the caller's own shop and require `shop_admin`; a system admin's `_platform` token gets 403 there.
+- **Variant axes** can be added only before the product has SKUs (409 afterwards): an existing SKU would have no value on the new axis. A SKU names exactly one allowed value on every axis, and no two live SKUs of a product share a combination. `product.variant.removed.v1` is not implemented.
+- **Soft deletes** set `status = 'deleted'`; a deleted SKU releases its `sku_code`. Deleting a product deletes its SKUs and lists them in `product.deleted.v1`.
+- **Browse** (`GET /products`) returns active products with at least one active SKU, newest first, with cursor pagination. `q` is a web-style query over the projection's `tsv` (English stemming on name and description, plain tokens for SKU code and variant values); `category` includes subcategories. Products carry SKU IDs but no prices: clients call yc-pricing's `POST /prices/evaluate`.
+- **`sku_search_projection`** is rewritten in the same transaction as every product, SKU and category change. Its event-fed columns (price, stock, popularity, rating) stay empty until Phase 3.
+- **Images** hold yc-image IDs only; clients resolve URLs with yc-image `GET /images/{id}`. SKU images and `image.deleted.v1` handling are deferred.
+- **Internal SKU endpoints** are deferred to Phase 3 (cart); yc-pricing learns each SKU's tax class from `product.sku.*` events (ADR-016).
+- The service registers its routes with yc-gateway at startup (`gateway.internal_url`).
+
 ## Database Schema
 
 Database: **`yc_product`**

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.category.deleted.v1.json",
+  "title": "product.category.deleted.v1",
+  "description": "A shop admin deleted a category. Products leave it; child categories move to its parent.",
+  "type": "object",
+  "required": ["category_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "category_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

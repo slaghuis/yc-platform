@@ -1,0 +1,678 @@
+openapi: 3.1.0
+info:
+  title: yc-product
+  version: 0.1.0
+  description: |
+    Catalog: suppliers, products, variants, SKUs, categories and product
+    images (docs/services/yc-product.md). Phase 2 subset.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /admin/ requires shop_admin and acts on the
+    caller's shop; /sysadmin/ requires system_admin, who names the shop
+    explicitly. Prices are not part of the catalog: clients pass SKU IDs to
+    yc-pricing's POST /prices/evaluate. Errors are application/problem+json
+    (error-handling.md).
+
+paths:
+  /products:
+    get:
+      summary: Browse active products
+      description: |
+        Products with at least one active SKU, newest first. q is a web-style
+        full-text query over product name, description, SKU code and variant
+        values; category includes its subcategories.
+      operationId: browseProducts
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: category, in: query, schema: { type: string, format: uuid } }
+        - { name: supplier_id, in: query, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of products.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductList' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /products/{id}:
+    get:
+      summary: Get a product with its variants, SKUs, categories and images
+      description: Inactive products and SKUs are visible to shop admins only.
+      operationId: getProduct
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /skus/{id}:
+    get:
+      summary: Get a SKU
+      operationId: getSKU
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The SKU.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SKU' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /categories:
+    get:
+      summary: The category tree
+      operationId: getCategoryTree
+      responses:
+        '200':
+          description: Root categories with their descendants, by sort_order then name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CategoryNode' }
+
+  /suppliers:
+    get:
+      summary: Active suppliers of the shop (public fields)
+      operationId: listPublicSuppliers
+      responses:
+        '200':
+          description: Suppliers by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SupplierSummary' }
+
+  /admin/products:
+    post:
+      summary: Create a product
+      description: Publishes product.created.v1.
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}:
+    put:
+      summary: Replace a product's fields
+      description: Publishes product.updated.v1.
+      operationId: updateProduct
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Soft-delete a product and its SKUs
+      description: Publishes product.deleted.v1 listing the deleted SKUs.
+      operationId: deleteProduct
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}/variants:
+    post:
+      summary: Add a variant axis
+      description: |
+        Only before the product has SKUs: existing SKUs would have no value
+        on the new axis. Publishes product.variant.added.v1.
+      operationId: addVariant
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VariantInput' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Variant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}/skus:
+    post:
+      summary: Create a SKU
+      description: |
+        variant_values names a value on every variant axis of the product,
+        and no other SKU of the product has the same combination.
+        Publishes product.sku.created.v1.
+      operationId: createSKU
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SKUInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SKU' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/skus/{id}:
+    put:
+      summary: Replace a SKU's fields
+      description: Publishes product.sku.updated.v1.
+      operationId: updateSKU
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SKUInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SKU' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Soft-delete a SKU
+      description: Publishes product.sku.deleted.v1.
+      operationId: deleteSKU
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}/images:
+    post:
+      summary: Attach a yc-image image
+      description: |
+        Re-attaching an image updates its sort order and primary flag. A new
+        primary image demotes the previous one. Publishes
+        product.image_attached.v1.
+      operationId: attachImage
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttachImageRequest' }
+      responses:
+        '201':
+          description: Attached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductImage' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}/images/{image_id}:
+    delete:
+      summary: Detach an image
+      description: Publishes product.image_detached.v1.
+      operationId: detachImage
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - { name: image_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Detached. }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/categories:
+    post:
+      summary: Create a category
+      description: Publishes product.category.created.v1.
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/categories/{id}:
+    put:
+      summary: Replace a category's fields
+      description: The parent may not be the category or one of its descendants. Publishes product.category.updated.v1.
+      operationId: updateCategory
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a category without subcategories
+      description: Products leave the category. Publishes product.category.deleted.v1.
+      operationId: deleteCategory
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/suppliers:
+    post:
+      summary: Create a supplier for a shop
+      description: Publishes product.supplier.created.v1 in the shop's tenant.
+      operationId: createSupplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSupplierRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '400': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: List suppliers, optionally of one shop
+      operationId: listSuppliers
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of suppliers, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupplierList' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/suppliers/{id}:
+    get:
+      summary: Get a supplier
+      operationId: getSupplier
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The supplier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace a supplier's fields
+      description: Publishes product.supplier.updated.v1.
+      operationId: updateSupplier
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSupplierRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a supplier no product references
+      description: Publishes product.supplier.deleted.v1.
+      operationId: deleteSupplier
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Status:
+      type: string
+      enum: [active, inactive]
+    Contact:
+      type: object
+      additionalProperties: { type: string }
+      description: Free-form contact fields, e.g. email, phone.
+    Supplier:
+      type: object
+      required: [supplier_id, tenant_id, name, contact, status, created_at, updated_at]
+      properties:
+        supplier_id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        name: { type: string }
+        contact: { $ref: '#/components/schemas/Contact' }
+        status: { $ref: '#/components/schemas/Status' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SupplierSummary:
+      type: object
+      required: [supplier_id, name]
+      properties:
+        supplier_id: { type: string, format: uuid }
+        name: { type: string }
+    CreateSupplierRequest:
+      type: object
+      required: [tenant_id, name]
+      additionalProperties: false
+      properties:
+        tenant_id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        contact: { $ref: '#/components/schemas/Contact' }
+        status: { $ref: '#/components/schemas/Status' }
+    UpdateSupplierRequest:
+      type: object
+      required: [name, status]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        contact: { $ref: '#/components/schemas/Contact' }
+        status: { $ref: '#/components/schemas/Status' }
+    SupplierList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Supplier' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    ProductInput:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        supplier_id: { type: string, format: uuid }
+        is_digital: { type: boolean }
+        status: { $ref: '#/components/schemas/Status' }
+        category_ids:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+    Product:
+      type: object
+      required: [product_id, name, description, is_digital, status, attributes, category_ids, variants, skus, images, created_at, updated_at]
+      properties:
+        product_id: { type: string, format: uuid }
+        supplier_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        is_digital: { type: boolean }
+        status: { $ref: '#/components/schemas/Status' }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        category_ids:
+          type: array
+          items: { type: string, format: uuid }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/Variant' }
+        skus:
+          type: array
+          items: { $ref: '#/components/schemas/SKU' }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ProductImage' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProductSummary:
+      type: object
+      required: [product_id, name, description, is_digital, category_ids, skus]
+      properties:
+        product_id: { type: string, format: uuid }
+        supplier_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        is_digital: { type: boolean }
+        category_ids:
+          type: array
+          items: { type: string, format: uuid }
+        primary_image_id: { type: string, format: uuid }
+        skus:
+          type: array
+          description: Active SKUs; pass their IDs to POST /prices/evaluate.
+          items: { $ref: '#/components/schemas/SKUSummary' }
+    SKUSummary:
+      type: object
+      required: [sku_id, sku_code, variant_values]
+      properties:
+        sku_id: { type: string, format: uuid }
+        sku_code: { type: string }
+        variant_values: { $ref: '#/components/schemas/VariantValues' }
+    ProductList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSummary' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    VariantInput:
+      type: object
+      required: [axis_name, values]
+      additionalProperties: false
+      properties:
+        axis_name: { type: string, pattern: '^[a-z][a-z0-9_]*$', maxLength: 40 }
+        values:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 100 }
+    Variant:
+      type: object
+      required: [variant_id, axis_name, values, created_at]
+      properties:
+        variant_id: { type: string, format: uuid }
+        axis_name: { type: string }
+        values:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+    VariantValues:
+      type: object
+      additionalProperties: { type: string }
+      description: Variant axis to value, e.g. {"color":"Red","size":"M"}.
+
+    SKUInput:
+      type: object
+      required: [sku_code, tax_class]
+      additionalProperties: false
+      properties:
+        sku_code: { type: string, minLength: 1, maxLength: 64 }
+        variant_values: { $ref: '#/components/schemas/VariantValues' }
+        inventory_tracked: { type: boolean, default: true }
+        tax_class:
+          type: string
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: A tax class ID defined in yc-pricing, e.g. za-standard.
+        weight_grams: { type: integer, minimum: 0 }
+        status: { $ref: '#/components/schemas/Status' }
+    SKU:
+      type: object
+      required: [sku_id, product_id, sku_code, variant_values, inventory_tracked, tax_class, status, created_at, updated_at]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        sku_code: { type: string }
+        variant_values: { $ref: '#/components/schemas/VariantValues' }
+        inventory_tracked: { type: boolean }
+        tax_class: { type: string }
+        weight_grams: { type: integer }
+        status: { $ref: '#/components/schemas/Status' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AttachImageRequest:
+      type: object
+      required: [image_id]
+      additionalProperties: false
+      properties:
+        image_id: { type: string, format: uuid }
+        sort_order: { type: integer }
+        is_primary: { type: boolean }
+    ProductImage:
+      type: object
+      required: [image_id, sort_order, is_primary]
+      properties:
+        image_id: { type: string, format: uuid, description: 'Resolve URLs with yc-image GET /images/{id}.' }
+        sort_order: { type: integer }
+        is_primary: { type: boolean }
+
+    CategoryInput:
+      type: object
+      required: [name, slug]
+      additionalProperties: false
+      properties:
+        parent_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 100 }
+        sort_order: { type: integer }
+    Category:
+      type: object
+      required: [category_id, name, slug, sort_order]
+      properties:
+        category_id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        sort_order: { type: integer }
+    CategoryNode:
+      type: object
+      required: [category_id, name, slug, sort_order, children]
+      properties:
+        category_id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        sort_order: { type: integer }
+        children:
+          type: array
+          items: { $ref: '#/components/schemas/CategoryNode' }
+
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

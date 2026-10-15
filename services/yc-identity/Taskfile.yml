@@ -24,9 +24,14 @@ tasks:
       - services/{{.SERVICE}}/bin/{{.SERVICE}}
 
   gen:openapi:
-    desc: Generate code from api/openapi.yaml
+    desc: Generate server code from api/openapi.yaml
+    sources:
+      - api/openapi.yaml
+      - api/oapi-codegen.yaml
+    generates:
+      - api/generated/server.gen.go
     cmds:
-      - echo "{{.SERVICE}}{{":"}} handlers are hand-written until oapi-codegen is adopted"
+      - ../../scripts/oapi-codegen.sh
 
   test:
     desc: Unit tests

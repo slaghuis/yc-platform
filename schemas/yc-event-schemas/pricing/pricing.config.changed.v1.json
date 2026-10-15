@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.config.changed.v1.json",
+  "title": "pricing.config.changed.v1",
+  "description": "A tenant's pricing configuration was created (on provisioning) or changed by a shop admin. Carries the new configuration.",
+  "type": "object",
+  "required": ["store_currency", "is_tax_inclusive", "default_jurisdiction", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "store_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "is_tax_inclusive": {
+      "type": "boolean"
+    },
+    "default_jurisdiction": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}(-[A-Z0-9]{1,3})?$",
+      "description": "ISO 3166-1 alpha-2 country, optionally with an ISO 3166-2 subdivision (ZA, ZA-WC)."
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
