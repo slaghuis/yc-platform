@@ -22,6 +22,7 @@ The v1 principles still apply. In addition:
 2. **Browsers never touch the gateway** (ADR-027). Every platform change in v1.1 is judged by what the backend-for-frontend needs, not what a browser needs.
 3. **The storefront URL contract is part of the API** (ADR-027 rule 12). Moving a link is a breaking change.
 4. **Demo, not production.** v1.1 ends with a public demonstration environment. Production hosting is a later ADR.
+5. **The console follows the platform.** Every system admin capability the platform adds, changes or removes (routes, alert rules, runbooks, operator tools) is named in the release notes (ADR-028 rule 12), so yc-platform-admin can keep its `docs/platform-coverage.md` complete.
 
 ---
 

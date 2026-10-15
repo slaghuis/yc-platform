@@ -26,7 +26,7 @@
 9. **Pinned to a platform tag.** Each frontend has `api/platform-version` naming a yc-platform tag (`v1.1.0`), and `api/specs/<service>.yaml` holding the copied specs of the services it uses. `scripts/sync-api.sh <tag>` fetches them with `git archive` from the tag and regenerates types.
 10. **Generated code.** Types come from openapi-typescript into `src/server/api/generated/` and calls go through openapi-fetch. Both the specs and the generated files are committed, so an API change shows up as a reviewable diff in the frontend.
 11. **Drift check.** CI regenerates from `api/specs/` and fails if the generated files differ.
-12. **yc-platform tags releases.** From v1.1 onwards, every platform release is a semver git tag. A change that a frontend must follow (a new required field, a moved link per ADR-027 rule 12) is called out in the release notes.
+12. **yc-platform tags releases.** From v1.1 onwards, every platform release is a semver git tag. A change that a frontend must follow (a new required field, a moved link per ADR-027 rule 12) is called out in the release notes. So is every new, changed or removed system admin capability: a `/sysadmin/*` route or a route that admits `system_admin`, an alert rule, a runbook or an operator tool. yc-platform-admin maps each of these to a console requirement or an exclusion (its `docs/platform-coverage.md`) and updates that map when it moves to the tag.
 
 ## Consequences
 

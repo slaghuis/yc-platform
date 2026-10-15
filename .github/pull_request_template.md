@@ -13,6 +13,7 @@
 - [ ] No PII in logs, traces, or event payloads where avoidable
 - [ ] Tenant isolation respected (RLS, subject scoping)
 - [ ] Backward compatible, or ADR raised for breaking change
+- [ ] System admin capabilities (`/sysadmin/*` or `system_admin` routes, alert rules, runbooks, operator tools) added, changed or removed are noted for the release notes (ADR-028 rule 12)
 
 ## Risk
 

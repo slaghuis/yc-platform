@@ -9,11 +9,14 @@ A consumer that keeps failing on an event gives up after its retries and moves t
 
 ## Procedure
 
-1. **See what is failing.** As a system admin, through the gateway's admin host:
+1. **See what is failing.** As a system admin, through the gateway's admin host. The gateway takes the access token only as a bearer header (it sets no session cookie):
    ```bash
-   curl -b cookies.txt http://admin.localhost:8090/sysadmin/dlq/summary
-   curl -b cookies.txt "http://admin.localhost:8090/sysadmin/dlq?tenant_id=<tenant>&acknowledged=false&limit=50"
+   TOKEN=$(curl -fsS -X POST http://admin.localhost:8090/login -H 'Content-Type: application/json' \
+     -d '{"email":"<email>","password":"<password>"}' | jq -r .access_token)
+   curl -H "Authorization: Bearer $TOKEN" http://admin.localhost:8090/sysadmin/dlq/summary
+   curl -H "Authorization: Bearer $TOKEN" "http://admin.localhost:8090/sysadmin/dlq?tenant_id=<tenant>&acknowledged=false&limit=50"
    ```
+   From v1.1 the yc-platform-admin console shows the same under Health, Dead letters.
    The summary counts unacknowledged dead letters per tenant and service; the list shows each one's `dlq_sequence`, consumer, event type and `failure_reason`. A shop admin sees their own shop's at `GET /admin/dlq`.
 2. **Find the cause** in the consuming service's logs (the `service` and `consumer` fields), and fix it. Typical causes: a service it calls was down, or a bug in the handler. Do not replay until the cause is fixed — the event will just dead-letter again.
 3. **List them with yc-dlq-cli.** It reads `YC_DLQ` directly (`--nats-url`, default `$NATS_URL` or `nats://localhost:4222`):
@@ -31,7 +34,7 @@ A consumer that keeps failing on an event gives up after its retries and moves t
 5. **Verify** the downstream effect in the consuming service (for example the emails in MailHog for yc-message).
 6. **Acknowledge** each dead letter so it leaves the summary and dashboard:
    ```bash
-   curl -b cookies.txt -X POST http://admin.localhost:8090/sysadmin/dlq/<dlq_sequence>/ack
+   curl -H "Authorization: Bearer $TOKEN" -X POST http://admin.localhost:8090/sysadmin/dlq/<dlq_sequence>/ack
    ```
    Acknowledge poison events you decided not to replay too, and note why in the incident log.
 
