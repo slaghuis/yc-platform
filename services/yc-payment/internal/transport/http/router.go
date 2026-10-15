@@ -28,7 +28,9 @@ type Payments interface {
 	PutGatewayConfig(ctx context.Context, gw string, in service.PutGatewayConfig) (domain.GatewayConfig, error)
 	TestGateway(ctx context.Context, gw string) error
 	Capabilities(ctx context.Context, gw string) (service.Capabilities, error)
-	Authorize(ctx context.Context, req service.AuthorizeRequest) (domain.Transaction, error)
+	Route(ctx context.Context, currency, gw string) (service.Capabilities, error)
+	Authorize(ctx context.Context, req service.PaymentRequest) (domain.Transaction, error)
+	Charge(ctx context.Context, req service.PaymentRequest) (domain.Transaction, error)
 	Capture(ctx context.Context, req service.CaptureRequest) (domain.Transaction, error)
 	Void(ctx context.Context, req service.VoidRequest) (domain.Transaction, bool, error)
 	Refund(ctx context.Context, req service.RefundRequest) (domain.Refund, bool, error)
@@ -37,8 +39,11 @@ type Payments interface {
 	Webhook(ctx context.Context, gw string, header http.Header, body []byte) error
 }
 
-// WebhookPath is where Stripe posts webhooks.
-const WebhookPath = "/webhooks/stripe"
+// Webhook paths, on the shop's host.
+const (
+	WebhookPath     = "/webhooks/stripe"
+	YocoWebhookPath = "/webhooks/yoco"
+)
 
 // NewRouter returns the service's routes on the standard httpkit chain.
 func NewRouter(svc Payments, build httpkit.BuildInfo, checks []httpkit.Check) http.Handler {
@@ -50,6 +55,7 @@ func NewRouter(svc Payments, build httpkit.BuildInfo, checks []httpkit.Check) ht
 		},
 	})
 	r.Post(WebhookPath, webhook(svc, "stripe"))
+	r.Post(YocoWebhookPath, webhook(svc, "yoco"))
 	strict := api.NewStrictHandlerWithOptions(handlers{svc: svc}, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  httpkit.RequestError,
 		ResponseErrorHandlerFunc: httpkit.ResponseError,
@@ -59,14 +65,17 @@ func NewRouter(svc Payments, build httpkit.BuildInfo, checks []httpkit.Check) ht
 }
 
 // Routes are the gateway routes yc-payment registers (ADR-020 rule 7).
-// The webhook is a callback route: no token, verified by its signature.
+// Webhooks are callback routes: no token, verified by their signature.
 func Routes() []httpkit.RegisteredRoute {
 	admin := []string{string(authctx.ActorShopAdmin)}
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/admin/gateway-config", Roles: admin},
 		{Prefix: "/admin/transactions", Methods: []string{http.MethodGet}, Roles: admin},
 		{Prefix: WebhookPath, Methods: []string{http.MethodPost}, Callback: true},
+		{Prefix: YocoWebhookPath, Methods: []string{http.MethodPost}, Callback: true},
 		{Prefix: "/internal/authorize", Methods: []string{http.MethodPost}},
+		{Prefix: "/internal/charge", Methods: []string{http.MethodPost}},
+		{Prefix: "/internal/gateway-route", Methods: []string{http.MethodGet}},
 		{Prefix: "/internal/capture", Methods: []string{http.MethodPost}},
 		{Prefix: "/internal/void", Methods: []string{http.MethodPost}},
 		{Prefix: "/internal/refund", Methods: []string{http.MethodPost}},
@@ -112,7 +121,7 @@ func (h handlers) ListGatewayConfigs(ctx context.Context, _ api.ListGatewayConfi
 func (h handlers) PutGatewayConfig(ctx context.Context, req api.PutGatewayConfigRequestObject) (api.PutGatewayConfigResponseObject, error) {
 	c, err := h.svc.PutGatewayConfig(ctx, string(req.Gateway), service.PutGatewayConfig{
 		Enabled: req.Body.Enabled, APIKey: deref(req.Body.APIKey), WebhookSecret: req.Body.WebhookSecret,
-		PublicKey: deref(req.Body.PublicKey),
+		PublicKey: deref(req.Body.PublicKey), Priority: req.Body.Priority, Currencies: req.Body.Currencies,
 	})
 	if err != nil {
 		return nil, err
@@ -141,10 +150,31 @@ func (h handlers) GetGatewayCapabilities(ctx context.Context, req api.GetGateway
 	if err != nil {
 		return nil, err
 	}
-	return api.GetGatewayCapabilities200JSONResponse{
-		Gateway: c.Gateway, SupportsSeparateAuthCapture: c.SupportsSeparateAuthCapture, Configured: c.Configured,
-		PublicKey: optional(c.PublicKey),
-	}, nil
+	return api.GetGatewayCapabilities200JSONResponse(capabilities(c)), nil
+}
+
+func (h handlers) RouteGateway(ctx context.Context, req api.RouteGatewayRequestObject) (api.RouteGatewayResponseObject, error) {
+	gw := ""
+	if req.Params.Gateway != nil {
+		gw = string(*req.Params.Gateway)
+	}
+	c, err := h.svc.Route(ctx, req.Params.Currency, gw)
+	if err != nil {
+		return nil, err
+	}
+	return api.RouteGateway200JSONResponse(capabilities(c)), nil
+}
+
+func capabilities(c service.Capabilities) api.Capabilities {
+	out := api.Capabilities{
+		Gateway: c.Gateway, SupportsSeparateAuthCapture: c.SupportsSeparateAuthCapture, HostedPayment: c.HostedPayment,
+		Configured: c.Configured, PublicKey: optional(c.PublicKey),
+	}
+	if c.SupportedCurrencies != nil {
+		cur := c.SupportedCurrencies
+		out.SupportedCurrencies = &cur
+	}
+	return out
 }
 
 func (h handlers) ListTransactions(ctx context.Context, req api.ListTransactionsRequestObject) (api.ListTransactionsResponseObject, error) {
@@ -204,7 +234,7 @@ func (h handlers) AuthorizePayment(ctx context.Context, req api.AuthorizePayment
 	if req.Body.Gateway != nil {
 		gw = string(*req.Body.Gateway)
 	}
-	t, err := h.svc.Authorize(ctx, service.AuthorizeRequest{
+	t, err := h.svc.Authorize(ctx, service.PaymentRequest{
 		SessionID: req.Body.SessionID, Gateway: gw, AmountMinor: req.Body.Amount.AmountMinor,
 		Currency: req.Body.Amount.Currency, PaymentToken: req.Body.PaymentToken, ReturnURL: deref(req.Body.ReturnURL),
 		IdempotencyKey: req.Params.IdempotencyKey,
@@ -213,6 +243,22 @@ func (h handlers) AuthorizePayment(ctx context.Context, req api.AuthorizePayment
 		return nil, err
 	}
 	return api.AuthorizePayment200JSONResponse(transaction(t)), nil
+}
+
+func (h handlers) ChargePayment(ctx context.Context, req api.ChargePaymentRequestObject) (api.ChargePaymentResponseObject, error) {
+	in := service.PaymentRequest{
+		SessionID: req.Body.SessionID, Gateway: string(req.Body.Gateway), AmountMinor: req.Body.Amount.AmountMinor,
+		Currency: req.Body.Amount.Currency, PaymentToken: deref(req.Body.PaymentToken), ReturnURL: deref(req.Body.ReturnURL),
+		IdempotencyKey: req.Params.IdempotencyKey,
+	}
+	if req.Body.OrderID != nil {
+		in.OrderID = req.Body.OrderID.String()
+	}
+	t, err := h.svc.Charge(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.ChargePayment200JSONResponse(transaction(t)), nil
 }
 
 func (h handlers) CapturePayment(ctx context.Context, req api.CapturePaymentRequestObject) (api.CapturePaymentResponseObject, error) {
@@ -263,16 +309,21 @@ func (h handlers) RefundPayment(ctx context.Context, req api.RefundPaymentReques
 }
 
 func gatewayConfig(c domain.GatewayConfig) api.GatewayConfig {
+	currencies := c.Currencies
+	if currencies == nil {
+		currencies = []string{}
+	}
 	return api.GatewayConfig{
 		Gateway: c.Gateway, Enabled: c.Enabled, APIKeyHint: c.APIKeyHint, WebhookSecretSet: c.WebhookSecretSet,
-		PublicKey: optional(c.PublicKey), UpdatedAt: c.UpdatedAt.UTC(),
+		PublicKey: optional(c.PublicKey), Priority: c.Priority, Currencies: currencies, UpdatedAt: c.UpdatedAt.UTC(),
 	}
 }
 
 func transaction(t domain.Transaction) api.Transaction {
 	id, _ := uuid.Parse(t.ID)
+	kind := api.TransactionKind(t.Kind)
 	out := api.Transaction{
-		TransactionID: id, SessionID: t.SessionID, Gateway: t.Gateway, GatewayReference: optional(t.GatewayReference),
+		TransactionID: id, SessionID: t.SessionID, Kind: &kind, Gateway: t.Gateway, GatewayReference: optional(t.GatewayReference),
 		Status: api.TransactionStatus(t.Status), Amount: api.Money{AmountMinor: t.AmountMinor, Currency: t.Currency},
 		CapturedAmountMinor: t.CapturedMinor, RefundedAmountMinor: t.RefundedMinor,
 		FailureReason: optional(t.FailureReason), CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC(),
@@ -291,7 +342,8 @@ func transaction(t domain.Transaction) api.Transaction {
 func detail(t domain.Transaction, refunds []domain.Refund) api.TransactionDetail {
 	x := transaction(t)
 	out := api.TransactionDetail{
-		TransactionID: x.TransactionID, SessionID: x.SessionID, OrderID: x.OrderID, Gateway: x.Gateway,
+		TransactionID: x.TransactionID, SessionID: x.SessionID, OrderID: x.OrderID,
+		Kind: (*api.TransactionDetailKind)(x.Kind), Gateway: x.Gateway,
 		GatewayReference: x.GatewayReference, Status: x.Status, Amount: x.Amount,
 		CapturedAmountMinor: x.CapturedAmountMinor, RefundedAmountMinor: x.RefundedAmountMinor,
 		NextAction: x.NextAction, FailureReason: x.FailureReason, CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt,

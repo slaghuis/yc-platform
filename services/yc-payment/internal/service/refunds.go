@@ -190,12 +190,26 @@ func (s *Service) settleRefund(ctx context.Context, tx pgx.Tx, tenantID string, 
 	})
 }
 
-// webhookRefund applies a refund webhook. Refunds made outside yc-payment
-// (the gateway's dashboard) are not tracked.
-func (s *Service) webhookRefund(ctx context.Context, tx pgx.Tx, tenantID string, g gateway.Refund) error {
-	r, ok, err := s.repo.RefundByReference(ctx, tx, tenantID, g.Reference)
-	if err != nil || !ok {
+// webhookRefund applies a refund webhook. A refund the gateway names
+// differently from its refund call's answer is matched by payment and
+// amount. Refunds made outside yc-payment (the gateway's dashboard) are not
+// tracked.
+func (s *Service) webhookRefund(ctx context.Context, tx pgx.Tx, tenantID, gw string, ev gateway.WebhookEvent) error {
+	r, ok, err := s.repo.RefundByReference(ctx, tx, tenantID, ev.Refund.Reference)
+	if err != nil {
 		return err
 	}
-	return s.settleRefund(ctx, tx, tenantID, &r, g)
+	if !ok && ev.PaymentReference != "" && ev.RefundAmount > 0 {
+		t, found, err := s.repo.TransactionByReference(ctx, tx, tenantID, gw, ev.PaymentReference)
+		if err != nil || !found {
+			return err
+		}
+		if r, ok, err = s.repo.PendingRefund(ctx, tx, tenantID, t.ID, ev.RefundAmount); err != nil {
+			return err
+		}
+	}
+	if !ok {
+		return nil
+	}
+	return s.settleRefund(ctx, tx, tenantID, &r, ev.Refund)
 }

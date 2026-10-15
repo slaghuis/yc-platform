@@ -224,20 +224,80 @@ type Transaction struct {
 	FailureReason string         `json:"failure_reason"`
 }
 
-// AuthorizeRequest asks for an authorisation of the session's total.
-type AuthorizeRequest struct {
+// PaymentRequest asks for an authorization (Variant A) or a charge
+// (Variant B) of the session's total. A hosted gateway takes no token.
+type PaymentRequest struct {
 	SessionID    string      `json:"session_id"`
 	Gateway      string      `json:"gateway,omitempty"`
 	Amount       money.Money `json:"amount"`
-	PaymentToken string      `json:"payment_token"`
+	PaymentToken string      `json:"payment_token,omitempty"`
 	ReturnURL    string      `json:"return_url,omitempty"`
+	OrderID      string      `json:"order_id,omitempty"`
 }
 
 // Authorize places a hold on the customer's payment method (yc-payment).
 // Repeating key returns the transaction's current status.
-func (c *Clients) Authorize(ctx context.Context, key string, req AuthorizeRequest) (Transaction, error) {
+func (c *Clients) Authorize(ctx context.Context, key string, req PaymentRequest) (Transaction, error) {
 	var out Transaction
 	err := c.call(ctx, http.MethodPost, "/internal/authorize", key, c.t.Payment, req, &out)
+	return out, err
+}
+
+// Charge takes the payment in one step (yc-payment). For a hosted gateway
+// the answer is pending with a redirect; repeating key returns the
+// transaction's current status.
+func (c *Clients) Charge(ctx context.Context, key string, req PaymentRequest) (Transaction, error) {
+	var out Transaction
+	err := c.call(ctx, http.MethodPost, "/internal/charge", key, c.t.Payment, req, &out)
+	return out, err
+}
+
+// Route is the shop's gateway for a currency and what it can do.
+type Route struct {
+	Gateway                     string `json:"gateway"`
+	SupportsSeparateAuthCapture bool   `json:"supports_separate_auth_capture"`
+	HostedPayment               bool   `json:"hosted_payment"`
+	PublicKey                   string `json:"public_key"`
+}
+
+// Route picks the shop's gateway for currency, or checks the named one
+// (yc-payment). A shop that cannot take the payment is 412.
+func (c *Clients) Route(ctx context.Context, currency, gateway string) (Route, error) {
+	q := url.Values{"currency": {currency}}
+	if gateway != "" {
+		q.Set("gateway", gateway)
+	}
+	var out Route
+	err := c.call(ctx, http.MethodGet, "/internal/gateway-route?"+q.Encode(), "", 0, nil, &out)
+	return out, err
+}
+
+// Refund statuses yc-payment reports.
+const (
+	RefundPending   = "pending"
+	RefundCompleted = "completed"
+	RefundFailed    = "failed"
+	RefundNone      = "none"
+)
+
+// RefundResult is a refund's state; status none: no such transaction.
+type RefundResult struct {
+	Status string `json:"status"`
+	Refund *struct {
+		ID            string `json:"refund_id"`
+		AmountMinor   int64  `json:"amount_minor"`
+		FailureReason string `json:"failure_reason"`
+	} `json:"refund"`
+}
+
+// Refund returns what is left of a captured payment (yc-payment).
+func (c *Clients) Refund(ctx context.Context, key, transactionID, orderID, reason string) (RefundResult, error) {
+	in := map[string]string{"transaction_id": transactionID, "reason": reason}
+	if orderID != "" {
+		in["order_id"] = orderID
+	}
+	var out RefundResult
+	err := c.call(ctx, http.MethodPost, "/internal/refund", key, c.t.Payment, in, &out)
 	return out, err
 }
 
@@ -290,9 +350,10 @@ type GuestContact struct {
 	PhoneE164 string `json:"phone_e164"`
 }
 
-// OrderPayment names the authorized payment.
+// OrderPayment names the payment: the authorization (Variant A), or only
+// the gateway when the charge follows the order (Variant B).
 type OrderPayment struct {
-	TransactionID string `json:"transaction_id"`
+	TransactionID string `json:"transaction_id,omitempty"`
 	Gateway       string `json:"gateway"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -130,8 +131,8 @@ func (s *Service) step(ctx context.Context, tenantID, token string, sess domain.
 	switch sess.State {
 	case domain.StateReserving:
 		return s.reserve(ctx, tenantID, token, sess)
-	case domain.StateAuthorizing:
-		return s.authorize(ctx, tenantID, token, sess)
+	case domain.StateAuthorizing, domain.StateCharging:
+		return s.pay(ctx, tenantID, token, sess)
 	case domain.StateOrderCreate:
 		return s.createOrder(ctx, tenantID, token, sess)
 	case domain.StateCapturing:
@@ -149,7 +150,7 @@ func (s *Service) step(ctx context.Context, tenantID, token string, sess domain.
 func (s *Service) advance(ctx context.Context, tenantID, token, id string, apply func(*domain.Session)) (bool, error) {
 	err := s.save(ctx, tenantID, token, id, func(_ pgx.Tx, sess *domain.Session) error {
 		apply(sess)
-		sess.State = sess.State.Next()
+		sess.State = sess.Next()
 		sess.Attempts, sess.NextAttemptAt = 0, nil
 		return nil
 	})
@@ -239,28 +240,35 @@ func lines(items []domain.Item) []integration.CartLine {
 	return out
 }
 
-func (s *Service) authorizeRequest(sess domain.Session) integration.AuthorizeRequest {
-	return integration.AuthorizeRequest{
+func (s *Service) paymentRequest(sess domain.Session) integration.PaymentRequest {
+	return integration.PaymentRequest{
 		SessionID: sess.ID, Gateway: sess.PaymentGateway, PaymentToken: sess.PaymentToken, ReturnURL: sess.ReturnURL,
-		Amount: money.Money{AmountMinor: sess.TotalMinor, Currency: sess.Currency},
+		Amount: money.Money{AmountMinor: sess.TotalMinor, Currency: sess.Currency}, OrderID: sess.OrderID,
 	}
 }
 
-func (s *Service) authorize(ctx context.Context, tenantID, token string, sess domain.Session) (bool, error) {
-	t, err := s.p.Authorize(ctx, sess.Key("authorize"), s.authorizeRequest(sess))
+// pay authorises (Variant A) or charges (Variant B). A payment awaiting
+// the customer (3-D Secure, a hosted payment page) waits for the
+// webhook's event or the next poll; a decline compensates.
+func (s *Service) pay(ctx context.Context, tenantID, token string, sess domain.Session) (bool, error) {
+	call, done := s.p.Authorize, []string{integration.PaymentAuthorized, integration.PaymentCaptured}
+	if sess.Variant() == domain.VariantCharge {
+		call, done = s.p.Charge, []string{integration.PaymentCaptured}
+	}
+	t, err := call(ctx, sess.Key(sess.PaymentCall()), s.paymentRequest(sess))
 	if err != nil {
 		return s.failed(ctx, tenantID, token, sess, err, nil)
 	}
 	record := func(x *domain.Session) {
 		x.PaymentTransactionID, x.PaymentStatus, x.NextAction = t.ID, t.Status, t.NextAction
 	}
-	switch t.Status {
-	case integration.PaymentAuthorized, integration.PaymentCaptured:
+	switch {
+	case slices.Contains(done, t.Status):
 		return s.advance(ctx, tenantID, token, sess.ID, func(x *domain.Session) {
 			record(x)
 			x.PaymentToken, x.NextAction = "", nil
 		})
-	case integration.PaymentPending, integration.PaymentCreated:
+	case t.Status == integration.PaymentPending || t.Status == integration.PaymentCreated:
 		err := s.save(ctx, tenantID, token, sess.ID, func(_ pgx.Tx, x *domain.Session) error {
 			record(x)
 			at := s.now().UTC().Add(s.cfg.PendingPoll)
@@ -302,7 +310,7 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 			in.ShippingOption = map[string]any{"id": o.ID, "name": o.Name, "amount_minor": o.AmountMinor}
 		}
 	}
-	if sess.PaymentTransactionID != "" {
+	if sess.PaymentTransactionID != "" || sess.PaymentGateway != "" {
 		in.Payment = &integration.OrderPayment{TransactionID: sess.PaymentTransactionID, Gateway: sess.PaymentGateway}
 	}
 	return in
@@ -390,15 +398,21 @@ func completed(sess domain.Session, at time.Time) events.CheckoutCompletedV1 {
 // compensate undoes what the saga did, newest first: the payment, the
 // order, the reservation. Each step is idempotent, treats "nothing to
 // undo" as done and is recorded as it finishes. A payment that turns out
-// to be captured sends the session forward to CONFIRMING instead.
+// to be captured sends the session forward to CONFIRMING instead. A
+// hosted payment cannot be cancelled: it is left open, and if the
+// customer pays after all, the late charge is refunded (LateCharge).
 func (s *Service) compensate(ctx context.Context, tenantID, token string, sess domain.Session) (bool, error) {
-	if sess.Reached(domain.StateAuthorizing) && !sess.Undone(domain.UndoPayment) {
-		result, err := s.p.Void(ctx, sess.UndoKey("authorize"), sess.PaymentTransactionID, sess.Key("authorize"))
+	if sess.Reached(sess.PaymentState()) && !sess.Undone(domain.UndoPayment) {
+		call := sess.PaymentCall()
+		result, err := s.p.Void(ctx, sess.UndoKey(call), sess.PaymentTransactionID, sess.Key(call))
 		if r, ok := integration.Rejected(err); ok && r.Status == http.StatusConflict {
 			return s.capturedAfterAll(ctx, tenantID, token, sess, r)
 		}
 		if err != nil {
 			return s.retryLater(ctx, tenantID, token, sess, err)
+		}
+		if result == integration.PaymentPending {
+			result = "left_open"
 		}
 		return s.undone(ctx, tenantID, token, sess.ID, domain.UndoPayment, result)
 	}

@@ -28,11 +28,11 @@ const sessionColumns = `id, user_id, user_type, cart_type, COALESCE(cart_id::tex
 	next_action, COALESCE(order_id::text, ''), COALESCE(order_number, ''), COALESCE(failed_state, ''),
 	COALESCE(failure_reason, ''), failure_detail, COALESCE(end_state, ''), compensation_log, attempts,
 	next_attempt_at, COALESCE(lease_owner, ''), lease_until, expires_at, confirmed_at, completed_at,
-	created_at, updated_at`
+	created_at, updated_at, payment_variant, hosted_payment, COALESCE(payment_public_key, '')`
 
 func scanSession(r pgx.Row) (domain.Session, error) {
 	var s domain.Session
-	var userType, state, failedState, endState string
+	var userType, state, failedState, endState, variant string
 	var items, shipping, guest, address, nextAction, detail, compensation []byte
 	err := r.Scan(&s.ID, &s.UserID, &userType, &s.CartType, &s.CartID, &state, &items,
 		&s.RequiresShipping, &s.HasTrackedItems, &s.Currency, &s.TaxInclusive, &s.ItemsTotalMinor, &s.TaxTotalMinor,
@@ -43,11 +43,11 @@ func scanSession(r pgx.Row) (domain.Session, error) {
 		&nextAction, &s.OrderID, &s.OrderNumber, &failedState,
 		&s.FailureReason, &detail, &endState, &compensation, &s.Attempts,
 		&s.NextAttemptAt, &s.LeaseOwner, &s.LeaseUntil, &s.ExpiresAt, &s.ConfirmedAt, &s.CompletedAt,
-		&s.CreatedAt, &s.UpdatedAt)
+		&s.CreatedAt, &s.UpdatedAt, &variant, &s.HostedPayment, &s.PaymentPublicKey)
 	if err != nil {
 		return s, err
 	}
-	s.UserType, s.State = domain.UserType(userType), domain.State(state)
+	s.UserType, s.State, s.PaymentVariant = domain.UserType(userType), domain.State(state), domain.Variant(variant)
 	s.FailedState, s.EndState = domain.State(failedState), domain.State(endState)
 	for name, f := range map[string]struct {
 		raw []byte
@@ -140,13 +140,13 @@ func (Sessions) InsertSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 	_, err = tx.Exec(ctx, `INSERT INTO checkout_sessions (id, tenant_id, user_id, user_type, cart_type, cart_id,
 			state, items, requires_shipping, has_tracked_items, currency, tax_inclusive, items_total_minor,
 			tax_total_minor, shipping_minor, total_minor, pricing_snapshot, shipping_options, shipping_option_id,
-			expires_at, created_at, updated_at)
+			expires_at, created_at, updated_at, payment_gateway, payment_variant, hosted_payment, payment_public_key)
 		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-			NULLIF($19, ''), $20, $21, $21)`,
+			NULLIF($19, ''), $20, $21, $21, NULLIF($22, ''), $23, $24, NULLIF($25, ''))`,
 		s.ID, tenantID, s.UserID, string(s.UserType), s.CartType, s.CartID,
 		string(s.State), e.items, s.RequiresShipping, s.HasTrackedItems, s.Currency, s.TaxInclusive, s.ItemsTotalMinor,
 		s.TaxTotalMinor, s.ShippingMinor, s.TotalMinor, []byte(s.PricingSnapshot), e.shipping, s.ShippingOptionID,
-		s.ExpiresAt, s.CreatedAt)
+		s.ExpiresAt, s.CreatedAt, s.PaymentGateway, string(s.Variant()), s.HostedPayment, s.PaymentPublicKey)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
 	}
@@ -167,7 +167,8 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 			order_id = NULLIF($18, '')::uuid, order_number = NULLIF($19, ''), failed_state = NULLIF($20, ''),
 			failure_reason = NULLIF($21, ''), failure_detail = $22, end_state = NULLIF($23, ''),
 			compensation_log = $24, attempts = $25, next_attempt_at = $26, lease_owner = NULLIF($27, ''),
-			lease_until = $28, confirmed_at = $29, completed_at = $30, updated_at = $31
+			lease_until = $28, confirmed_at = $29, completed_at = $30, updated_at = $31, payment_variant = $32,
+			hosted_payment = $33, payment_public_key = NULLIF($34, '')
 		WHERE tenant_id = $1 AND id = $2`,
 		tenantID, s.ID, string(s.State), s.ShippingMinor, s.TotalMinor,
 		s.ShippingOptionID, e.guest, e.address,
@@ -177,7 +178,8 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 		s.OrderID, s.OrderNumber, string(s.FailedState),
 		s.FailureReason, e.detail, string(s.EndState),
 		e.compensation, s.Attempts, s.NextAttemptAt, s.LeaseOwner,
-		s.LeaseUntil, s.ConfirmedAt, s.CompletedAt, s.UpdatedAt)
+		s.LeaseUntil, s.ConfirmedAt, s.CompletedAt, s.UpdatedAt, string(s.Variant()),
+		s.HostedPayment, s.PaymentPublicKey)
 	if err != nil {
 		return fmt.Errorf("update session: %w", err)
 	}
@@ -291,7 +293,7 @@ type Due struct {
 // that have not reached the point of no return, across tenants (platform
 // transaction).
 func (Sessions) ExpiredSessions(ctx context.Context, tx pgx.Tx, now time.Time, limit int) ([]Due, error) {
-	return due(ctx, tx, `state IN ('PRICING', 'RESERVING', 'AUTHORIZING', 'ORDER_CREATE', 'CAPTURING')
+	return due(ctx, tx, `state IN ('PRICING', 'RESERVING', 'AUTHORIZING', 'ORDER_CREATE', 'CHARGING', 'CAPTURING')
 		AND expires_at <= $1 AND (lease_until IS NULL OR lease_until <= $1) ORDER BY expires_at LIMIT $2`, now, limit)
 }
 
@@ -299,7 +301,8 @@ func (Sessions) ExpiredSessions(ctx context.Context, tx pgx.Tx, now time.Time, l
 // drives whose next attempt is due, across tenants (platform
 // transaction).
 func (Sessions) ResumableSessions(ctx context.Context, tx pgx.Tx, now time.Time, limit int) ([]Due, error) {
-	return due(ctx, tx, `state IN ('RESERVING', 'AUTHORIZING', 'ORDER_CREATE', 'CAPTURING', 'CONFIRMING', 'COMPENSATING')
+	return due(ctx, tx, `state IN ('RESERVING', 'AUTHORIZING', 'ORDER_CREATE', 'CHARGING', 'CAPTURING', 'CONFIRMING',
+		'COMPENSATING')
 		AND (next_attempt_at IS NULL OR next_attempt_at <= $1) AND (lease_until IS NULL OR lease_until <= $1)
 		ORDER BY updated_at LIMIT $2`, now, limit)
 }

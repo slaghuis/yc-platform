@@ -49,6 +49,14 @@ func (*Driver) Name() string { return Name }
 // SupportsSeparateAuthCapture implements gateway.Driver: Stripe is Variant A.
 func (*Driver) SupportsSeparateAuthCapture() bool { return true }
 
+// SupportedCurrencies implements gateway.Driver: Stripe takes any currency
+// the account settles.
+func (*Driver) SupportedCurrencies() []string { return nil }
+
+// HostedPayment implements gateway.Driver: the storefront collects the
+// payment method with Stripe's SDK.
+func (*Driver) HostedPayment() bool { return false }
+
 // paymentIntent is the part of a Stripe PaymentIntent yc-payment reads.
 type paymentIntent struct {
 	ID               string         `json:"id"`
@@ -112,10 +120,20 @@ func (pi paymentIntent) payment() gateway.Payment {
 // PaymentIntent. Stripe's idempotency makes a retried call return the same
 // intent.
 func (d *Driver) Authorize(ctx context.Context, c gateway.Credentials, req gateway.AuthorizeRequest) (gateway.Payment, error) {
+	return d.confirm(ctx, c, "manual", gateway.ChargeRequest(req))
+}
+
+// Charge implements gateway.Driver: creates and confirms an
+// automatic-capture PaymentIntent.
+func (d *Driver) Charge(ctx context.Context, c gateway.Credentials, req gateway.ChargeRequest) (gateway.Payment, error) {
+	return d.confirm(ctx, c, "automatic", req)
+}
+
+func (d *Driver) confirm(ctx context.Context, c gateway.Credentials, captureMethod string, req gateway.ChargeRequest) (gateway.Payment, error) {
 	form := url.Values{
 		"amount":                             {strconv.FormatInt(req.AmountMinor, 10)},
 		"currency":                           {strings.ToLower(req.Currency)},
-		"capture_method":                     {"manual"},
+		"capture_method":                     {captureMethod},
 		"payment_method":                     {req.PaymentToken},
 		"confirm":                            {"true"},
 		"automatic_payment_methods[enabled]": {"true"},

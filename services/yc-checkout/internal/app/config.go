@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"os"
-	"slices"
 	"time"
 
 	config "github.com/slaghuis/yc-platform/libs/yc-config"
@@ -58,7 +57,6 @@ type CallsConfig struct {
 type CheckoutConfig struct {
 	SessionTTL     time.Duration  `koanf:"session_ttl"`
 	ReservationTTL time.Duration  `koanf:"reservation_ttl"`
-	Gateways       []string       `koanf:"gateways"`
 	Shipping       ShippingConfig `koanf:"shipping"`
 }
 
@@ -122,9 +120,6 @@ func (c *Config) Validate() error {
 	if c.Checkout.ReservationTTL < time.Minute || c.Checkout.ReservationTTL > c.Checkout.SessionTTL {
 		errs = append(errs, errors.New("checkout.reservation_ttl must be at least 1m and at most the session TTL"))
 	}
-	if len(c.Checkout.Gateways) == 0 || slices.Contains(c.Checkout.Gateways, "") {
-		errs = append(errs, errors.New("checkout.gateways must name at least one gateway"))
-	}
 	if c.Checkout.Shipping.ID == "" || c.Checkout.Shipping.Name == "" || c.Checkout.Shipping.FeeMinor < 0 {
 		errs = append(errs, errors.New("checkout.shipping needs an id, a name and a non-negative fee_minor"))
 	}
@@ -165,7 +160,7 @@ func (c *Config) settings(host string) service.Settings {
 		Shipping: domain.ShippingOption{
 			ID: c.Checkout.Shipping.ID, Name: c.Checkout.Shipping.Name, AmountMinor: c.Checkout.Shipping.FeeMinor,
 		},
-		Gateways: c.Checkout.Gateways, ConfirmDeadline: c.Saga.ConfirmDeadline, LeaseTTL: c.Saga.LeaseTTL,
+		ConfirmDeadline: c.Saga.ConfirmDeadline, LeaseTTL: c.Saga.LeaseTTL,
 		RetryBase: c.Saga.RetryBase, RetryMax: c.Saga.RetryMax, PendingPoll: c.Saga.PendingPoll,
 		AlertAfter: c.Saga.AlertAfter, PauseBefore: domain.State(c.Debug.PauseBefore), PauseFor: c.Debug.PauseFor,
 		Host: host,

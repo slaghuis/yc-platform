@@ -52,6 +52,8 @@ const (
 	TypePaymentAuthorizedV1                  = "payment.authorized.v1"
 	TypePaymentCaptureFailedV1               = "payment.capture_failed.v1"
 	TypePaymentCapturedV1                    = "payment.captured.v1"
+	TypePaymentChargeFailedV1                = "payment.charge_failed.v1"
+	TypePaymentChargedV1                     = "payment.charged.v1"
 	TypePaymentIntentCreatedV1               = "payment.intent.created.v1"
 	TypePaymentRefundCompletedV1             = "payment.refund_completed.v1"
 	TypePaymentRefundFailedV1                = "payment.refund_failed.v1"
@@ -138,6 +140,8 @@ var EventTypes = []string{
 	TypePaymentAuthorizedV1,
 	TypePaymentCaptureFailedV1,
 	TypePaymentCapturedV1,
+	TypePaymentChargeFailedV1,
+	TypePaymentChargedV1,
 	TypePaymentIntentCreatedV1,
 	TypePaymentRefundCompletedV1,
 	TypePaymentRefundFailedV1,
@@ -280,6 +284,10 @@ const (
 	PaymentCaptureFailedV1GatewayYoco                        = "yoco"
 	PaymentCapturedV1GatewayStripe                           = "stripe"
 	PaymentCapturedV1GatewayYoco                             = "yoco"
+	PaymentChargeFailedV1GatewayStripe                       = "stripe"
+	PaymentChargeFailedV1GatewayYoco                         = "yoco"
+	PaymentChargedV1GatewayStripe                            = "stripe"
+	PaymentChargedV1GatewayYoco                              = "yoco"
 	PaymentIntentCreatedV1GatewayStripe                      = "stripe"
 	PaymentIntentCreatedV1GatewayYoco                        = "yoco"
 	PaymentVoidFailedV1GatewayStripe                         = "stripe"
@@ -1143,6 +1151,41 @@ type PaymentCapturedV1 struct {
 
 // EventType returns payment.captured.v1.
 func (PaymentCapturedV1) EventType() string { return TypePaymentCapturedV1 }
+
+// PaymentChargeFailedV1 is the payload of payment.charge_failed.v1.
+//
+// A combined authorize-and-capture charge was declined or the customer abandoned it at the gateway (Variant B).
+type PaymentChargeFailedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string `json:"session_id"`
+	Gateway   string `json:"gateway"`
+	Amount    Money  `json:"amount"`
+	// Short machine-readable reason, e.g. card_declined, payment_failed, gateway_error.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns payment.charge_failed.v1.
+func (PaymentChargeFailedV1) EventType() string { return TypePaymentChargeFailedV1 }
+
+// PaymentChargedV1 is the payload of payment.charged.v1.
+//
+// A combined authorize-and-capture charge succeeded (Variant B). The point of no return of the checkout saga.
+type PaymentChargedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string  `json:"session_id"`
+	OrderID   *string `json:"order_id,omitempty"`
+	Gateway   string  `json:"gateway"`
+	// The gateway's ID for the payment, e.g. a Yoco checkout ID.
+	GatewayReference *string   `json:"gateway_reference,omitempty"`
+	Amount           Money     `json:"amount"`
+	ChargedAt        time.Time `json:"charged_at"`
+}
+
+// EventType returns payment.charged.v1.
+func (PaymentChargedV1) EventType() string { return TypePaymentChargedV1 }
 
 // PaymentIntentCreatedV1 is the payload of payment.intent.created.v1.
 //

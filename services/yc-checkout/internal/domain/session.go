@@ -1,5 +1,6 @@
 // Package domain holds the checkout session and its saga state machine
-// (ADR-019, Variant A).
+// (ADR-019): Variant A (authorize, then capture) and Variant B (one
+// combined charge, ADR-013).
 package domain
 
 import (
@@ -21,6 +22,7 @@ const (
 	StateReserving    State = "RESERVING"
 	StateAuthorizing  State = "AUTHORIZING"
 	StateOrderCreate  State = "ORDER_CREATE"
+	StateCharging     State = "CHARGING"
 	StateCapturing    State = "CAPTURING"
 	StateConfirming   State = "CONFIRMING"
 	StateCompleted    State = "COMPLETED"
@@ -31,8 +33,35 @@ const (
 
 // States lists every state, in saga order.
 var States = []State{
-	StatePricing, StateReserving, StateAuthorizing, StateOrderCreate, StateCapturing,
+	StatePricing, StateReserving, StateAuthorizing, StateOrderCreate, StateCharging, StateCapturing,
 	StateConfirming, StateCompleted, StateCompensating, StateFailed, StateExpired,
+}
+
+// Variant is how a session pays (ADR-013): the gateway's capabilities
+// decide it.
+type Variant string
+
+// Variants.
+const (
+	// VariantAuthCapture authorises before the order is created and
+	// captures after (Variant A).
+	VariantAuthCapture Variant = "auth_capture"
+	// VariantCharge charges once, after the order is created (Variant B).
+	VariantCharge Variant = "charge"
+)
+
+// steps are each variant's saga steps, in order (ADR-019 rule 2).
+var steps = map[Variant][]State{
+	VariantAuthCapture: {StateReserving, StateAuthorizing, StateOrderCreate, StateCapturing, StateConfirming, StateCompleted},
+	VariantCharge:      {StateReserving, StateOrderCreate, StateCharging, StateConfirming, StateCompleted},
+}
+
+// Routing is the gateway a session pays with and what it can do.
+type Routing struct {
+	Gateway   string
+	Variant   Variant
+	Hosted    bool
+	PublicKey string
 }
 
 // Valid reports whether s is a known state.
@@ -47,7 +76,7 @@ func (s State) Terminal() bool {
 // the customer.
 func (s State) Driven() bool {
 	switch s {
-	case StateReserving, StateAuthorizing, StateOrderCreate, StateCapturing, StateConfirming, StateCompensating:
+	case StateReserving, StateAuthorizing, StateOrderCreate, StateCharging, StateCapturing, StateConfirming, StateCompensating:
 		return true
 	case StatePricing, StateCompleted, StateFailed, StateExpired:
 	}
@@ -55,10 +84,11 @@ func (s State) Driven() bool {
 }
 
 // Compensable reports whether the session is short of the point of no
-// return (capture succeeded), so a failure or expiry is compensated.
+// return (capture or charge succeeded), so a failure or expiry is
+// compensated.
 func (s State) Compensable() bool {
 	switch s {
-	case StatePricing, StateReserving, StateAuthorizing, StateOrderCreate, StateCapturing:
+	case StatePricing, StateReserving, StateAuthorizing, StateOrderCreate, StateCharging, StateCapturing:
 		return true
 	case StateConfirming, StateCompleted, StateCompensating, StateFailed, StateExpired:
 	}
@@ -116,11 +146,13 @@ type GuestContact struct {
 	PhoneE164 string `json:"phone_e164"`
 }
 
-// Compensation steps.
+// Compensation steps. UndoLateCharge refunds a charge that settled after
+// the session gave up on it (a hosted payment completed late).
 const (
 	UndoPayment     = "payment_voided"
 	UndoOrder       = "order_abandoned"
 	UndoReservation = "reservation_released"
+	UndoLateCharge  = "late_charge_refunded"
 )
 
 // CompensationEntry records one finished compensation step.
@@ -153,10 +185,16 @@ type Session struct {
 	GuestContact     *GuestContact
 	DeliveryAddress  map[string]any
 
-	ConfirmKey     string
-	PaymentGateway string
-	PaymentToken   string
-	ReturnURL      string
+	// PaymentGateway and the rest of the routing are chosen when the
+	// session starts and may change at confirm.
+	PaymentGateway   string
+	PaymentVariant   Variant
+	HostedPayment    bool
+	PaymentPublicKey string
+
+	ConfirmKey   string
+	PaymentToken string
+	ReturnURL    string
 
 	ReservationID        string
 	ReservationExpiresAt *time.Time
@@ -240,36 +278,58 @@ func (s Session) Key(step string) string { return s.ID + ":" + step }
 // UndoKey is the Idempotency-Key of a compensation call.
 func (s Session) UndoKey(step string) string { return s.Key(step) + ":undo" }
 
+// Route records the gateway the session pays with.
+func (s *Session) Route(r Routing) {
+	s.PaymentGateway, s.PaymentVariant, s.HostedPayment, s.PaymentPublicKey = r.Gateway, r.Variant, r.Hosted, r.PublicKey
+}
+
+// Variant is how the session pays; sessions from before routing
+// authorize and capture.
+func (s Session) Variant() Variant {
+	if s.PaymentVariant == VariantCharge {
+		return VariantCharge
+	}
+	return VariantAuthCapture
+}
+
+// PaymentState is the step that takes the payment: AUTHORIZING or
+// CHARGING.
+func (s Session) PaymentState() State {
+	if s.Variant() == VariantCharge {
+		return StateCharging
+	}
+	return StateAuthorizing
+}
+
+// PaymentCall names the payment step's call in its Idempotency-Key.
+func (s Session) PaymentCall() string {
+	if s.Variant() == VariantCharge {
+		return "charge"
+	}
+	return "authorize"
+}
+
 // FirstStep is where a confirmed session starts: RESERVING is skipped when
 // no SKU is tracked (ADR-012).
 func (s Session) FirstStep() State {
 	if s.HasTrackedItems {
 		return StateReserving
 	}
-	return StateAuthorizing
+	return steps[s.Variant()][1]
 }
 
-// Next is the state after the current step succeeds (Variant A).
-func (s State) Next() State {
-	switch s {
-	case StateReserving:
-		return StateAuthorizing
-	case StateAuthorizing:
-		return StateOrderCreate
-	case StateOrderCreate:
-		return StateCapturing
-	case StateCapturing:
-		return StateConfirming
-	case StateConfirming:
-		return StateCompleted
-	case StatePricing, StateCompleted, StateCompensating, StateFailed, StateExpired:
+// Next is the state after the current step succeeds.
+func (s Session) Next() State {
+	order := steps[s.Variant()]
+	if i := slices.Index(order, s.State); i >= 0 && i+1 < len(order) {
+		return order[i+1]
 	}
-	return s
+	return s.State
 }
 
 // Reached reports whether the saga got as far as step before failing.
 func (s Session) Reached(step State) bool {
-	order := []State{StateReserving, StateAuthorizing, StateOrderCreate, StateCapturing}
+	order := steps[s.Variant()]
 	at, want := slices.Index(order, s.FailedState), slices.Index(order, step)
 	return at >= 0 && want >= 0 && at >= want
 }
@@ -319,7 +379,9 @@ type Violation struct {
 	Message string
 }
 
-// ConfirmInput is what the customer supplies at confirm.
+// ConfirmInput is what the customer supplies at confirm. PaymentGateway
+// switches to another of the shop's gateways; the service routes it
+// before validating.
 type ConfirmInput struct {
 	GuestContact     *GuestContact
 	DeliveryAddress  map[string]any
@@ -369,11 +431,17 @@ func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 			add("shipping_option_id", "invalid", "Choose one of the session's shipping options")
 		}
 	}
-	if strings.TrimSpace(in.PaymentToken) == "" || len(in.PaymentToken) > MaxTokenLength {
+	switch {
+	case s.HostedPayment && in.PaymentToken != "":
+		add("payment_gateway_token", "invalid", "The customer pays on the gateway's page; send no payment token")
+	case !s.HostedPayment && (strings.TrimSpace(in.PaymentToken) == "" || len(in.PaymentToken) > MaxTokenLength):
 		add("payment_gateway_token", "required", "A payment method token from the gateway is required")
 	}
-	if len(in.ReturnURL) > MaxReturnURLLength {
+	switch {
+	case len(in.ReturnURL) > MaxReturnURLLength:
 		add("return_url", "invalid", "Return URL is too long")
+	case s.HostedPayment && strings.TrimSpace(in.ReturnURL) == "":
+		add("return_url", "required", "A return URL is required: the customer comes back to it after paying on the gateway's page")
 	}
 	return out
 }
@@ -387,7 +455,7 @@ func (s *Session) Confirm(in ConfirmInput, key string, now time.Time) {
 			s.SelectShipping(in.ShippingOptionID)
 		}
 	}
-	s.PaymentGateway, s.PaymentToken, s.ReturnURL = in.PaymentGateway, in.PaymentToken, in.ReturnURL
+	s.PaymentToken, s.ReturnURL = in.PaymentToken, in.ReturnURL
 	s.ConfirmKey = key
 	s.State = s.FirstStep()
 	s.ConfirmedAt = &now

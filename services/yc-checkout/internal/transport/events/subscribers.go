@@ -18,6 +18,7 @@ import (
 type Handlers interface {
 	ReservationExpired(ctx context.Context, tenantID, sessionID, reservationID string) error
 	PaymentSettled(ctx context.Context, tenantID, sessionID string, waitingIn domain.State) error
+	Charged(ctx context.Context, tenantID, sessionID, transactionID string) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -28,12 +29,13 @@ type Subscription struct {
 
 // paymentEvent is the part of a payment event the saga needs.
 type paymentEvent struct {
-	SessionID string `json:"session_id"`
+	SessionID     string `json:"session_id"`
+	TransactionID string `json:"transaction_id"`
 }
 
 // Subscriptions are yc-checkout's consumers.
 func Subscriptions(h Handlers) []Subscription {
-	subs := make([]Subscription, 0, 5)
+	subs := make([]Subscription, 0, 7)
 	subs = append(subs, Subscription{
 		Opts: eventbus.SubscribeOpts{
 			Subject:     "yc.*." + ycevents.TypeInventoryStockReservationExpiredV1,
@@ -55,6 +57,7 @@ func Subscriptions(h Handlers) []Subscription {
 		{ycevents.TypePaymentAuthorizationFailedV1, "yc-checkout-payment-authorization-failed", domain.StateAuthorizing},
 		{ycevents.TypePaymentCapturedV1, "yc-checkout-payment-captured", domain.StateCapturing},
 		{ycevents.TypePaymentCaptureFailedV1, "yc-checkout-payment-capture-failed", domain.StateCapturing},
+		{ycevents.TypePaymentChargeFailedV1, "yc-checkout-payment-charge-failed", domain.StateCharging},
 	} {
 		subs = append(subs, Subscription{
 			Opts: eventbus.SubscribeOpts{Subject: "yc.*." + w.eventType, DurableName: w.durable},
@@ -67,6 +70,16 @@ func Subscriptions(h Handlers) []Subscription {
 			},
 		})
 	}
+	subs = append(subs, Subscription{
+		Opts: eventbus.SubscribeOpts{Subject: "yc.*." + ycevents.TypePaymentChargedV1, DurableName: "yc-checkout-payment-charged"},
+		Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+			var p paymentEvent
+			if err := decode(evt, &p); err != nil {
+				return err
+			}
+			return poisonInvalid(h.Charged(ctx, evt.Envelope.TenantID, p.SessionID, p.TransactionID))
+		},
+	})
 	return subs
 }
 

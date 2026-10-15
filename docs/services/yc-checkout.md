@@ -64,7 +64,7 @@ Capture or charge success is the point of no return: CONFIRMING is retried until
 | POST | `/checkout` | Start a checkout from a cart | any (customer or visitor) |
 | GET | `/checkout/{session_id}` | Get session state (including current prices, shipping options) | session owner |
 | POST | `/checkout/{session_id}/shipping` | Select a shipping option | session owner |
-| POST | `/checkout/{session_id}/confirm` | Confirm checkout; runs reserve → authorize → create → capture → confirm inline | session owner |
+| POST | `/checkout/{session_id}/confirm` | Confirm checkout; runs the saga inline (Variant A: reserve → authorize → create → capture → confirm; Variant B: reserve → create → charge → confirm) | session owner |
 | POST | `/checkout/{session_id}/cancel` | Cancel in-progress session | session owner |
 
 ### Internal Endpoints
@@ -81,17 +81,20 @@ Capture or charge success is the point of no return: CONFIRMING is retried until
 | GET | `/admin/sessions/{id}` | Session detail (incl. compensation log) | shop_admin |
 | POST | `/admin/sessions/{id}/force-compensate` | Manual compensation trigger (if stuck) | system_admin |
 
-### Phase 4 Implementation Notes
+### Phase 4 and 5 Implementation Notes
 
-The contract is `services/yc-checkout/api/openapi.yaml`. Implemented: the customer and visitor endpoints, the admin list and detail, the internal read, and the full Variant A saga with compensation, resumption, the TTLs and guest checkout. Not yet: Variant B and gateway routing (the shop's gateway is `stripe`), yc-shipping, `tenant_checkout_config` and per-shop TTLs, `force-compensate`, and the `identity.user.deleted.v1` and `platform.tenant.*` subscriptions.
+The contract is `services/yc-checkout/api/openapi.yaml`. Implemented: the customer and visitor endpoints, the admin list and detail, the internal read, both saga variants with compensation, resumption, the TTLs, guest checkout and gateway routing. Not yet: yc-shipping, `tenant_checkout_config` and per-shop TTLs, `force-compensate`, and the `identity.user.deleted.v1` and `platform.tenant.*` subscriptions.
 
-- **Start** reads the cart (`GET /internal/carts/{user_id}/{type}`), the SKUs (`GET /internal/skus/batch` on yc-product) and the prices (`POST /internal/prices/evaluate`), all in one request, and stores the quote: the session is created in `PRICING` (there is no `STARTED` row) and publishes `checkout.started.v1` and `checkout.priced.v1`. An empty or non-convertible cart, unavailable SKUs or unpriced lines are `409`.
+- **Start** reads the cart (`GET /internal/carts/{user_id}/{type}`), the SKUs (`GET /internal/skus/batch` on yc-product) and the prices (`POST /internal/prices/evaluate`), all in one request, and routes the payment in the store currency (`GET /internal/gateway-route` on yc-payment). It stores the quote: the session is created in `PRICING` (there is no `STARTED` row) and publishes `checkout.started.v1` and `checkout.priced.v1`. An empty or non-convertible cart, unavailable SKUs, unpriced lines or a shop that takes no payments in the store currency are `409`.
+- **Routing** (ADR-013). The session records the gateway, its flow (`auth_capture` for Variant A, `charge` for Variant B, from `supports_separate_auth_capture`), whether payment is hosted, and the gateway's public key, shown as `payment` on the session. Confirm may name another `payment_gateway`; it is routed again and must take the store currency (`400` otherwise). A hosted payment (Yoco) takes no `payment_gateway_token` and needs a `return_url`.
+- **Variant B** creates the order before charging: `RESERVING → ORDER_CREATE → CHARGING → CONFIRMING`. The charge carries the order ID. A hosted charge answers `202` in `CHARGING` with `next_action` `redirect_to_url`; `payment.charged.v1` or `payment.charge_failed.v1` (from the gateway's webhook) resumes the session, as do confirming again and the pending poll. A declined charge compensates with `payment_declined`.
+- **Late charges** (ADR-019 rule 12). Compensating a hosted charge leaves it open (`payment_voided: left_open`). If `payment.charged.v1` then arrives for a session that has already undone its payment, checkout refunds it in full (key `{session_id}:charge:refund`) and records `late_charge_refunded` in the compensation log; a session still about to void is driven instead, and goes forward when the void finds the charge captured.
 - **Shipping** is one flat option, `standard` ("Standard"), whose fee is `checkout.shipping.fee_minor` in store-currency minor units (`YC_CHECKOUT_SHIPPING_FEE_MINOR`, default 0), untaxed, offered only when an item is physical. A digital-only session needs no shipping option and no address. yc-shipping quotes replace this later.
 - **Confirm idempotency is native**, not the shared middleware: the first `Idempotency-Key` is stored on the session (`confirm_key`). The same key returns the session's current state and drives it on if it is waiting (after 3-D Secure, or a deadline), so it is safe to repeat; a different key is `409`, or `410` once the session has expired. Confirm runs the saga inline with a 60-second deadline on a context detached from the request, so a client disconnect never triggers compensation; then `200` `COMPLETED`, `422` `FAILED`/`EXPIRED`, or `202`.
 - **One replica drives a session** through a row lease (`lease_owner`, `lease_until`, renewed on every save; `saga.lease_ttl`, default 2 minutes). Lease owners start with the host name, so a restarted replica frees its old leases at once (in compose, `hostname: yc-checkout`); otherwise they lapse after the TTL.
 - **The sweeper** (every 30 s, and once at startup) expires sessions past `expires_at` and resumes driven sessions whose `next_attempt_at` is due and whose lease is free. A step that times out is left for the sweeper; a step that is rejected (4xx) or still failing after `calls.max_attempts` compensates. `CAPTURING` retries an unknown outcome and compensates only an outright refusal (`capture_failed`). `CONFIRMING` is retried with backoff (5 s doubling to 5 min) forever, and after `saga.alert_after` attempts logs an error with `alert=critical`.
-- **Compensation runs void → abandon → release**, not the order in the matrix below: the authorisation is voided first so the customer's funds are not held while the rest is undone. The void names the transaction, or the authorize key when the ID was never learnt; if yc-payment answers that the payment was captured after all, the session goes forward to `CONFIRMING` instead (`capture_discovered`). An order or reservation whose ID was never learnt is found by repeating the create or reserve call with the same key. Each undo is recorded in `compensation_log`.
-- **Pending payments** (3-D Secure) leave the session in `AUTHORIZING` with the payment's `next_action`; `payment.authorized.v1` or `payment.authorization_failed.v1` settles it, as does confirming again or the sweeper (every `saga.pending_poll`, 30 s). `POST /checkout/{id}/cancel` works in `PRICING` and while a payment is pending; otherwise it is `409`.
+- **Compensation runs void → abandon → release**, not the order in the matrix below: the authorisation (or pending charge) is voided first so the customer's funds are not held while the rest is undone. The void names the transaction, or the authorize or charge key when the ID was never learnt; if yc-payment answers that the payment was captured after all, the session goes forward to `CONFIRMING` instead (`capture_discovered`). An order or reservation whose ID was never learnt is found by repeating the create or reserve call with the same key. Each undo is recorded in `compensation_log`.
+- **Pending payments** (3-D Secure, a hosted payment page) leave the session in `AUTHORIZING` or `CHARGING` with the payment's `next_action`; the payment events settle it, as does confirming again or the sweeper (every `saga.pending_poll`, 30 s). `POST /checkout/{id}/cancel` works in `PRICING` and while a payment is pending; otherwise it is `409`.
 - **Customers see only** `shortages` (out of stock) and `decline_reason` in a failure's detail; shop admins see all of it, plus the history and compensation log.
 - **Dev pause.** `debug.pause_before` (a state) and `debug.pause_for` (`YC_CHECKOUT_PAUSE_BEFORE`, `YC_CHECKOUT_PAUSE_FOR`) stall the saga before a step, for the kill-and-resume demo. The service refuses to start with them in production.
 - **yc-cart** removes the checked-out quantities on `checkout.completed.v1`, rather than being called to clear the cart.
@@ -107,8 +110,9 @@ POST /checkout/{session_id}/confirm
   },
   "delivery_address": { ... },    // required if requires_shipping = true (ADR-015: free-form JSON)
   "shipping_option_id": "...",    // required if requires_shipping
-  "payment_gateway": "yoco",      // which gateway to use
-  "payment_gateway_token": "..."  // token from the gateway SDK (ADR-009)
+  "payment_gateway": "stripe",    // optional: another enabled gateway than the session's
+  "payment_gateway_token": "...", // token from the gateway SDK (ADR-009); not for a hosted gateway
+  "return_url": "https://..."     // where the gateway sends the customer back (3-D Secure, hosted page)
 }
 ```
 
@@ -128,9 +132,7 @@ Database: **`yc_checkout`**
 CREATE TABLE tenant_checkout_config (
     tenant_id              TEXT PRIMARY KEY,
     session_ttl_minutes    INT NOT NULL DEFAULT 30,
-    reservation_ttl_minutes INT NOT NULL DEFAULT 15,
-    enabled_gateways       TEXT[] NOT NULL,
-    gateway_routing        JSONB NOT NULL DEFAULT '{}',  -- currency → gateway priority
+    reservation_ttl_minutes INT NOT NULL DEFAULT 15,   -- gateway routing lives in yc-payment (ADR-013)
     created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -150,7 +152,10 @@ CREATE TABLE checkout_sessions (
     selected_shipping_option_id TEXT,
     guest_contact           JSONB,                   -- email, phone
     delivery_address        JSONB,
-    payment_gateway         TEXT,
+    payment_gateway         TEXT,                    -- routed at start (ADR-013)
+    payment_variant         TEXT NOT NULL DEFAULT 'auth_capture', -- 'auth_capture' (A), 'charge' (B)
+    hosted_payment          BOOLEAN NOT NULL DEFAULT false,
+    payment_public_key      TEXT,
     payment_gateway_token   TEXT,                    -- transient; cleared post-use
     reservation_id          UUID,
     reservation_expires_at  TIMESTAMPTZ,
@@ -223,7 +228,7 @@ No command events: participants are called synchronously (ADR-019).
 | AUTHORIZING (A) | yc-payment `POST /internal/authorize` | `POST /internal/void` |
 | ORDER_CREATE | yc-orders `POST /internal/orders` | `POST /internal/orders/{id}/abandon` |
 | CAPTURING (A) | yc-payment `POST /internal/capture` | — (point of no return) |
-| CHARGING (B) | yc-payment `POST /internal/charge` | — (point of no return) |
+| CHARGING (B) | yc-payment `POST /internal/charge` | `POST /internal/void` while pending; a late charge is refunded (`POST /internal/refund`) |
 | CONFIRMING | yc-orders `POST /internal/orders/{id}/confirm`, yc-inventory `POST /internal/reservations/{id}/commit` | — (forward only) |
 
 Mutating calls carry `Idempotency-Key: {session_id}:{step}`; compensation calls append `:undo`.
@@ -234,7 +239,7 @@ Mutating calls carry `Idempotency-Key: {session_id}:{step}`; compensation calls 
 |---|---|
 | `inventory.stock.reservation_expired.v1` | If the session is active and before the point of no return: compensate from the current state |
 | `payment.authorized.v1` / `payment.authorization_failed.v1` | Resume a session waiting on a `pending` authorization (3-D Secure, delayed confirmation) |
-| `payment.charged.v1` / `payment.charge_failed.v1` | Resume a session waiting on a `pending` charge |
+| `payment.charged.v1` / `payment.charge_failed.v1` | Resume a session waiting on a `pending` charge; refund a charge that arrives after the session ended (ADR-019 rule 12) |
 | `payment.captured.v1` / `payment.capture_failed.v1` | Resume a session waiting on a `pending` capture |
 | `identity.user.deleted.v1` | Pseudonymize `user_id` on non-terminal sessions; delete `guest_contact` on terminal sessions beyond retention window |
 | `platform.tenant.provisioned.v1` | Create `tenant_checkout_config` |
@@ -249,20 +254,17 @@ Mutating calls carry `Idempotency-Key: {session_id}:{step}`; compensation calls 
 | AUTHORIZING (A) | Release reservation (if any) |
 | ORDER_CREATE | Void auth (Variant A), release reservation (if any) |
 | CAPTURING (A) | Abandon order, void auth, release reservation (if any) |
-| CHARGING (B) | Abandon order, release reservation (if any) |
+| CHARGING (B) | Void the pending charge (a hosted one is left open, and refunded if paid later), abandon order, release reservation (if any) |
 | CONFIRMING | Never compensated — retried until yc-orders confirms |
 
 Compensation is idempotent and ordered. Compensation calls use `Idempotency-Key: {session_id}:{step}:undo` and treat "nothing to undo" as success.
 
 ## Gateway Routing
 
-At the start of AUTHORIZING / CHARGING:
-1. yc-checkout determines the gateway based on:
-   - Tenant's `enabled_gateways`
-   - `gateway_routing` map (store currency → gateway priority)
-   - Fallback to first enabled gateway
-2. The chosen gateway's capability (`supports_separate_auth_capture`) determines Variant A or B
-3. yc-checkout stores the chosen gateway on the session
+When the session starts (ADR-013):
+1. yc-checkout asks yc-payment `GET /internal/gateway-route?currency={store currency}`. yc-payment owns the shop's gateway configs: among the enabled gateways whose driver takes the currency and whose `currencies` list (if any) includes it, the lowest `priority` wins.
+2. The chosen gateway's capability (`supports_separate_auth_capture`) determines Variant A or B; `hosted_payment` decides whether confirm needs a token or a return URL
+3. yc-checkout stores the gateway, flow and capabilities on the session. A `payment_gateway` named at confirm is routed again with `&gateway=`.
 
 ## Configuration
 

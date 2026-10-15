@@ -112,6 +112,10 @@ func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType str
 	for _, l := range pricing.Lines {
 		priced[l.SKUID] = l
 	}
+	route, err := s.p.Route(ctx, pricing.StoreCurrency, "")
+	if err != nil {
+		return domain.Session{}, startError("payment", err)
+	}
 
 	now := s.now().UTC()
 	sess := domain.Session{
@@ -138,11 +142,22 @@ func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType str
 		sess.HasTrackedItems = sess.HasTrackedItems || k.InventoryTracked
 	}
 	sess.TotalMinor = sess.ItemsTotalMinor
+	sess.Route(routing(route))
 	if sess.RequiresShipping {
 		sess.ShippingOptions = []domain.ShippingOption{s.cfg.Shipping}
 		sess.SelectShipping(s.cfg.Shipping.ID)
 	}
 	return sess, nil
+}
+
+// routing is how a session pays with the gateway: a gateway that cannot
+// authorize separately is charged once (ADR-013).
+func routing(r integration.Route) domain.Routing {
+	v := domain.VariantAuthCapture
+	if !r.SupportsSeparateAuthCapture {
+		v = domain.VariantCharge
+	}
+	return domain.Routing{Gateway: r.Gateway, Variant: v, Hosted: r.HostedPayment, PublicKey: r.PublicKey}
 }
 
 func startError(participant string, err error) error {
@@ -234,6 +249,10 @@ func (s *Service) Confirm(ctx context.Context, id, key string, in domain.Confirm
 	if key == "" || len(key) > 255 {
 		return domain.Session{}, ycerrors.Validation().Field("Idempotency-Key", "required", "Idempotency-Key is required").Build()
 	}
+	route, routeErr := s.confirmRoute(ctx, id, in.PaymentGateway)
+	if _, ok := integration.Rejected(routeErr); routeErr != nil && !ok {
+		return domain.Session{}, routeErr
+	}
 	var sess domain.Session
 	var token string
 	var rejected error
@@ -248,13 +267,16 @@ func (s *Service) Confirm(ctx context.Context, id, key string, in domain.Confirm
 		if err := s.requireQuote(sess); err != nil {
 			return err
 		}
-		if in.PaymentGateway == "" {
-			in.PaymentGateway = s.cfg.Gateways[0]
+		var violations []domain.Violation
+		if routeErr != nil {
+			violations = append(violations, domain.Violation{
+				Field: "payment_gateway", Code: "invalid",
+				Message: "The shop does not take payments in " + sess.Currency + " with this gateway",
+			})
+		} else if route != nil {
+			sess.Route(*route)
 		}
-		violations := sess.ValidateConfirm(in)
-		if !slices.Contains(s.cfg.Gateways, in.PaymentGateway) {
-			violations = append(violations, domain.Violation{Field: "payment_gateway", Code: "invalid", Message: "The shop does not accept this payment gateway"})
-		}
+		violations = append(violations, sess.ValidateConfirm(in)...)
 		if len(violations) > 0 {
 			rejected = validationError(violations)
 			return s.validationFailed(ctx, tx, tenantID, sess, violations)
@@ -285,6 +307,23 @@ func (s *Service) Confirm(ctx context.Context, id, key string, in domain.Confirm
 		return sess, nil
 	}
 	return s.runInline(ctx, sess, token)
+}
+
+// confirmRoute routes the gateway the customer names at confirm, or a
+// session that started without one. nil keeps the session's gateway; a
+// rejection means the shop does not take the payment with it.
+func (s *Service) confirmRoute(ctx context.Context, id, gateway string) (*domain.Routing, error) {
+	sess, err := s.Session(ctx, id)
+	if err != nil || sess.State != domain.StatePricing || gateway == sess.PaymentGateway ||
+		(gateway == "" && sess.PaymentGateway != "") {
+		return nil, err
+	}
+	r, err := s.p.Route(ctx, sess.Currency, gateway)
+	if err != nil {
+		return nil, err
+	}
+	out := routing(r)
+	return &out, nil
 }
 
 // runInline drives the session for the request, bounded by the confirm
@@ -349,8 +388,9 @@ func (s *Service) Cancel(ctx context.Context, id string) (domain.Session, error)
 				return err
 			}
 			return s.ended(ctx, tx, tenantID, sess, domain.StatePricing)
-		case sess.State == domain.StateAuthorizing && !sess.Leased(now) &&
+		case sess.State == sess.PaymentState() && !sess.Leased(now) &&
 			(sess.PaymentStatus == integration.PaymentPending || sess.PaymentStatus == integration.PaymentCreated):
+			from := sess.State
 			token = s.newToken()
 			until := now.Add(s.cfg.LeaseTTL)
 			sess.LeaseOwner, sess.LeaseUntil = token, &until
@@ -360,7 +400,7 @@ func (s *Service) Cancel(ctx context.Context, id string) (domain.Session, error)
 			if err := s.repo.UpdateSession(ctx, tx, tenantID, sess); err != nil {
 				return err
 			}
-			return s.history(ctx, tx, tenantID, sess.ID, "state_changed", domain.StateAuthorizing, sess.State, nil)
+			return s.history(ctx, tx, tenantID, sess.ID, "state_changed", from, sess.State, nil)
 		default:
 			return ycerrors.Conflict("The checkout is being processed and cannot be cancelled").With("state", string(sess.State))
 		}

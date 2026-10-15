@@ -54,7 +54,7 @@ type GatewayDriver interface {
 | Stripe | **Yes** (Variant A) | Payment Intents API with `capture_method: manual` |
 | Yoco | **No** (Variant B) | Online Checkout / Payments API — combined charge; refunds supported |
 
-When Yoco is chosen, yc-checkout uses the Variant B flow (charge instead of auth+capture). Compensation of a failed order creation uses **refund**, not void.
+When Yoco is chosen, yc-checkout uses the Variant B flow (charge instead of auth+capture). The order is created before the charge (ADR-019), so a failed order creation moves no money; only a hosted payment completed after checkout gave up on it is refunded (ADR-019 rule 12).
 
 ## Transaction States
 
@@ -127,6 +127,7 @@ None. Payment capture flows through yc-checkout; the frontend talks directly to 
 | POST | `/internal/refund` | Refund captured payment | service |
 | GET | `/internal/transactions/{id}` | Fetch transaction | service |
 | GET | `/internal/gateway-capabilities/{gateway}` | Capability lookup for yc-checkout | service |
+| GET | `/internal/gateway-route?currency=&gateway=` | The shop's gateway for a currency, with its capabilities (ADR-013) | service |
 
 yc-checkout calls these synchronously during the saga (ADR-019):
 - Mutating calls require `Idempotency-Key` (`{session_id}:{step}`, compensation `{session_id}:{step}:undo`), stored in `transactions.idempotency_key`. A repeated key returns the transaction's **current** status, so a retry after a timeout or a `pending` result gets the real outcome.
@@ -151,15 +152,18 @@ yc-checkout calls these synchronously during the saga (ADR-019):
 | PUT | `/admin/gateway-config` | Set gateway credentials | shop_admin |
 | POST | `/admin/gateway-config/test` | Test connectivity to gateway | shop_admin |
 
-### Phase 4 Implementation Notes
+### Phase 4 and 5 Implementation Notes
 
-The contract is `services/yc-payment/api/openapi.yaml`. Implemented: the Stripe driver (Variant A), the internal authorize, capture, void, refund, transaction and capability endpoints, the Stripe webhook, the admin transaction views and gateway settings. Not yet: Yoco and Variant B (`/internal/charge`, `payment.charged.v1`), `POST /admin/transactions/{id}/refund` (refunds go through yc-orders' admin cancel), chargebacks, and the tenant and user-deleted subscriptions.
+The contract is `services/yc-payment/api/openapi.yaml`. Implemented: the Stripe driver (Variant A), the Yoco driver (Variant B), the internal authorize, capture, charge, void, refund, transaction, capability and route endpoints, both webhooks, the admin transaction views and gateway settings with routing. Not yet: `POST /admin/transactions/{id}/refund` (refunds go through yc-orders' admin cancel), chargebacks, and the tenant and user-deleted subscriptions.
 
 - **Stripe driver** is plain HTTP against the PaymentIntents API (no stripe-go): authorize creates a manual-capture PaymentIntent, capture and void are `capture` and `cancel`, and mutating calls carry Stripe's own `Idempotency-Key`. `stripetest` is an in-memory fake of that surface for tests; `cmd/fake-stripe` serves it on a port for the dev stack (`YC_PAYMENT_STRIPE_API_BASE`), and it honours `pm_card_visa`, `pm_card_chargeDeclined` and `pm_card_threeDSecure2Required`.
 - **Gateway settings** are per gateway: `PUT /admin/gateway-config/{gateway}` and `POST /admin/gateway-config/{gateway}/test`. The API key and webhook secret are sealed with AES-256-GCM under `YC_PAYMENT_CIPHER_KEY` (base64 of 32 bytes) and only ever returned as a hint (`sk_test_…4242`).
 - **Outcomes, not errors.** A declined authorisation is `200` with status `failed` and a `failure_reason`; 3-D Secure is `200` with status `pending` and the gateway's `next_action`. A refused capture is `400 payment_declined`; a gateway outage is `503 gateway_unavailable`; a shop without the gateway set up is `412`.
 - **Idempotency is native**, not the shared middleware: authorize and refund look up the transaction by `Idempotency-Key` and return its current state, so a retry after a timeout or a pending result learns the real outcome. Capture and void are idempotent by state. Void names the transaction or, for a caller that never learnt its ID, the authorize key; nothing to void is success, and a captured payment is `409`.
-- **Webhooks** (`POST /webhooks/stripe`) are a gateway callback route on the shop's host (ADR-020): no token; the body is verified with the shop's webhook secret (`Stripe-Signature`, 5-minute tolerance). `payment_intent.*` and refund events update the transaction and publish the matching event; anything verified gets `200`, a bad signature `401` and `payment.webhook_signature_failed.v1`. Locally, forward with `stripe listen --forward-to localhost:8090/webhooks/stripe -H "Host: demo-shop.localhost"`.
+- **Webhooks** (`POST /webhooks/stripe`, `POST /webhooks/yoco`) are gateway callback routes on the shop's host (ADR-020): no token; the body is verified with the shop's webhook secret. Stripe uses `Stripe-Signature` (5-minute tolerance); Yoco uses Standard Webhooks (`webhook-id`, `webhook-timestamp`, `webhook-signature`, a `whsec_` secret, 3-minute tolerance). Payment and refund events update the transaction and publish the matching event; anything verified gets `200`, a bad signature `401` and `payment.webhook_signature_failed.v1`. Each event is recorded in `webhook_events` by `(gateway, event ID)`, so a redelivery is acknowledged without effect. Locally, forward with `stripe listen --forward-to localhost:8090/webhooks/stripe -H "Host: demo-shop.localhost"`.
+- **Yoco driver** is plain HTTP against the Checkout API. A charge creates a hosted checkout (`POST /api/checkouts`, the transaction's ID as `externalId`) and is `pending` with `next_action` `redirect_to_url`; it takes no payment token and needs a `return_url`. The outcome arrives only by webhook (`payment.succeeded` or `payment.failed`, naming the checkout in `metadata.checkoutId`) and is published as `payment.charged.v1` or `payment.charge_failed.v1`. The API can neither look up nor cancel a checkout, so a void leaves it `pending` (still payable), and refunds go through `POST /api/checkouts/{id}/refund`. Only ZAR. `yocotest` is an in-memory fake that signs and delivers webhooks; `cmd/fake-yoco` serves it for the dev stack (`YC_PAYMENT_YOCO_API_BASE`), with a `_fake` page to pay or fail a checkout.
+- **Routing** (ADR-013). Each gateway config has a `priority` (0–1000, lowest first, default 100) and an optional `currencies` list (empty: all the driver takes; a currency the driver cannot take is `400`). `GET /internal/gateway-route?currency=` returns the enabled gateway with the lowest priority that takes the currency, with its capabilities (`supports_separate_auth_capture`, `hosted_payment`, `public_key`); `&gateway=` checks a named one. No such gateway is `412`.
+- **Charge** (`POST /internal/charge`) is idempotent by `Idempotency-Key` like authorize, records `kind = charge` and the order it pays for, and sends the gateway the tenant, session and transaction IDs as metadata.
 
 ## Database Schema
 
@@ -173,7 +177,8 @@ CREATE TABLE tenant_gateway_config (
     credentials_enc    BYTEA NOT NULL,          -- encrypted JSON blob
     public_key         TEXT,                     -- for frontend SDK
     webhook_secret_enc BYTEA NOT NULL,
-    priority           INT NOT NULL DEFAULT 100,
+    priority           INT NOT NULL DEFAULT 100,  -- 0..1000, lowest routes first
+    currencies         TEXT[] NOT NULL DEFAULT '{}', -- empty: all the driver takes
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (tenant_id, gateway)

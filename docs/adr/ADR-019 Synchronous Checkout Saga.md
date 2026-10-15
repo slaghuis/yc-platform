@@ -21,7 +21,7 @@ Orders are created as **`pending_payment`** and confirmed only after payment suc
    | AUTHORIZING (A) | yc-payment `POST /internal/authorize` | `POST /internal/void` |
    | ORDER_CREATE | yc-orders `POST /internal/orders` (creates `pending_payment`) | `POST /internal/orders/{id}/abandon` |
    | CAPTURING (A) | yc-payment `POST /internal/capture` | — (see rule 6) |
-   | CHARGING (B) | yc-payment `POST /internal/charge` | — (see rule 6) |
+   | CHARGING (B) | yc-payment `POST /internal/charge` | `POST /internal/void` while pending (see rules 6 and 12) |
    | CONFIRMING | yc-orders `POST /internal/orders/{id}/confirm`, then yc-inventory `POST /internal/reservations/{id}/commit` (if a reservation exists) | none — forward only |
 
 2. **Step order.**
@@ -62,13 +62,19 @@ Orders are created as **`pending_payment`** and confirmed only after payment suc
 
 11. **TTLs are unchanged.** Session TTL (ADR-011) and reservation TTL (ADR-012) still apply. The expiry sweeper compensates expired sessions that have not reached the point of no return.
 
+12. **Late charges are refunded** (added 2026-10-15). A hosted payment (Yoco, ADR-013) cannot be cancelled. When a session waiting in CHARGING is cancelled, expires or loses its reservation, compensation voids the charge: the void finds it still pending and leaves it open (compensation log `payment_voided: left_open`), and the order is abandoned and the stock released as usual. If the customer then pays on the gateway's page, `payment.charged.v1` arrives for a session that has ended:
+    - if the session is still compensating and has not yet undone its payment, it is driven; the void finds the charge captured and the session goes forward to CONFIRMING (as for a capture discovered by a void, rule 6);
+    - otherwise yc-checkout refunds the charge in full (`POST /internal/refund`, key `{session_id}:charge:refund`) and records `late_charge_refunded` with the refund's status in the compensation log. A refund that fails is logged as a critical alert for the shop.
+
+    This is the only case where Variant B refunds. A failed order creation still never moves money (rule 3).
+
 ## Consequences
 
 **Positive**
 - The customer gets the outcome in the confirm response; polling is needed only for 3-D Secure, delayed settlement or slow compensation.
 - Fewer moving parts: no per-step subscriptions or response timeouts on the bus, and nine command event types removed from the taxonomy.
 - Downstream services (shipping, messaging, analytics) only ever see paid orders, and stock is committed exactly when payment succeeds.
-- Variant B no longer refunds to compensate a failed order creation (ADR-013's "worse user experience" case disappears).
+- Variant B no longer refunds to compensate a failed order creation (ADR-013's "worse user experience" case disappears). It refunds only a hosted payment the customer completes after checkout gave up on it (rule 12).
 
 **Negative**
 - Temporal coupling: confirm needs cart, pricing, shipping, inventory, payment and orders to be available. Checkout cannot complete without them anyway, but an outage now fails the request instead of delaying it.
@@ -84,3 +90,4 @@ Orders are created as **`pending_payment`** and confirmed only after payment suc
 
 - ADR-012 (Events Affected), ADR-013 (Saga Impact): command events replaced by the internal calls above.
 - `docs/diagrams/checkout-saga.md`, `docs/services/yc-checkout.md`, `yc-orders.md`, `yc-payment.md`, `yc-inventory.md`, `yc-shipping.md`, `docs/standards/event-conventions.md` §2 and §10, `docs/implementation-plan.md` Phase 4.
+- 2026-10-15 (rule 12, late charges): ADR-013 (Yoco hosted flow), `docs/diagrams/checkout-saga.md`, `docs/services/yc-checkout.md`, `yc-payment.md`, `docs/implementation-plan.md` Phase 5.

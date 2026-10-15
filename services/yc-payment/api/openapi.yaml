@@ -3,11 +3,12 @@ info:
   title: yc-payment
   version: 0.1.0
   description: |
-    Payments through the shop's gateway (docs/services/yc-payment.md).
-    Phase 4 subset: the Stripe driver (Variant A, separate authorize and
-    capture), the internal calls yc-checkout and yc-orders make, Stripe
-    webhooks, encrypted per-shop credentials and the admin transaction
-    views.
+    Payments through the shop's gateway (docs/services/yc-payment.md):
+    Stripe (Variant A, separate authorize and capture) and Yoco (Variant B,
+    one combined charge on Yoco's hosted page), per-shop gateway priority
+    and currency routing, the internal calls yc-checkout and yc-orders
+    make, gateway webhooks, encrypted per-shop credentials and the admin
+    transaction views.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -18,11 +19,13 @@ info:
     timeout or a pending (3-D Secure) result learns the real outcome.
     Capture and void are idempotent by state.
 
-    POST /webhooks/stripe takes Stripe's signed webhooks on the shop's
-    host. It is a gateway callback route (no token); the body is verified
-    with the shop's webhook secret (Stripe-Signature, 5-minute tolerance).
-    It answers 200 to anything verified, including redeliveries and
-    events about unknown payments, and 401 to a bad signature.
+    POST /webhooks/stripe and POST /webhooks/yoco take the gateways'
+    signed webhooks on the shop's host. They are gateway callback routes
+    (no token); the body is verified with the shop's webhook secret
+    (Stripe-Signature with a 5-minute tolerance; Yoco's Standard Webhooks
+    headers with 3 minutes). They answer 200 to anything verified,
+    including redeliveries (deduplicated by event ID) and events about
+    unknown payments, and 401 to a bad signature.
 
     Card data never reaches yc-payment (ADR-009): payment_token is the
     gateway SDK's payment method and is passed through, not stored.
@@ -154,6 +157,70 @@ paths:
         '412': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
 
+  /internal/charge:
+    post:
+      summary: Charge a payment in one step (Variant B)
+      description: |
+        yc-checkout's CHARGING step (ADR-019), with Idempotency-Key
+        {session_id}:charge. The order exists already (pending_payment) and
+        is named by order_id. For a hosted gateway (Yoco) there is no
+        payment_token: the answer is status pending with next_action
+        {type: redirect_to_url, redirect_to_url: {url, return_url}}, and
+        the outcome arrives only by webhook (payment.charged.v1 or
+        payment.charge_failed.v1); repeating the call returns the
+        transaction's current state. A decline is 200 with status failed.
+        A gateway outage is 503 gateway_unavailable; retry with the same
+        key. A shop without the gateway set up is 412.
+      operationId: chargePayment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChargeInput' }
+      responses:
+        '200':
+          description: The transaction in its current state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /internal/gateway-route:
+    get:
+      summary: Pick the shop's gateway for a currency
+      description: |
+        Gateway selection (ADR-013): among the shop's enabled gateways that
+        take the currency (the driver supports it, and the shop's
+        currencies list, if any, includes it), the lowest priority, then
+        the gateway name. With gateway, that gateway must qualify. The
+        answer's capabilities choose the saga variant and tell the
+        storefront whether to collect a payment token or redirect. No
+        such gateway is 412.
+      operationId: routeGateway
+      parameters:
+        - name: currency
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[A-Z]{3}$' }
+        - name: gateway
+          in: query
+          schema: { $ref: '#/components/schemas/GatewayName' }
+      responses:
+        '200':
+          description: The chosen gateway.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Capabilities' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+
   /internal/capture:
     post:
       summary: Capture an authorized payment
@@ -180,13 +247,16 @@ paths:
 
   /internal/void:
     post:
-      summary: Void an authorization
+      summary: Void an authorization or an unfinished charge
       description: |
         Checkout compensation. Names the transaction, or the
-        Idempotency-Key that authorized it (for a caller that never learnt
-        the transaction ID). Nothing to void is success: status none when
-        there is no such transaction, or the transaction's status when it
-        is already voided or failed. A captured payment is 409 (refund it).
+        Idempotency-Key that authorized or charged it (for a caller that
+        never learnt the transaction ID). Nothing to void is success:
+        status none when there is no such transaction, or the
+        transaction's status when it is already voided or failed. A charge
+        the gateway cannot cancel (a Yoco checkout) is status pending: it
+        stays payable, and a late payment is the caller's to refund. A
+        captured payment is 409 (refund it).
       operationId: voidPayment
       requestBody:
         required: true
@@ -262,7 +332,7 @@ components:
       name: gateway
       in: path
       required: true
-      schema: { type: string, enum: [stripe] }
+      schema: { $ref: '#/components/schemas/GatewayName' }
     TransactionID:
       name: id
       in: path
@@ -283,6 +353,9 @@ components:
       schema: { type: string }
 
   schemas:
+    GatewayName:
+      type: string
+      enum: [stripe, yoco]
     Money:
       type: object
       required: [amount_minor, currency]
@@ -295,18 +368,34 @@ components:
       additionalProperties: false
       properties:
         enabled: { type: boolean }
-        api_key: { type: string, maxLength: 255, description: The secret key (Stripe sk_...). }
-        webhook_secret: { type: string, maxLength: 255, description: The webhook signing secret (Stripe whsec_...). }
+        api_key: { type: string, maxLength: 255, description: The secret key (Stripe or Yoco sk_...). }
+        webhook_secret: { type: string, maxLength: 255, description: The webhook signing secret (whsec_...). }
         public_key: { type: string, maxLength: 255, description: The publishable key for the storefront SDK. }
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: Lowest first among gateways that take a currency. Omitted keeps the stored one (default 100).
+        currencies:
+          type: array
+          maxItems: 20
+          items: { type: string, pattern: '^[A-Z]{3}$' }
+          description: >-
+            Route only these currencies to the gateway; empty routes every currency it supports. Omitted keeps
+            the stored list.
     GatewayConfig:
       type: object
-      required: [gateway, enabled, api_key_hint, webhook_secret_set, updated_at]
+      required: [gateway, enabled, api_key_hint, webhook_secret_set, priority, currencies, updated_at]
       properties:
         gateway: { type: string }
         enabled: { type: boolean }
         api_key_hint: { type: string, description: 'The key masked, e.g. sk_test_…4242.' }
         webhook_secret_set: { type: boolean }
         public_key: { type: string }
+        priority: { type: integer }
+        currencies:
+          type: array
+          items: { type: string }
         updated_at: { type: string, format: date-time }
     GatewayConfigList:
       type: object
@@ -323,10 +412,17 @@ components:
         message: { type: string, description: Why the gateway refused, when it did. }
     Capabilities:
       type: object
-      required: [gateway, supports_separate_auth_capture, configured]
+      required: [gateway, supports_separate_auth_capture, hosted_payment, configured]
       properties:
         gateway: { type: string }
-        supports_separate_auth_capture: { type: boolean, description: Variant A when true. }
+        supports_separate_auth_capture: { type: boolean, description: Variant A when true; Variant B (charge) when false. }
+        hosted_payment:
+          type: boolean
+          description: The customer pays on the gateway's page; no payment token, the outcome arrives by webhook.
+        supported_currencies:
+          type: array
+          items: { type: string }
+          description: The currencies the gateway takes; absent when it takes any.
         configured: { type: boolean, description: The shop has credentials and the gateway enabled. }
         public_key: { type: string }
     TransactionStatus:
@@ -340,6 +436,10 @@ components:
         transaction_id: { type: string, format: uuid }
         session_id: { type: string }
         order_id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [authorize, charge]
+          description: authorize (Variant A) or a combined charge (Variant B).
         gateway: { type: string }
         gateway_reference: { type: string }
         status: { $ref: '#/components/schemas/TransactionStatus' }
@@ -392,10 +492,27 @@ components:
       additionalProperties: false
       properties:
         session_id: { type: string, minLength: 1, maxLength: 100 }
-        gateway: { type: string, enum: [stripe], default: stripe }
+        gateway: { type: string, enum: [stripe, yoco], default: stripe }
         amount: { $ref: '#/components/schemas/Money' }
         payment_token: { type: string, minLength: 1, maxLength: 255, description: 'The gateway SDK payment method, e.g. pm_...' }
         return_url: { type: string, maxLength: 2048, description: Where a redirect-based challenge returns to. }
+    ChargeInput:
+      type: object
+      required: [session_id, gateway, amount]
+      additionalProperties: false
+      properties:
+        session_id: { type: string, minLength: 1, maxLength: 100 }
+        gateway: { $ref: '#/components/schemas/GatewayName' }
+        amount: { $ref: '#/components/schemas/Money' }
+        payment_token:
+          type: string
+          maxLength: 255
+          description: The gateway SDK payment method; omitted for a hosted gateway (Yoco).
+        return_url:
+          type: string
+          maxLength: 2048
+          description: Where the customer returns to after paying on the gateway's page; required for a hosted gateway.
+        order_id: { type: string, format: uuid, description: The pending order the charge pays for. }
     CaptureInput:
       type: object
       required: [transaction_id]
@@ -409,14 +526,14 @@ components:
       additionalProperties: false
       properties:
         transaction_id: { type: string, format: uuid }
-        authorization_key: { type: string, maxLength: 255, description: The Idempotency-Key of the authorize call. }
+        authorization_key: { type: string, maxLength: 255, description: The Idempotency-Key of the authorize or charge call. }
     VoidResult:
       type: object
       required: [status]
       properties:
         status:
           type: string
-          enum: [voided, failed, none]
+          enum: [voided, failed, pending, none]
         transaction_id: { type: string, format: uuid }
     RefundInput:
       type: object

@@ -31,8 +31,8 @@ checkout:
   session_ttl: 30m
   # Asked of yc-inventory; shorter than the session (ADR-011, ADR-012).
   reservation_ttl: 15m
-  # Payment gateways a session may use; the first is the default.
-  gateways: [stripe]
+  # The payment gateway is the shop's choice: yc-payment routes each
+  # session by currency and priority (ADR-013).
   # One flat-fee option for physical items, in store-currency minor units.
   # It is untaxed; digital-only checkouts are not shipped.
   shipping:

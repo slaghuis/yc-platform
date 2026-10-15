@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,18 +26,22 @@ var currencyRE = regexp.MustCompile(`^[A-Z]{3}$`)
 // maxKey bounds Idempotency-Key values (api-conventions.md §10).
 const maxKey = 255
 
-// AuthorizeRequest holds funds for a checkout session (Variant A).
-type AuthorizeRequest struct {
-	SessionID      string
-	Gateway        string
-	AmountMinor    int64
-	Currency       string
-	PaymentToken   string
-	ReturnURL      string
+// PaymentRequest starts a checkout session's payment: an authorization
+// (Variant A) or a combined charge (Variant B).
+type PaymentRequest struct {
+	SessionID   string
+	Gateway     string
+	AmountMinor int64
+	Currency    string
+	// PaymentToken is required unless the gateway hosts the payment page.
+	PaymentToken string
+	ReturnURL    string
+	// OrderID is the pending order a charge pays for (Variant B).
+	OrderID        string
 	IdempotencyKey string
 }
 
-func (r AuthorizeRequest) validate() error {
+func (r PaymentRequest) validate(d gateway.Driver, kind domain.Kind) error {
 	v := ycerrors.Validation()
 	if r.IdempotencyKey == "" || len(r.IdempotencyKey) > maxKey {
 		v.Field("Idempotency-Key", "required", "Idempotency-Key header is required (at most 255 characters)")
@@ -47,14 +52,29 @@ func (r AuthorizeRequest) validate() error {
 	if r.AmountMinor <= 0 {
 		v.Field("amount.amount_minor", "invalid", "Amount must be positive")
 	}
-	if !currencyRE.MatchString(r.Currency) {
+	switch cur := d.SupportedCurrencies(); {
+	case !currencyRE.MatchString(r.Currency):
 		v.Field("amount.currency", "invalid", "Currency must be an ISO 4217 code")
+	case cur != nil && !slices.Contains(cur, r.Currency):
+		v.Field("amount.currency", "unsupported", d.Name()+" does not take "+r.Currency)
 	}
-	if strings.TrimSpace(r.PaymentToken) == "" || len(r.PaymentToken) > 255 {
+	switch {
+	case d.HostedPayment() && r.PaymentToken != "":
+		v.Field("payment_token", "unexpected", d.Name()+" collects the payment method on its own page")
+	case !d.HostedPayment() && (strings.TrimSpace(r.PaymentToken) == "" || len(r.PaymentToken) > 255):
 		v.Field("payment_token", "required", "Payment token is required")
 	}
 	if len(r.ReturnURL) > 2048 {
 		v.Field("return_url", "too_long", "Return URL is at most 2048 characters")
+	}
+	if d.HostedPayment() && r.ReturnURL == "" {
+		v.Field("return_url", "required", "A return URL is required: the customer pays on "+d.Name()+"'s page")
+	}
+	if r.OrderID != "" && uuid.Validate(r.OrderID) != nil {
+		v.Field("order_id", "invalid", "Order ID must be a UUID")
+	}
+	if kind == domain.KindAuthorize && !d.SupportsSeparateAuthCapture() {
+		v.Field("gateway", "unsupported", d.Name()+" cannot authorize without capturing; charge instead (Variant B)")
 	}
 	if v.HasErrors() {
 		return v.Build()
@@ -62,17 +82,30 @@ func (r AuthorizeRequest) validate() error {
 	return nil
 }
 
-// Authorize holds the amount at the gateway. A repeated key returns the
+// Authorize holds the amount at the gateway (Variant A).
+func (s *Service) Authorize(ctx context.Context, req PaymentRequest) (domain.Transaction, error) {
+	return s.pay(ctx, domain.KindAuthorize, req)
+}
+
+// Charge takes the amount in one step (Variant B). A hosted payment (Yoco)
+// is pending with a redirect next_action until the gateway's webhook
+// reports the outcome.
+func (s *Service) Charge(ctx context.Context, req PaymentRequest) (domain.Transaction, error) {
+	return s.pay(ctx, domain.KindCharge, req)
+}
+
+// pay starts an authorization or charge. A repeated key returns the
 // transaction's current state; one whose outcome is not known yet
-// (pending 3-D Secure, or a call that failed) asks the gateway again.
+// (pending 3-D Secure, or a call that failed) asks the gateway again,
+// unless the gateway cannot be asked and reports by webhook only.
 // Declines are a failed transaction, not an error; gateway outages are
 // gateway_unavailable so the caller retries with the same key.
-func (s *Service) Authorize(ctx context.Context, req AuthorizeRequest) (domain.Transaction, error) {
-	if err := req.validate(); err != nil {
-		return domain.Transaction{}, err
-	}
+func (s *Service) pay(ctx context.Context, kind domain.Kind, req PaymentRequest) (domain.Transaction, error) {
 	d, err := s.driver(req.Gateway)
 	if err != nil {
+		return domain.Transaction{}, err
+	}
+	if err := req.validate(d, kind); err != nil {
 		return domain.Transaction{}, err
 	}
 	var t domain.Transaction
@@ -85,7 +118,7 @@ func (s *Service) Authorize(ctx context.Context, req AuthorizeRequest) (domain.T
 			return err
 		}
 		if ok {
-			if existing.SessionID != req.SessionID || existing.Gateway != req.Gateway ||
+			if existing.SessionID != req.SessionID || existing.Gateway != req.Gateway || existing.Kind != kind ||
 				existing.AmountMinor != req.AmountMinor || existing.Currency != req.Currency {
 				return ycerrors.Conflict("Idempotency-Key was used for a different payment")
 			}
@@ -101,9 +134,9 @@ func (s *Service) Authorize(ctx context.Context, req AuthorizeRequest) (domain.T
 		}
 		now := s.now().UTC()
 		t = domain.Transaction{
-			ID: uuid.NewString(), SessionID: req.SessionID, Gateway: req.Gateway, Status: domain.StatusCreated,
-			AmountMinor: req.AmountMinor, Currency: req.Currency, IdempotencyKey: req.IdempotencyKey,
-			CreatedAt: now, UpdatedAt: now,
+			ID: uuid.NewString(), SessionID: req.SessionID, OrderID: req.OrderID, Kind: kind, Gateway: req.Gateway,
+			Status: domain.StatusCreated, AmountMinor: req.AmountMinor, Currency: req.Currency,
+			IdempotencyKey: req.IdempotencyKey, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := s.repo.InsertTransaction(ctx, tx, tenant, t); err != nil {
 			if dbkit.IsUniqueViolation(err) {
@@ -121,14 +154,23 @@ func (s *Service) Authorize(ctx context.Context, req AuthorizeRequest) (domain.T
 	}
 
 	var p gateway.Payment
-	if t.GatewayReference == "" {
+	meta := map[string]string{"tenant_id": tenantID, "session_id": t.SessionID, "transaction_id": t.ID}
+	switch {
+	case t.GatewayReference != "":
+		p, err = d.Get(ctx, creds, t.GatewayReference)
+		if errors.Is(err, gateway.ErrUnsupported) {
+			return t, nil
+		}
+	case kind == domain.KindCharge:
+		p, err = d.Charge(ctx, creds, gateway.ChargeRequest{
+			AmountMinor: t.AmountMinor, Currency: t.Currency, PaymentToken: req.PaymentToken, ReturnURL: req.ReturnURL,
+			Metadata: meta, IdempotencyKey: "yc-" + t.ID + "-charge",
+		})
+	default:
 		p, err = d.Authorize(ctx, creds, gateway.AuthorizeRequest{
 			AmountMinor: t.AmountMinor, Currency: t.Currency, PaymentToken: req.PaymentToken, ReturnURL: req.ReturnURL,
-			Metadata:       map[string]string{"tenant_id": tenantID, "session_id": t.SessionID, "transaction_id": t.ID},
-			IdempotencyKey: "yc-" + t.ID + "-authorize",
+			Metadata: meta, IdempotencyKey: "yc-" + t.ID + "-authorize",
 		})
-	} else {
-		p, err = d.Get(ctx, creds, t.GatewayReference)
 	}
 	if p, err = declined(p, err); err != nil {
 		return domain.Transaction{}, err
@@ -187,6 +229,21 @@ func (s *Service) apply(ctx context.Context, tx pgx.Tx, tenantID string, t *doma
 
 func (s *Service) publishTransition(ctx context.Context, tx pgx.Tx, tenantID string, before domain.Status, t domain.Transaction, now time.Time) error {
 	amount := money(t.AmountMinor, t.Currency)
+	if t.Kind == domain.KindCharge {
+		switch t.Status {
+		case domain.StatusCaptured:
+			return s.publish(ctx, tx, tenantID, events.TypePaymentChargedV1, events.PaymentChargedV1{
+				TransactionID: t.ID, SessionID: t.SessionID, OrderID: optional(t.OrderID), Gateway: t.Gateway,
+				GatewayReference: optional(t.GatewayReference), Amount: money(t.CapturedMinor, t.Currency), ChargedAt: now,
+			})
+		case domain.StatusFailed:
+			return s.publish(ctx, tx, tenantID, events.TypePaymentChargeFailedV1, events.PaymentChargeFailedV1{
+				TransactionID: t.ID, SessionID: t.SessionID, Gateway: t.Gateway, Amount: amount,
+				Reason: reasonOr(t.FailureReason), FailedAt: now,
+			})
+		case domain.StatusCreated, domain.StatusPending, domain.StatusAuthorized, domain.StatusVoided, domain.StatusRefunded:
+		}
+	}
 	switch t.Status {
 	case domain.StatusAuthorized:
 		return s.publish(ctx, tx, tenantID, events.TypePaymentAuthorizedV1, events.PaymentAuthorizedV1{
@@ -245,6 +302,9 @@ func (s *Service) Capture(ctx context.Context, req CaptureRequest) (domain.Trans
 		return t, ycerrors.New(ycerrors.CodeInvalidStateTransition, "Only an authorized payment can be captured").
 			With("transaction_status", string(t.Status))
 	}
+	if t.Kind == domain.KindCharge {
+		return t, ycerrors.New(ycerrors.CodeInvalidStateTransition, "A charge is captured as it is made")
+	}
 	if req.AmountMinor < 0 || req.AmountMinor > t.AmountMinor {
 		return t, ycerrors.Validation().Field("amount_minor", "invalid", "Capture amount exceeds the authorized amount").Build()
 	}
@@ -293,9 +353,11 @@ type VoidRequest struct {
 	AuthorizationKey string
 }
 
-// Void releases an authorization. Nothing to void (no such
-// authorization, already voided or failed) is success: found is false
-// when there was no transaction at all.
+// Void releases an authorization or cancels an unfinished charge. Nothing
+// to void (no such payment, already voided or failed) is success: found is
+// false when there was no transaction at all. A charge the gateway cannot
+// cancel (a Yoco checkout) is returned still pending: the customer can
+// still pay it, and the payment's owner refunds money that arrives late.
 func (s *Service) Void(ctx context.Context, req VoidRequest) (t domain.Transaction, found bool, err error) {
 	if req.TransactionID == "" && req.AuthorizationKey == "" {
 		return t, false, ycerrors.Validation().Field("transaction_id", "required", "transaction_id or authorization_key is required").Build()
@@ -342,6 +404,13 @@ func (s *Service) Void(ctx context.Context, req VoidRequest) (t domain.Transacti
 	p, err := d.Void(ctx, creds, t.GatewayReference, "yc-"+t.ID+"-void")
 	var de *gateway.DeclineError
 	switch {
+	case errors.Is(err, gateway.ErrUnsupported):
+		if t.Status == domain.StatusAuthorized {
+			return t, true, ycerrors.Internal(t.Gateway + " cannot void an authorization")
+		}
+		telemetry.LoggerFromContext(ctx).Info("gateway cannot cancel the payment; it stays open",
+			"transaction_id", t.ID, "gateway", t.Gateway)
+		return t, true, nil
 	case errors.As(err, &de) && de.Payment != nil && de.Payment.Status != gateway.StatusAuthorized &&
 		de.Payment.Status != gateway.StatusPending:
 		// Already settled at the gateway (voided, captured or failed).

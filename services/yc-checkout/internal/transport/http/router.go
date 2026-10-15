@@ -99,7 +99,7 @@ func (h handlers) ConfirmCheckout(ctx context.Context, req api.ConfirmCheckoutRe
 	b := req.Body
 	in := domain.ConfirmInput{
 		ShippingOptionID: deref(b.ShippingOptionID), PaymentGateway: deref(b.PaymentGateway),
-		PaymentToken: b.PaymentGatewayToken, ReturnURL: deref(b.ReturnURL), DeliveryAddress: deref(b.DeliveryAddress),
+		PaymentToken: deref(b.PaymentGatewayToken), ReturnURL: deref(b.ReturnURL), DeliveryAddress: deref(b.DeliveryAddress),
 	}
 	if g := b.GuestContact; g != nil {
 		in.GuestContact = &domain.GuestContact{Email: g.Email, PhoneE164: g.PhoneE164}
@@ -115,7 +115,7 @@ func (h handlers) ConfirmCheckout(ctx context.Context, req api.ConfirmCheckoutRe
 	case domain.StateFailed, domain.StateExpired:
 		return api.ConfirmCheckout422JSONResponse(out), nil
 	case domain.StatePricing, domain.StateReserving, domain.StateAuthorizing, domain.StateOrderCreate,
-		domain.StateCapturing, domain.StateConfirming, domain.StateCompensating:
+		domain.StateCharging, domain.StateCapturing, domain.StateConfirming, domain.StateCompensating:
 	}
 	return api.ConfirmCheckout202JSONResponse(out), nil
 }
@@ -209,7 +209,11 @@ func session(s domain.Session, admin bool) api.Session {
 		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
 	}
 	if s.PaymentGateway != "" {
-		p := &api.PaymentState{Gateway: s.PaymentGateway, Status: optional(s.PaymentStatus), TransactionID: uuidPtr(s.PaymentTransactionID)}
+		p := &api.PaymentState{
+			Gateway: s.PaymentGateway, Flow: api.PaymentStateFlow(s.Variant()), Hosted: s.HostedPayment,
+			PublicKey: optional(s.PaymentPublicKey), Status: optional(s.PaymentStatus),
+			TransactionID: uuidPtr(s.PaymentTransactionID),
+		}
 		if len(s.NextAction) > 0 {
 			na := s.NextAction
 			p.NextAction = &na

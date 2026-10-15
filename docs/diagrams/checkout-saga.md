@@ -114,7 +114,17 @@ CONFIRMING    POST yc-orders    /internal/orders/{id}/confirm   Idempotency-Key:
 COMPLETED     yc-checkout publishes checkout.completed.v1
 ```
 
-The confirm request returns `200` with the `order_id`. Variant B replaces AUTHORIZING and CAPTURING with a single CHARGING call (`POST /internal/charge`) placed after ORDER_CREATE.
+The confirm request returns `200` with the `order_id`. Variant B replaces AUTHORIZING and CAPTURING with a single CHARGING call placed after ORDER_CREATE:
+
+```
+RESERVING     POST yc-inventory /internal/reservations          Idempotency-Key: {session_id}:reserve
+ORDER_CREATE  POST yc-orders    /internal/orders                Idempotency-Key: {session_id}:order_create
+CHARGING      POST yc-payment   /internal/charge                Idempotency-Key: {session_id}:charge
+              ── point of no return once captured ──
+CONFIRMING    (as above)
+```
+
+The variant comes from the gateway yc-payment routes the store currency to when the session starts (`GET /internal/gateway-route`, ADR-013); the customer may pick another enabled gateway at confirm. A hosted gateway (Yoco) needs no token: CHARGING returns `202` with a `redirect_to_url` `next_action`, and the outcome arrives by webhook.
 
 ### Step 4: Post-completion fan-out (asynchronous)
 
@@ -146,8 +156,10 @@ When a step fails before the point of no return, yc-checkout enters **COMPENSATI
 | AUTHORIZING (A) | Release reservation | inventory release |
 | ORDER_CREATE | Void auth (A), release reservation | payment void (A), inventory release |
 | CAPTURING (A) | Abandon order, void auth, release reservation | orders abandon, payment void, inventory release |
-| CHARGING (B) | Abandon order, release reservation | orders abandon, inventory release |
+| CHARGING (B) | Void the pending charge, abandon order, release reservation | payment void (a hosted charge is left open), orders abandon, inventory release |
 | CONFIRMING | Never compensated — retried until it succeeds | — |
+
+A hosted charge cannot be cancelled, so the customer can still pay it after the session has failed, expired or been cancelled. yc-checkout then refunds it in full on `payment.charged.v1` (`POST /internal/refund`, key `{session_id}:charge:refund`) and logs `late_charge_refunded` (ADR-019 rule 12).
 
 ### Compensation Rules
 

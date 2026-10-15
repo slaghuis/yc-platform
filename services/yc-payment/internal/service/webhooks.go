@@ -61,7 +61,7 @@ func (s *Service) Webhook(ctx context.Context, gw string, header http.Header, bo
 			}
 			return s.apply(ctx, tx, tenantID, &t, ev.Payment, "")
 		case gateway.WebhookRefund:
-			return s.webhookRefund(ctx, tx, tenantID, ev.Refund)
+			return s.webhookRefund(ctx, tx, tenantID, gw, ev)
 		case gateway.WebhookOther:
 		}
 		return nil

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,10 +48,27 @@ type fakeReservation struct {
 type fakeTx struct {
 	ID        string
 	SessionID string
+	Kind      string
+	Gateway   string
+	OrderID   string
+	Hosted    bool
 	Status    string
 	Token     string
 	Reason    string
 }
+
+// fakeRoute is one of the shop's gateways, in priority order.
+type fakeRoute struct {
+	Gateway    string
+	Separate   bool
+	Hosted     bool
+	Currencies []string
+}
+
+var (
+	stripeRoute = fakeRoute{Gateway: "stripe", Separate: true}
+	yocoRoute   = fakeRoute{Gateway: "yoco", Hosted: true, Currencies: []string{"ZAR"}}
+)
 
 type fakeOrder struct {
 	ID        string
@@ -72,6 +90,8 @@ type fakeGateway struct {
 	authKeys     map[string]string
 	orders       map[string]*fakeOrder
 	orderSeq     int
+	routes       []fakeRoute
+	refunds      map[string]string
 	calls        []string
 	// fail answers 503 to the next n calls of a step.
 	fail map[string]int
@@ -88,7 +108,21 @@ func newFakeGateway() *fakeGateway {
 		carts: map[string][]fakeLine{}, skus: map[string]*fakeSKU{}, reservations: map[string]*fakeReservation{},
 		reserveKeys: map[string]string{}, txs: map[string]*fakeTx{}, authKeys: map[string]string{},
 		orders: map[string]*fakeOrder{}, fail: map[string]int{}, actions: map[string]bool{},
+		routes: []fakeRoute{stripeRoute}, refunds: map[string]string{},
 	}
+}
+
+// settle completes a hosted payment, as the gateway's webhook would.
+func (f *fakeGateway) settle(sessionID string, paid bool) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, t := range f.txs {
+		if t.SessionID == sessionID {
+			t.Status = map[bool]string{true: "captured", false: "failed"}[paid]
+			return t.ID
+		}
+	}
+	return ""
 }
 
 func (f *fakeGateway) sku(s fakeSKU) string {
@@ -242,8 +276,14 @@ func (f *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reserve(w, key, body)
 	case step == "reservations.commit", step == "reservations.release":
 		f.settleReservation(w, parts[1], strings.TrimPrefix(step, "reservations."))
+	case step == "gateway-route":
+		f.route(w, r.URL.Query().Get("currency"), r.URL.Query().Get("gateway"))
 	case step == "authorize":
 		f.authorize(w, key, body)
+	case step == "charge":
+		f.charge(w, key, body)
+	case step == "refund":
+		f.refund(w, key, body)
 	case step == "capture":
 		f.capture(w, body)
 	case step == "void":
@@ -340,9 +380,66 @@ func (f *fakeGateway) settleReservation(w http.ResponseWriter, id, action string
 	}
 }
 
+func (f *fakeGateway) route(w http.ResponseWriter, currency, gateway string) {
+	for _, rt := range f.routes {
+		if (gateway == "" || rt.Gateway == gateway) && (rt.Currencies == nil || slices.Contains(rt.Currencies, currency)) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"gateway": rt.Gateway, "supports_separate_auth_capture": rt.Separate, "hosted_payment": rt.Hosted,
+				"configured": true, "public_key": "pk_" + rt.Gateway,
+			})
+			return
+		}
+	}
+	problem(w, http.StatusPreconditionFailed, "precondition_failed", "The shop takes no payments in "+currency, nil)
+}
+
+func (f *fakeGateway) charge(w http.ResponseWriter, key string, body map[string]any) {
+	if id, ok := f.authKeys[key]; ok {
+		writeJSON(w, http.StatusOK, f.txView(f.txs[id]))
+		return
+	}
+	token, _ := body["payment_token"].(string)
+	t := &fakeTx{
+		ID: uuid.NewString(), SessionID: fmt.Sprint(body["session_id"]), Kind: "charge", Gateway: fmt.Sprint(body["gateway"]),
+		Token: token, Hosted: token == "",
+	}
+	t.OrderID, _ = body["order_id"].(string)
+	switch {
+	case t.Hosted:
+		t.Status = "pending"
+	case token == cardVisa:
+		t.Status = "captured"
+	default:
+		t.Status, t.Reason = "failed", "card_declined"
+	}
+	f.txs[t.ID], f.authKeys[key] = t, t.ID
+	writeJSON(w, http.StatusOK, f.txView(t))
+}
+
+func (f *fakeGateway) refund(w http.ResponseWriter, key string, body map[string]any) {
+	t, ok := f.txs[fmt.Sprint(body["transaction_id"])]
+	switch {
+	case !ok:
+		writeJSON(w, http.StatusOK, map[string]any{"status": "none"})
+	case f.refunds[key] != "":
+		writeJSON(w, http.StatusOK, map[string]any{"status": "completed", "refund": map[string]any{"refund_id": f.refunds[key]}})
+	case t.Status != "captured":
+		problem(w, http.StatusConflict, "invalid_state_transition", "not captured", nil)
+	default:
+		t.Status, f.refunds[key] = "refunded", uuid.NewString()
+		writeJSON(w, http.StatusOK, map[string]any{"status": "completed", "refund": map[string]any{"refund_id": f.refunds[key]}})
+	}
+}
+
 func (f *fakeGateway) txView(t *fakeTx) map[string]any {
 	out := map[string]any{"transaction_id": t.ID, "session_id": t.SessionID, "status": t.Status}
-	if t.Status == "pending" {
+	switch {
+	case t.Status == "pending" && t.Hosted:
+		out["next_action"] = map[string]any{
+			"type":            "redirect_to_url",
+			"redirect_to_url": map[string]any{"url": "https://pay.example/" + t.ID},
+		}
+	case t.Status == "pending":
 		out["next_action"] = map[string]any{"type": "use_stripe_sdk"}
 	}
 	if t.Reason != "" {
@@ -410,6 +507,8 @@ func (f *fakeGateway) void(w http.ResponseWriter, body map[string]any) {
 		problem(w, http.StatusConflict, "invalid_state_transition", "captured", map[string]any{"transaction_id": t.ID})
 	case t.Status == "failed":
 		writeJSON(w, http.StatusOK, map[string]any{"status": "failed", "transaction_id": t.ID})
+	case t.Hosted:
+		writeJSON(w, http.StatusOK, map[string]any{"status": "pending", "transaction_id": t.ID})
 	default:
 		t.Status = "voided"
 		writeJSON(w, http.StatusOK, map[string]any{"status": "voided", "transaction_id": t.ID})

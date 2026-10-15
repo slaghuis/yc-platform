@@ -6,9 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +97,17 @@ var address = map[string]any{"line1": "1 Long St", "city": "Cape Town", "country
 
 func pay(token string) map[string]any {
 	return map[string]any{"delivery_address": address, "payment_gateway_token": token}
+}
+
+// filter keeps the calls to the given steps.
+func filter(calls []string, steps ...string) []string {
+	var out []string
+	for _, c := range calls {
+		if slices.Contains(steps, strings.Fields(c)[0]) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func TestCheckout(t *testing.T) {
@@ -439,6 +453,166 @@ func TestCheckout(t *testing.T) {
 		assert.Equal(t, api.FAILED, s.State)
 		assert.Equal(t, "reservation_expired", s.Failure.Reason)
 		assert.Equal(t, "voided", gw.txFor(s.SessionID.String()).Status)
+	})
+
+	// Variant B: the shop has Yoco first for ZAR, then Stripe.
+	yoco := func(t *testing.T) {
+		gw.set(func() { gw.routes = []fakeRoute{yocoRoute, stripeRoute} })
+		t.Cleanup(func() { gw.set(func() { gw.routes = []fakeRoute{stripeRoute} }) })
+	}
+	hosted := map[string]any{"delivery_address": address, "return_url": "https://shop.example/return"}
+	admin := as(t, srv, "admin", "shop_admin")
+	compensation := func(t *testing.T, id uuid.UUID) map[string]string {
+		t.Helper()
+		var s api.AdminSession
+		require.Equal(t, http.StatusOK, admin.do(http.MethodGet, "/admin/sessions/"+id.String(), nil, &s))
+		out := map[string]string{}
+		for _, e := range s.CompensationLog {
+			out[string(e.Step)] = e.Result
+		}
+		return out
+	}
+
+	t.Run("Variant B: a hosted charge waits for the webhook, then completes", func(t *testing.T) {
+		yoco(t)
+		c := customer(t, fakeLine{mug, 1})
+		before := gw.stock(mug)
+		s := c.start()
+		require.NotNil(t, s.Payment)
+		assert.Equal(t, "yoco", s.Payment.Gateway)
+		assert.Equal(t, api.Charge, s.Payment.Flow)
+		assert.True(t, s.Payment.Hosted)
+
+		var problem map[string]any
+		require.Equal(t, http.StatusBadRequest, c.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/confirm",
+			pay(cardVisa), &problem, httpkit.HeaderIdempotencyKey, "b-bad"), "hosted: no token, and a return URL")
+		assert.Contains(t, fmt.Sprint(problem["errors"]), "payment_gateway_token")
+		assert.Contains(t, fmt.Sprint(problem["errors"]), "return_url")
+
+		code, s := c.confirm(s.SessionID, "b", hosted)
+		require.Equal(t, http.StatusAccepted, code)
+		assert.Equal(t, api.CHARGING, s.State)
+		require.NotNil(t, s.Payment.NextAction)
+		assert.Equal(t, "redirect_to_url", (*s.Payment.NextAction)["type"])
+		require.NotNil(t, s.Order, "the order comes before the charge")
+		sid := s.SessionID.String()
+		assert.Equal(t, []string{"reservations S:reserve", "orders S:order", "charge S:charge"}, gw.callsFor(sid))
+		o := gw.orderFor(sid)
+		assert.Equal(t, "pending_payment", o.Status)
+		assert.Equal(t, map[string]any{"gateway": "yoco"}, o.Body["payment"])
+		tx := gw.txFor(sid)
+		assert.Equal(t, s.Order.OrderID.String(), tx.OrderID)
+
+		require.NoError(t, a.Service.Charged(ctx, shop, sid, gw.settle(sid, true)))
+		s = c.get(s.SessionID)
+		assert.Equal(t, api.COMPLETED, s.State)
+		assert.Equal(t, "received", gw.orderFor(sid).Status)
+		assert.Equal(t, before-1, gw.stock(mug), "committed")
+		assert.Contains(t, outbox(s.SessionID), "checkout.completed.v1")
+
+		require.NoError(t, a.Service.Charged(ctx, shop, sid, tx.ID), "a redelivered event changes nothing")
+		assert.Equal(t, "captured", gw.txFor(sid).Status)
+		assert.Empty(t, compensation(t, s.SessionID))
+	})
+
+	t.Run("Variant B: the customer may switch to another gateway at confirm", func(t *testing.T) {
+		yoco(t)
+		c := customer(t, fakeLine{ebook, 1})
+		s := c.start()
+		require.Equal(t, "yoco", s.Payment.Gateway)
+
+		body := pay(cardVisa)
+		body["payment_gateway"] = "paypal"
+		var problem map[string]any
+		require.Equal(t, http.StatusBadRequest, c.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/confirm",
+			body, &problem, httpkit.HeaderIdempotencyKey, "switch-bad"))
+		assert.Contains(t, fmt.Sprint(problem["errors"]), "payment_gateway")
+
+		body["payment_gateway"] = "stripe"
+		code, s := c.confirm(s.SessionID, "switch", body)
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, api.COMPLETED, s.State)
+		assert.Equal(t, "stripe", s.Payment.Gateway)
+		assert.Equal(t, api.AuthCapture, s.Payment.Flow, "Variant A")
+		assert.Equal(t, []string{"authorize S:authorize", "orders S:order", "capture S:capture", "orders.confirm S:confirm"},
+			gw.callsFor(s.SessionID.String()))
+	})
+
+	t.Run("Variant B: an order failure moves no money", func(t *testing.T) {
+		yoco(t)
+		gw.failNext("orders", 3)
+		c := customer(t, fakeLine{mug, 1})
+		before := gw.stock(mug)
+		s := c.start()
+		code, s := c.confirm(s.SessionID, "b-order", hosted)
+		require.Equal(t, http.StatusUnprocessableEntity, code)
+		assert.Equal(t, api.ORDERCREATE, s.Failure.State)
+		assert.Nil(t, gw.txFor(s.SessionID.String()), "never charged, so nothing to refund (ADR-019 rule 3)")
+		assert.Equal(t, before, gw.stock(mug))
+		assert.NotContains(t, compensation(t, s.SessionID), domain.UndoPayment)
+	})
+
+	t.Run("Variant B: a failed hosted payment compensates", func(t *testing.T) {
+		yoco(t)
+		c := customer(t, fakeLine{mug, 1})
+		before := gw.stock(mug)
+		s := c.start()
+		_, s = c.confirm(s.SessionID, "b-fail", hosted)
+		require.Equal(t, api.CHARGING, s.State)
+		gw.settle(s.SessionID.String(), false)
+		require.NoError(t, a.Service.PaymentSettled(ctx, shop, s.SessionID.String(), domain.StateCharging))
+		s = c.get(s.SessionID)
+		assert.Equal(t, api.FAILED, s.State)
+		assert.Equal(t, "payment_declined", s.Failure.Reason)
+		assert.Equal(t, "abandoned", gw.orderFor(s.SessionID.String()).Status)
+		assert.Equal(t, before, gw.stock(mug))
+	})
+
+	t.Run("Variant B: cancel leaves the page open; a late payment is refunded", func(t *testing.T) {
+		yoco(t)
+		c := customer(t, fakeLine{mug, 1})
+		s := c.start()
+		_, s = c.confirm(s.SessionID, "b-late", hosted)
+		require.Equal(t, api.CHARGING, s.State)
+		require.Equal(t, http.StatusOK, c.do(http.MethodPost, "/checkout/"+s.SessionID.String()+"/cancel", nil, &s))
+		assert.Equal(t, api.FAILED, s.State)
+		assert.Equal(t, "cancelled", s.Failure.Reason)
+		sid := s.SessionID.String()
+		assert.Equal(t, "left_open", compensation(t, s.SessionID)[domain.UndoPayment], "Yoco cannot cancel a checkout")
+		assert.Equal(t, "abandoned", gw.orderFor(sid).Status)
+
+		tx := gw.settle(sid, true)
+		require.NoError(t, a.Service.Charged(ctx, shop, sid, tx))
+		assert.Equal(t, "refunded", gw.txFor(sid).Status)
+		assert.Equal(t, "completed", compensation(t, s.SessionID)[domain.UndoLateCharge])
+		require.NoError(t, a.Service.Charged(ctx, shop, sid, tx))
+		assert.Equal(t, []string{"charge S:charge", "void S:charge:undo", "refund S:charge:refund"},
+			filter(gw.callsFor(sid), "charge", "void", "refund"), "refunded once")
+		assert.Equal(t, api.FAILED, c.get(s.SessionID).State)
+	})
+
+	t.Run("Variant B: a charge paid before expiry compensates forward", func(t *testing.T) {
+		yoco(t)
+		c := customer(t, fakeLine{mug, 1})
+		s := c.start()
+		_, s = c.confirm(s.SessionID, "b-exp", hosted)
+		require.Equal(t, api.CHARGING, s.State)
+		gw.settle(s.SessionID.String(), true)
+		inShop(`UPDATE checkout_sessions SET expires_at = now() - interval '1 second' WHERE id = $1`, s.SessionID)
+		_, err := a.Service.Expire(ctx, shop, s.SessionID.String())
+		require.NoError(t, err)
+		s = c.get(s.SessionID)
+		assert.Equal(t, api.COMPLETED, s.State, "the void finds the charge: forward, not refunded")
+		assert.Equal(t, "captured", gw.txFor(s.SessionID.String()).Status)
+	})
+
+	t.Run("start needs a gateway for the store currency", func(t *testing.T) {
+		gw.set(func() { gw.routes = nil })
+		t.Cleanup(func() { gw.set(func() { gw.routes = []fakeRoute{stripeRoute} }) })
+		c := customer(t, fakeLine{ebook, 1})
+		var problem map[string]any
+		require.Equal(t, http.StatusConflict, c.do(http.MethodPost, "/checkout", map[string]any{}, &problem))
+		assert.Contains(t, problem["detail"], "no payments in ZAR")
 	})
 
 	t.Run("admin lists and internal reads", func(t *testing.T) {

@@ -53,6 +53,21 @@ type AuthorizeRequest struct {
 	IdempotencyKey string
 }
 
+// ChargeRequest takes a payment in one step, authorizing and capturing
+// together (Variant B).
+type ChargeRequest struct {
+	AmountMinor int64
+	Currency    string
+	// PaymentToken is the gateway SDK's payment method; empty for a hosted
+	// payment, where the gateway's own page collects it.
+	PaymentToken string
+	// ReturnURL is where the customer comes back to after a redirect.
+	ReturnURL      string
+	Description    string
+	Metadata       map[string]string
+	IdempotencyKey string
+}
+
 // RefundStatus is a refund's state at the gateway.
 type RefundStatus string
 
@@ -89,20 +104,39 @@ type WebhookEvent struct {
 	Refund  Refund
 	// PaymentReference is the payment a refund belongs to.
 	PaymentReference string
-	Raw              []byte
+	// RefundAmount identifies a refund the gateway names differently from
+	// its refund call's answer, when non-zero.
+	RefundAmount int64
+	Raw          []byte
 }
 
 // ErrSignature means a webhook's signature is missing, wrong or stale.
 var ErrSignature = errors.New("gateway: webhook signature invalid")
 
+// ErrUnsupported means the gateway has no such operation, e.g. Yoco cannot
+// look up or cancel a checkout.
+var ErrUnsupported = errors.New("gateway: operation not supported")
+
 // Driver is one payment gateway.
 type Driver interface {
 	Name() string
+	// SupportsSeparateAuthCapture selects the saga: Variant A when true,
+	// Variant B (Charge) when false (ADR-013).
 	SupportsSeparateAuthCapture() bool
+	// SupportedCurrencies lists the ISO 4217 codes the gateway takes; nil
+	// means any.
+	SupportedCurrencies() []string
+	// HostedPayment reports that the customer pays on the gateway's own
+	// page: no payment token, and the outcome arrives by webhook.
+	HostedPayment() bool
 	Authorize(ctx context.Context, c Credentials, req AuthorizeRequest) (Payment, error)
-	// Get returns a payment's current state, e.g. after 3-D Secure.
+	Charge(ctx context.Context, c Credentials, req ChargeRequest) (Payment, error)
+	// Get returns a payment's current state, e.g. after 3-D Secure, or
+	// ErrUnsupported.
 	Get(ctx context.Context, c Credentials, reference string) (Payment, error)
 	Capture(ctx context.Context, c Credentials, reference string, amountMinor int64, idempotencyKey string) (Payment, error)
+	// Void cancels an authorization or an unfinished charge, or returns
+	// ErrUnsupported.
 	Void(ctx context.Context, c Credentials, reference, idempotencyKey string) (Payment, error)
 	Refund(ctx context.Context, c Credentials, reference string, amountMinor int64, idempotencyKey string) (Refund, error)
 	// ParseWebhook verifies a webhook against the shop's secret.

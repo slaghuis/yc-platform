@@ -64,14 +64,10 @@ func TestSteps(t *testing.T) {
 	s.HasTrackedItems = true
 	assert.Equal(t, domain.StateReserving, s.FirstStep())
 
-	var got []domain.State
-	for st := domain.StateReserving; st != domain.StateCompleted; st = st.Next() {
-		got = append(got, st)
-	}
 	assert.Equal(t, []domain.State{
 		domain.StateReserving, domain.StateAuthorizing, domain.StateOrderCreate,
 		domain.StateCapturing, domain.StateConfirming,
-	}, got)
+	}, walk(s), "Variant A")
 
 	assert.True(t, domain.StateCapturing.Compensable())
 	assert.False(t, domain.StateConfirming.Compensable(), "capture succeeded: forward only")
@@ -91,6 +87,41 @@ func TestSteps(t *testing.T) {
 	s.Finish(now)
 	assert.Equal(t, domain.StateFailed, s.State)
 	assert.Empty(t, s.PaymentToken)
+}
+
+func walk(s domain.Session) []domain.State {
+	var got []domain.State
+	for s.State = domain.StateReserving; s.State != domain.StateCompleted; s.State = s.Next() {
+		got = append(got, s.State)
+	}
+	return got
+}
+
+func TestVariantB(t *testing.T) {
+	now := time.Now()
+	s := session(domain.UserCustomer, false)
+	s.Route(domain.Routing{Gateway: "yoco", Variant: domain.VariantCharge, Hosted: true})
+	assert.Equal(t, domain.StateCharging, s.PaymentState())
+	assert.Equal(t, "charge", s.PaymentCall())
+
+	assert.Equal(t, []string{"payment_gateway_token", "return_url"},
+		fields(s.ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"})), "hosted: no token, a return URL")
+	assert.Empty(t, s.ValidateConfirm(domain.ConfirmInput{ReturnURL: "https://shop.example/return"}))
+
+	s.Confirm(domain.ConfirmInput{ReturnURL: "https://shop.example/return"}, "k", now)
+	assert.Equal(t, domain.StateOrderCreate, s.State, "nothing tracked: the order comes first")
+	s.HasTrackedItems = true
+	assert.Equal(t, []domain.State{
+		domain.StateReserving, domain.StateOrderCreate, domain.StateCharging, domain.StateConfirming,
+	}, walk(s))
+
+	assert.True(t, domain.StateCharging.Compensable(), "a charge awaiting the customer is compensated")
+	assert.True(t, domain.StateCharging.Driven())
+	s.State = domain.StateOrderCreate
+	require.NoError(t, s.Compensate(domain.ReasonStepFailed, nil, domain.StateFailed, now))
+	assert.True(t, s.Reached(domain.StateOrderCreate))
+	assert.False(t, s.Reached(domain.StateCharging), "an order failure moves no money (ADR-019 rule 3)")
+	assert.False(t, s.Reached(domain.StateAuthorizing))
 }
 
 func TestRetryLater(t *testing.T) {
