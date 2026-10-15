@@ -14,7 +14,8 @@ import (
 
 // RefreshProjection rewrites the sku_search_projection rows of products
 // from the catalog tables. Columns fed by other services' events (price,
-// stock, popularity, rating) are kept.
+// stock, popularity, rating) are kept, except that an untracked SKU is
+// always in stock.
 func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...string) error {
 	if len(productIDs) == 0 {
 		return nil
@@ -41,6 +42,7 @@ func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...s
 			supplier_id = EXCLUDED.supplier_id, category_ids = EXCLUDED.category_ids,
 			name = EXCLUDED.name, description = EXCLUDED.description, sku_code = EXCLUDED.sku_code,
 			tsv = EXCLUDED.tsv, variant_values = EXCLUDED.variant_values, status = EXCLUDED.status,
+			in_stock = CASE WHEN (SELECT inventory_tracked FROM skus WHERE id = EXCLUDED.sku_id) THEN sp.in_stock END,
 			updated_at = EXCLUDED.updated_at`, productIDs)
 	if err != nil {
 		return fmt.Errorf("refresh search projection: %w", err)
@@ -65,6 +67,17 @@ func (Catalog) SetBasePrice(ctx context.Context, tx pgx.Tx, skuID string, minor 
 		WHERE sku_id = $1 AND (base_price_at IS NULL OR base_price_at <= $3)`, skuID, minor, at)
 	if err != nil {
 		return fmt.Errorf("set base price: %w", err)
+	}
+	return nil
+}
+
+// SetInStock records whether a tracked SKU has stock as of at, unless a
+// later change is already recorded.
+func (Catalog) SetInStock(ctx context.Context, tx pgx.Tx, skuID string, inStock bool, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE sku_search_projection SET in_stock = $2, in_stock_at = $3
+		WHERE sku_id = $1 AND (in_stock_at IS NULL OR in_stock_at <= $3)`, skuID, inStock, at)
+	if err != nil {
+		return fmt.Errorf("set in stock: %w", err)
 	}
 	return nil
 }
@@ -116,6 +129,9 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 				SELECT ch.id FROM categories ch JOIN sub ON ch.parent_id = sub.id
 			) SELECT id FROM sub)`)
 	}
+	if f.InStock {
+		sku = append(sku, `COALESCE(sp.in_stock, true)`)
+	}
 	where := []string{
 		`p.status = 'active'`,
 		`EXISTS (SELECT 1 FROM sku_search_projection sp WHERE sp.product_id = p.id AND sp.status = 'active'` +
@@ -155,9 +171,11 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 		cursor = ` WHERE ` + cursor
 	}
 	q := `SELECT b.id, b.supplier_id, b.name, b.description, b.is_digital, b.created_at, b.category_ids,
-			b.popularity, b.min_price
+			b.popularity, b.min_price, b.in_stock
 		FROM (SELECT p.id, COALESCE(p.supplier_id::text, '') AS supplier_id, p.name, p.description, p.is_digital,
 				p.created_at,
+				EXISTS (SELECT 1 FROM sku_search_projection sp WHERE sp.product_id = p.id
+					AND sp.status = 'active' AND COALESCE(sp.in_stock, true)) AS in_stock,
 				COALESCE((SELECT array_agg(pc.category_id::text ORDER BY pc.category_id)
 					FROM product_categories pc WHERE pc.product_id = p.id), '{}') AS category_ids,
 				COALESCE((SELECT SUM(sp.popularity_score) FROM sku_search_projection sp
@@ -174,7 +192,7 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ProductSummary, error) {
 		var p domain.ProductSummary
 		err := r.Scan(&p.ID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.CreatedAt, &p.CategoryIDs,
-			&p.Popularity, &p.MinBasePrice)
+			&p.Popularity, &p.MinBasePrice, &p.InStock)
 		return p, err
 	})
 	if err != nil {

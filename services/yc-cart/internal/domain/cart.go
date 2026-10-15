@@ -151,3 +151,26 @@ func MergeItems(user, visitor []Item, t CartType) (writes []Item, merged int) {
 	}
 	return writes, merged
 }
+
+// ConvertItems removes checked-out quantities from a cart's lines. Lines
+// whose quantity falls to zero are deleted; the rest are written with the
+// remainder. removed holds the quantity actually taken per SKU, which is
+// less than checked out when the customer lowered a line meanwhile.
+func ConvertItems(lines []Item, checkedOut map[string]int) (writes []Item, deletes []string, removed map[string]int) {
+	removed = map[string]int{}
+	for _, it := range lines {
+		q := checkedOut[it.SKUID]
+		if q <= 0 {
+			continue
+		}
+		take := min(q, it.Quantity)
+		removed[it.SKUID] = take
+		if it.Quantity == take {
+			deletes = append(deletes, it.SKUID)
+			continue
+		}
+		it.Quantity -= take
+		writes = append(writes, it)
+	}
+	return writes, deletes, removed
+}

@@ -1,0 +1,531 @@
+openapi: 3.1.0
+info:
+  title: yc-inventory
+  version: 0.1.0
+  description: |
+    Stock levels and checkout reservations (docs/services/yc-inventory.md).
+    Phase 4 subset: shop settings, stock per tracked SKU, admin receive,
+    adjust and low-stock threshold, movement history, and the reservation
+    lifecycle yc-checkout drives (reserve, commit, release; expiry by a
+    sweeper).
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /internal routes are for service callers
+    (ADR-021) and require Idempotency-Key on POST; a repeated key replays
+    the first response (api-conventions.md §10). Only SKUs with
+    inventory_tracked have stock; untracked SKUs are unlimited. available
+    is on_hand minus reserved and is negative only after an oversell.
+    Errors are application/problem+json (error-handling.md).
+
+paths:
+  /admin/inventory/config:
+    get:
+      summary: Get the shop's inventory settings
+      operationId: getInventoryConfig
+      responses:
+        '200':
+          description: The settings (the service defaults until changed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryConfig' }
+        '403': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace the shop's inventory settings
+      description: |
+        With inventory turned off every SKU is purchasable and reservations
+        hold nothing. Turning it off announces out-of-stock SKUs as
+        restored; turning it on announces them as depleted.
+      operationId: putInventoryConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InventoryConfigInput' }
+      responses:
+        '200':
+          description: The new settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InventoryConfig' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock:
+    get:
+      summary: List stock levels
+      operationId: listStock
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: below_threshold
+          in: query
+          description: Only SKUs whose available stock is under their low threshold.
+          schema: { type: boolean }
+        - name: out_of_stock
+          in: query
+          description: Only SKUs with no available stock.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of stock levels, by SKU ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    get:
+      summary: Get a SKU's stock
+      operationId: getStock
+      responses:
+        '200':
+          description: The stock level.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLevel' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}/receive:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    post:
+      summary: Receive stock
+      description: Adds to on_hand. Publishes inventory.stock.received.v1.
+      operationId: receiveStock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReceiveInput' }
+      responses:
+        '200':
+          description: The new stock level.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLevel' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}/adjust:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    post:
+      summary: Adjust stock
+      description: |
+        Changes on_hand by a signed delta (shrinkage, stock counts). It
+        cannot take on_hand below zero, or below what is reserved (409).
+        Publishes inventory.stock.adjusted.v1.
+      operationId: adjustStock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjustInput' }
+      responses:
+        '200':
+          description: The new stock level.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLevel' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}/low-threshold:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    put:
+      summary: Set the low-stock threshold
+      description: 0 turns low-stock warnings off.
+      operationId: setLowThreshold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThresholdInput' }
+      responses:
+        '200':
+          description: The new stock level.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StockLevel' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}/reservations:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    get:
+      summary: List a SKU's active reservations
+      operationId: listSKUReservations
+      responses:
+        '200':
+          description: Active reservations holding the SKU, soonest expiry first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationList' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/stock/{sku_id}/history:
+    parameters:
+      - $ref: '#/components/parameters/SKUID'
+    get:
+      summary: List a SKU's stock movements
+      operationId: listStockHistory
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of movements, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MovementList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/reservations/{id}/release:
+    parameters:
+      - $ref: '#/components/parameters/ReservationID'
+    post:
+      summary: Release a reservation by hand
+      description: Publishes inventory.stock.reservation_released.v1 with reason admin.
+      operationId: adminReleaseReservation
+      responses:
+        '200':
+          description: The released reservation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/reservations:
+    post:
+      summary: Reserve stock for a checkout session
+      description: |
+        yc-checkout's RESERVING step (ADR-019), with Idempotency-Key
+        {session_id}:reserve. All tracked lines are reserved or none
+        (ADR-012). Untracked SKUs, and all SKUs of a shop with inventory
+        turned off, need no stock; when nothing is tracked the response has
+        no reservation_id. A shortage is 409 insufficient_stock with a
+        shortages member. ttl_minutes is clamped to the shop's window.
+      operationId: reserveStock
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveInput' }
+      responses:
+        '200':
+          description: The reservation, or none when nothing is tracked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReserveResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409':
+          description: insufficient_stock, with the shortages.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ShortageProblem' }
+
+  /internal/reservations/{id}/commit:
+    parameters:
+      - $ref: '#/components/parameters/ReservationID'
+    post:
+      summary: Commit a reservation
+      description: |
+        yc-checkout's CONFIRMING step, after payment is captured. Takes the
+        quantities out of on_hand. A reservation that expired meanwhile
+        still commits and reports what was oversold. Committing again
+        returns the reservation; a released one is 409.
+      operationId: commitReservation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommitInput' }
+      responses:
+        '200':
+          description: The committed reservation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommitResult' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/reservations/{id}/release:
+    parameters:
+      - $ref: '#/components/parameters/ReservationID'
+    post:
+      summary: Release a reservation
+      description: |
+        yc-checkout compensation, with Idempotency-Key
+        {session_id}:reserve:undo. Releasing a reservation that is already
+        released, expired or unknown succeeds; a committed one is 409.
+      operationId: releaseReservation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The reservation's state after the call.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReleaseResult' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    SKUID:
+      name: sku_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReservationID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    InventoryConfigInput:
+      type: object
+      required: [inventory_enabled, default_reservation_ttl_minutes, min_reservation_ttl_minutes, max_reservation_ttl_minutes]
+      additionalProperties: false
+      properties:
+        inventory_enabled: { type: boolean }
+        default_reservation_ttl_minutes: { type: integer }
+        min_reservation_ttl_minutes: { type: integer }
+        max_reservation_ttl_minutes: { type: integer }
+    InventoryConfig:
+      allOf:
+        - $ref: '#/components/schemas/InventoryConfigInput'
+        - type: object
+          properties:
+            updated_at:
+              type: string
+              format: date-time
+              description: Absent while the shop uses the service defaults.
+    StockLevel:
+      type: object
+      required: [sku_id, on_hand, reserved, available, low_threshold, updated_at]
+      properties:
+        sku_id: { type: string, format: uuid }
+        on_hand: { type: integer, format: int64 }
+        reserved: { type: integer, format: int64 }
+        available: { type: integer, format: int64 }
+        low_threshold: { type: integer, format: int64 }
+        updated_at: { type: string, format: date-time }
+    StockList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StockLevel' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ReceiveInput:
+      type: object
+      required: [quantity]
+      additionalProperties: false
+      properties:
+        quantity: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+    AdjustInput:
+      type: object
+      required: [delta, reason]
+      additionalProperties: false
+      properties:
+        delta: { type: integer, format: int64, description: Signed change to on_hand; not zero. }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ThresholdInput:
+      type: object
+      required: [low_threshold]
+      additionalProperties: false
+      properties:
+        low_threshold: { type: integer, format: int64, minimum: 0 }
+    Line:
+      type: object
+      required: [sku_id, quantity]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+    Reservation:
+      type: object
+      required: [reservation_id, session_id, status, expires_at, created_at, items]
+      properties:
+        reservation_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [active, committed, released, expired]
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        settled_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Line' }
+    ReservationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Reservation' }
+    Movement:
+      type: object
+      required: [movement_id, type, on_hand_delta, reserved_delta, created_at]
+      properties:
+        movement_id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [receive, adjust, reserve, release, commit, expire]
+        on_hand_delta: { type: integer, format: int64 }
+        reserved_delta: { type: integer, format: int64 }
+        reason: { type: string }
+        actor_id: { type: string }
+        reference: { type: string, description: The reservation or order. }
+        created_at: { type: string, format: date-time }
+    MovementList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Movement' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ReserveInput:
+      type: object
+      required: [session_id, items]
+      additionalProperties: false
+      properties:
+        session_id: { type: string, format: uuid }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Line' }
+        ttl_minutes: { type: integer, minimum: 1 }
+    ReserveResult:
+      type: object
+      required: [items]
+      properties:
+        reservation_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [active, committed, released, expired]
+        expires_at: { type: string, format: date-time }
+        items:
+          type: array
+          description: The tracked lines held; empty when nothing is tracked.
+          items: { $ref: '#/components/schemas/Line' }
+    CommitInput:
+      type: object
+      additionalProperties: false
+      properties:
+        reference: { type: string, maxLength: 200, description: The order the stock went to. }
+    CommitResult:
+      type: object
+      required: [reservation_id, status, items]
+      properties:
+        reservation_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [committed]
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Line' }
+        oversold:
+          type: array
+          items: { $ref: '#/components/schemas/Line' }
+    ReleaseResult:
+      type: object
+      required: [reservation_id, status]
+      properties:
+        reservation_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [released, expired, unknown]
+    Shortage:
+      type: object
+      required: [sku_id, requested, available]
+      properties:
+        sku_id: { type: string, format: uuid }
+        requested: { type: integer, format: int64 }
+        available: { type: integer, format: int64 }
+    ShortageProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [shortages]
+          properties:
+            shortages:
+              type: array
+              items: { $ref: '#/components/schemas/Shortage' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

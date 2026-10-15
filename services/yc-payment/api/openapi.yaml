@@ -1,0 +1,477 @@
+openapi: 3.1.0
+info:
+  title: yc-payment
+  version: 0.1.0
+  description: |
+    Payments through the shop's gateway (docs/services/yc-payment.md).
+    Phase 4 subset: the Stripe driver (Variant A, separate authorize and
+    capture), the internal calls yc-checkout and yc-orders make, Stripe
+    webhooks, encrypted per-shop credentials and the admin transaction
+    views.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). /internal routes are for service callers
+    (ADR-021). Authorize and refund require Idempotency-Key and are
+    idempotent by it natively: a repeated key returns the payment's
+    current state rather than a stored response, so a retry after a
+    timeout or a pending (3-D Secure) result learns the real outcome.
+    Capture and void are idempotent by state.
+
+    POST /webhooks/stripe takes Stripe's signed webhooks on the shop's
+    host. It is a gateway callback route (no token); the body is verified
+    with the shop's webhook secret (Stripe-Signature, 5-minute tolerance).
+    It answers 200 to anything verified, including redeliveries and
+    events about unknown payments, and 401 to a bad signature.
+
+    Card data never reaches yc-payment (ADR-009): payment_token is the
+    gateway SDK's payment method and is passed through, not stored.
+    Errors are application/problem+json (error-handling.md).
+
+paths:
+  /admin/gateway-config:
+    get:
+      summary: List the shop's gateway settings
+      description: Secrets are never returned; the API key shows as a hint.
+      operationId: listGatewayConfigs
+      responses:
+        '200':
+          description: The shop's gateways.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayConfigList' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/gateway-config/{gateway}:
+    parameters:
+      - $ref: '#/components/parameters/Gateway'
+    put:
+      summary: Set the shop's credentials for a gateway
+      description: |
+        Secrets are encrypted at rest. An omitted api_key or webhook_secret
+        keeps the stored one (rotate one without resending the other);
+        an empty webhook_secret removes it, which makes webhooks fail.
+      operationId: putGatewayConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GatewayConfigInput' }
+      responses:
+        '200':
+          description: The stored settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayConfig' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/gateway-config/{gateway}/test:
+    parameters:
+      - $ref: '#/components/parameters/Gateway'
+    post:
+      summary: Check the stored credentials against the gateway
+      operationId: testGatewayConfig
+      responses:
+        '200':
+          description: Whether the gateway accepted the credentials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GatewayTestResult' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /admin/transactions:
+    get:
+      summary: List the shop's transactions, newest first
+      operationId: listTransactions
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/TransactionStatus' }
+        - name: session_id
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: order_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of transactions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/transactions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionID'
+    get:
+      summary: Get a transaction and its refunds
+      operationId: getTransaction
+      responses:
+        '200':
+          description: The transaction.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionDetail' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/authorize:
+    post:
+      summary: Authorize a payment (Variant A)
+      description: |
+        yc-checkout's AUTHORIZING step (ADR-019), with Idempotency-Key
+        {session_id}:authorize. A decline is 200 with status failed and a
+        failure_reason. 3-D Secure is 200 with status pending and the
+        gateway's next_action; the outcome arrives by webhook
+        (payment.authorized.v1 or payment.authorization_failed.v1) or by
+        repeating the call. A gateway outage is 503 gateway_unavailable;
+        retry with the same key. A shop without the gateway set up is 412.
+      operationId: authorizePayment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorizeInput' }
+      responses:
+        '200':
+          description: The transaction in its current state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '412': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /internal/capture:
+    post:
+      summary: Capture an authorized payment
+      description: |
+        yc-checkout's CAPTURING step. Capturing a captured transaction
+        returns it. A refusal is 400 payment_declined (with transaction_id
+        and reason members); a transaction that is not authorized is 409.
+      operationId: capturePayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptureInput' }
+      responses:
+        '200':
+          description: The captured transaction.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /internal/void:
+    post:
+      summary: Void an authorization
+      description: |
+        Checkout compensation. Names the transaction, or the
+        Idempotency-Key that authorized it (for a caller that never learnt
+        the transaction ID). Nothing to void is success: status none when
+        there is no such transaction, or the transaction's status when it
+        is already voided or failed. A captured payment is 409 (refund it).
+      operationId: voidPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoidInput' }
+      responses:
+        '200':
+          description: The outcome.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoidResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /internal/refund:
+    post:
+      summary: Refund a captured payment
+      description: |
+        For yc-orders (admin cancellation) and compensation after capture.
+        amount_minor omitted refunds what is left. A repeated key returns
+        the refund. status none means there is no such transaction.
+      operationId: refundPayment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundInput' }
+      responses:
+        '200':
+          description: The refund (pending until the gateway settles it).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefundResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+
+  /internal/transactions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionID'
+    get:
+      summary: Get a transaction and its refunds
+      operationId: getInternalTransaction
+      responses:
+        '200':
+          description: The transaction.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransactionDetail' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/gateway-capabilities/{gateway}:
+    parameters:
+      - $ref: '#/components/parameters/Gateway'
+    get:
+      summary: What a gateway supports, and whether the shop has it set up
+      operationId: getGatewayCapabilities
+      responses:
+        '200':
+          description: The capabilities.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Capabilities' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    Gateway:
+      name: gateway
+      in: path
+      required: true
+      schema: { type: string, enum: [stripe] }
+    TransactionID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64, description: Minor units (cents). }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+    GatewayConfigInput:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean }
+        api_key: { type: string, maxLength: 255, description: The secret key (Stripe sk_...). }
+        webhook_secret: { type: string, maxLength: 255, description: The webhook signing secret (Stripe whsec_...). }
+        public_key: { type: string, maxLength: 255, description: The publishable key for the storefront SDK. }
+    GatewayConfig:
+      type: object
+      required: [gateway, enabled, api_key_hint, webhook_secret_set, updated_at]
+      properties:
+        gateway: { type: string }
+        enabled: { type: boolean }
+        api_key_hint: { type: string, description: 'The key masked, e.g. sk_test_…4242.' }
+        webhook_secret_set: { type: boolean }
+        public_key: { type: string }
+        updated_at: { type: string, format: date-time }
+    GatewayConfigList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayConfig' }
+    GatewayTestResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        message: { type: string, description: Why the gateway refused, when it did. }
+    Capabilities:
+      type: object
+      required: [gateway, supports_separate_auth_capture, configured]
+      properties:
+        gateway: { type: string }
+        supports_separate_auth_capture: { type: boolean, description: Variant A when true. }
+        configured: { type: boolean, description: The shop has credentials and the gateway enabled. }
+        public_key: { type: string }
+    TransactionStatus:
+      type: string
+      enum: [created, pending, authorized, captured, voided, refunded, failed]
+    Transaction:
+      type: object
+      required: [transaction_id, session_id, gateway, status, amount, captured_amount_minor, refunded_amount_minor,
+        created_at, updated_at]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        session_id: { type: string }
+        order_id: { type: string, format: uuid }
+        gateway: { type: string }
+        gateway_reference: { type: string }
+        status: { $ref: '#/components/schemas/TransactionStatus' }
+        amount: { $ref: '#/components/schemas/Money' }
+        captured_amount_minor: { type: integer, format: int64 }
+        refunded_amount_minor: { type: integer, format: int64 }
+        next_action:
+          type: object
+          additionalProperties: true
+          description: While pending, what the customer must do, as the gateway describes it.
+        failure_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Refund:
+      type: object
+      required: [refund_id, transaction_id, amount_minor, status, created_at]
+      properties:
+        refund_id: { type: string, format: uuid }
+        transaction_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        amount_minor: { type: integer, format: int64 }
+        reason: { type: string }
+        gateway_reference: { type: string }
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        failure_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    TransactionDetail:
+      allOf:
+        - $ref: '#/components/schemas/Transaction'
+        - type: object
+          required: [refunds]
+          properties:
+            refunds:
+              type: array
+              items: { $ref: '#/components/schemas/Refund' }
+    TransactionList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Transaction' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    AuthorizeInput:
+      type: object
+      required: [session_id, amount, payment_token]
+      additionalProperties: false
+      properties:
+        session_id: { type: string, minLength: 1, maxLength: 100 }
+        gateway: { type: string, enum: [stripe], default: stripe }
+        amount: { $ref: '#/components/schemas/Money' }
+        payment_token: { type: string, minLength: 1, maxLength: 255, description: 'The gateway SDK payment method, e.g. pm_...' }
+        return_url: { type: string, maxLength: 2048, description: Where a redirect-based challenge returns to. }
+    CaptureInput:
+      type: object
+      required: [transaction_id]
+      additionalProperties: false
+      properties:
+        transaction_id: { type: string, format: uuid }
+        amount_minor: { type: integer, format: int64, minimum: 1, description: Less than authorized; omitted captures it all. }
+        order_id: { type: string, format: uuid }
+    VoidInput:
+      type: object
+      additionalProperties: false
+      properties:
+        transaction_id: { type: string, format: uuid }
+        authorization_key: { type: string, maxLength: 255, description: The Idempotency-Key of the authorize call. }
+    VoidResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [voided, failed, none]
+        transaction_id: { type: string, format: uuid }
+    RefundInput:
+      type: object
+      required: [transaction_id]
+      additionalProperties: false
+      properties:
+        transaction_id: { type: string, format: uuid }
+        amount_minor: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+        order_id: { type: string, format: uuid }
+    RefundResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, completed, failed, none]
+        refund: { $ref: '#/components/schemas/Refund' }
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

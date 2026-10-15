@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/inventory/inventory.stock.reserved.v1.json",
+  "title": "inventory.stock.reserved.v1",
+  "description": "Stock was reserved for a checkout session (ADR-019 RESERVING).",
+  "type": "object",
+  "required": [
+    "reservation_id",
+    "session_id",
+    "items",
+    "expires_at",
+    "reserved_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "reservation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sku_id",
+          "quantity"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reserved_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

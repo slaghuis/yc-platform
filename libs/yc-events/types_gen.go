@@ -9,12 +9,22 @@ import (
 // Event types with a schema.
 const (
 	TypeCartClearedV1                        = "cart.cleared.v1"
+	TypeCartConvertedV1                      = "cart.converted.v1"
 	TypeCartCreatedV1                        = "cart.created.v1"
 	TypeCartItemAddedV1                      = "cart.item.added.v1"
 	TypeCartItemMovedV1                      = "cart.item.moved.v1"
 	TypeCartItemQuantityChangedV1            = "cart.item.quantity_changed.v1"
 	TypeCartItemRemovedV1                    = "cart.item.removed.v1"
 	TypeCartMergedV1                         = "cart.merged.v1"
+	TypeCheckoutCompensatingV1               = "checkout.compensating.v1"
+	TypeCheckoutCompletedV1                  = "checkout.completed.v1"
+	TypeCheckoutConfirmedV1                  = "checkout.confirmed.v1"
+	TypeCheckoutExpiredV1                    = "checkout.expired.v1"
+	TypeCheckoutFailedV1                     = "checkout.failed.v1"
+	TypeCheckoutPricedV1                     = "checkout.priced.v1"
+	TypeCheckoutShippingSelectedV1           = "checkout.shipping_selected.v1"
+	TypeCheckoutStartedV1                    = "checkout.started.v1"
+	TypeCheckoutValidationFailedV1           = "checkout.validation_failed.v1"
 	TypeIdentityOauthLinkedV1                = "identity.oauth_linked.v1"
 	TypeIdentityUserLoggedInV1               = "identity.user.logged_in.v1"
 	TypeIdentityUserPasswordChangedV1        = "identity.user.password_changed.v1"
@@ -26,6 +36,29 @@ const (
 	TypeImageProcessedV1                     = "image.processed.v1"
 	TypeImageProcessingFailedV1              = "image.processing_failed.v1"
 	TypeImageUploadedV1                      = "image.uploaded.v1"
+	TypeInventoryStockAdjustedV1             = "inventory.stock.adjusted.v1"
+	TypeInventoryStockCommittedV1            = "inventory.stock.committed.v1"
+	TypeInventoryStockDepletedV1             = "inventory.stock.depleted.v1"
+	TypeInventoryStockLowThresholdReachedV1  = "inventory.stock.low_threshold_reached.v1"
+	TypeInventoryStockReceivedV1             = "inventory.stock.received.v1"
+	TypeInventoryStockReservationExpiredV1   = "inventory.stock.reservation_expired.v1"
+	TypeInventoryStockReservationFailedV1    = "inventory.stock.reservation_failed.v1"
+	TypeInventoryStockReservationReleasedV1  = "inventory.stock.reservation_released.v1"
+	TypeInventoryStockReservedV1             = "inventory.stock.reserved.v1"
+	TypeInventoryStockRestoredV1             = "inventory.stock.restored.v1"
+	TypeOrderCancelledV1                     = "order.cancelled.v1"
+	TypeOrderPlacedV1                        = "order.placed.v1"
+	TypePaymentAuthorizationFailedV1         = "payment.authorization_failed.v1"
+	TypePaymentAuthorizedV1                  = "payment.authorized.v1"
+	TypePaymentCaptureFailedV1               = "payment.capture_failed.v1"
+	TypePaymentCapturedV1                    = "payment.captured.v1"
+	TypePaymentIntentCreatedV1               = "payment.intent.created.v1"
+	TypePaymentRefundCompletedV1             = "payment.refund_completed.v1"
+	TypePaymentRefundFailedV1                = "payment.refund_failed.v1"
+	TypePaymentRefundInitiatedV1             = "payment.refund_initiated.v1"
+	TypePaymentVoidFailedV1                  = "payment.void_failed.v1"
+	TypePaymentVoidedV1                      = "payment.voided.v1"
+	TypePaymentWebhookSignatureFailedV1      = "payment.webhook_signature_failed.v1"
 	TypePlatformServiceDeregisteredV1        = "platform.service.deregistered.v1"
 	TypePlatformServiceRegisteredV1          = "platform.service.registered.v1"
 	TypePlatformTenantProvisionedV1          = "platform.tenant.provisioned.v1"
@@ -62,12 +95,22 @@ const (
 // EventTypes lists every event type with a schema, sorted.
 var EventTypes = []string{
 	TypeCartClearedV1,
+	TypeCartConvertedV1,
 	TypeCartCreatedV1,
 	TypeCartItemAddedV1,
 	TypeCartItemMovedV1,
 	TypeCartItemQuantityChangedV1,
 	TypeCartItemRemovedV1,
 	TypeCartMergedV1,
+	TypeCheckoutCompensatingV1,
+	TypeCheckoutCompletedV1,
+	TypeCheckoutConfirmedV1,
+	TypeCheckoutExpiredV1,
+	TypeCheckoutFailedV1,
+	TypeCheckoutPricedV1,
+	TypeCheckoutShippingSelectedV1,
+	TypeCheckoutStartedV1,
+	TypeCheckoutValidationFailedV1,
 	TypeIdentityOauthLinkedV1,
 	TypeIdentityUserLoggedInV1,
 	TypeIdentityUserPasswordChangedV1,
@@ -79,6 +122,29 @@ var EventTypes = []string{
 	TypeImageProcessedV1,
 	TypeImageProcessingFailedV1,
 	TypeImageUploadedV1,
+	TypeInventoryStockAdjustedV1,
+	TypeInventoryStockCommittedV1,
+	TypeInventoryStockDepletedV1,
+	TypeInventoryStockLowThresholdReachedV1,
+	TypeInventoryStockReceivedV1,
+	TypeInventoryStockReservationExpiredV1,
+	TypeInventoryStockReservationFailedV1,
+	TypeInventoryStockReservationReleasedV1,
+	TypeInventoryStockReservedV1,
+	TypeInventoryStockRestoredV1,
+	TypeOrderCancelledV1,
+	TypeOrderPlacedV1,
+	TypePaymentAuthorizationFailedV1,
+	TypePaymentAuthorizedV1,
+	TypePaymentCaptureFailedV1,
+	TypePaymentCapturedV1,
+	TypePaymentIntentCreatedV1,
+	TypePaymentRefundCompletedV1,
+	TypePaymentRefundFailedV1,
+	TypePaymentRefundInitiatedV1,
+	TypePaymentVoidFailedV1,
+	TypePaymentVoidedV1,
+	TypePaymentWebhookSignatureFailedV1,
 	TypePlatformServiceDeregisteredV1,
 	TypePlatformServiceRegisteredV1,
 	TypePlatformTenantProvisionedV1,
@@ -120,6 +186,46 @@ const (
 	CartCreatedV1UserTypeCustomer                            = "customer"
 	CartItemRemovedV1ReasonCustomer                          = "customer"
 	CartItemRemovedV1ReasonSKUDeleted                        = "sku_deleted"
+	CheckoutCompensatingV1FailedStateSTARTED                 = "STARTED"
+	CheckoutCompensatingV1FailedStatePRICING                 = "PRICING"
+	CheckoutCompensatingV1FailedStateRESERVING               = "RESERVING"
+	CheckoutCompensatingV1FailedStateAUTHORIZING             = "AUTHORIZING"
+	CheckoutCompensatingV1FailedStateORDERCREATE             = "ORDER_CREATE"
+	CheckoutCompensatingV1FailedStateCAPTURING               = "CAPTURING"
+	CheckoutCompensatingV1FailedStateCHARGING                = "CHARGING"
+	CheckoutCompensatingV1FailedStateCONFIRMING              = "CONFIRMING"
+	CheckoutCompensatingV1FailedStateCOMPENSATING            = "COMPENSATING"
+	CheckoutCompensatingV1FailedStateCOMPLETED               = "COMPLETED"
+	CheckoutCompensatingV1FailedStateFAILED                  = "FAILED"
+	CheckoutCompensatingV1FailedStateEXPIRED                 = "EXPIRED"
+	CheckoutConfirmedV1PaymentGatewayStripe                  = "stripe"
+	CheckoutConfirmedV1PaymentGatewayYoco                    = "yoco"
+	CheckoutExpiredV1ExpiredStateSTARTED                     = "STARTED"
+	CheckoutExpiredV1ExpiredStatePRICING                     = "PRICING"
+	CheckoutExpiredV1ExpiredStateRESERVING                   = "RESERVING"
+	CheckoutExpiredV1ExpiredStateAUTHORIZING                 = "AUTHORIZING"
+	CheckoutExpiredV1ExpiredStateORDERCREATE                 = "ORDER_CREATE"
+	CheckoutExpiredV1ExpiredStateCAPTURING                   = "CAPTURING"
+	CheckoutExpiredV1ExpiredStateCHARGING                    = "CHARGING"
+	CheckoutExpiredV1ExpiredStateCONFIRMING                  = "CONFIRMING"
+	CheckoutExpiredV1ExpiredStateCOMPENSATING                = "COMPENSATING"
+	CheckoutExpiredV1ExpiredStateCOMPLETED                   = "COMPLETED"
+	CheckoutExpiredV1ExpiredStateFAILED                      = "FAILED"
+	CheckoutExpiredV1ExpiredStateEXPIRED                     = "EXPIRED"
+	CheckoutFailedV1FailedStateSTARTED                       = "STARTED"
+	CheckoutFailedV1FailedStatePRICING                       = "PRICING"
+	CheckoutFailedV1FailedStateRESERVING                     = "RESERVING"
+	CheckoutFailedV1FailedStateAUTHORIZING                   = "AUTHORIZING"
+	CheckoutFailedV1FailedStateORDERCREATE                   = "ORDER_CREATE"
+	CheckoutFailedV1FailedStateCAPTURING                     = "CAPTURING"
+	CheckoutFailedV1FailedStateCHARGING                      = "CHARGING"
+	CheckoutFailedV1FailedStateCONFIRMING                    = "CONFIRMING"
+	CheckoutFailedV1FailedStateCOMPENSATING                  = "COMPENSATING"
+	CheckoutFailedV1FailedStateCOMPLETED                     = "COMPLETED"
+	CheckoutFailedV1FailedStateFAILED                        = "FAILED"
+	CheckoutFailedV1FailedStateEXPIRED                       = "EXPIRED"
+	CheckoutStartedV1UserTypeCustomer                        = "customer"
+	CheckoutStartedV1UserTypeVisitor                         = "visitor"
 	ActorTypeVisitor                                         = "visitor"
 	ActorTypeCustomer                                        = "customer"
 	ActorTypeShopAdmin                                       = "shop_admin"
@@ -161,6 +267,27 @@ const (
 	ImageUploadedV1ContentTypeImagePng                       = "image/png"
 	ImageUploadedV1ContentTypeImageWebp                      = "image/webp"
 	ImageUploadedV1ContentTypeImageGif                       = "image/gif"
+	InventoryStockReservationReleasedV1ReasonCompensation    = "compensation"
+	InventoryStockReservationReleasedV1ReasonAdmin           = "admin"
+	InventoryStockReservationReleasedV1ReasonSKUDeleted      = "sku_deleted"
+	OrderPlacedV1UserTypeCustomer                            = "customer"
+	OrderPlacedV1UserTypeVisitor                             = "visitor"
+	PaymentAuthorizationFailedV1GatewayStripe                = "stripe"
+	PaymentAuthorizationFailedV1GatewayYoco                  = "yoco"
+	PaymentAuthorizedV1GatewayStripe                         = "stripe"
+	PaymentAuthorizedV1GatewayYoco                           = "yoco"
+	PaymentCaptureFailedV1GatewayStripe                      = "stripe"
+	PaymentCaptureFailedV1GatewayYoco                        = "yoco"
+	PaymentCapturedV1GatewayStripe                           = "stripe"
+	PaymentCapturedV1GatewayYoco                             = "yoco"
+	PaymentIntentCreatedV1GatewayStripe                      = "stripe"
+	PaymentIntentCreatedV1GatewayYoco                        = "yoco"
+	PaymentVoidFailedV1GatewayStripe                         = "stripe"
+	PaymentVoidFailedV1GatewayYoco                           = "yoco"
+	PaymentVoidedV1GatewayStripe                             = "stripe"
+	PaymentVoidedV1GatewayYoco                               = "yoco"
+	PaymentWebhookSignatureFailedV1GatewayStripe             = "stripe"
+	PaymentWebhookSignatureFailedV1GatewayYoco               = "yoco"
 	PlatformServiceDeregisteredV1ReasonShutdown              = "shutdown"
 	PlatformServiceDeregisteredV1ReasonHealthCheckFailed     = "health_check_failed"
 	PlatformServiceDeregisteredV1ReasonManual                = "manual"
@@ -213,6 +340,30 @@ type CartClearedV1 struct {
 
 // EventType returns cart.cleared.v1.
 func (CartClearedV1) EventType() string { return TypeCartClearedV1 }
+
+// CartConvertedV1ItemsItem is a nested object.
+type CartConvertedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// CartConvertedV1 is the payload of cart.converted.v1.
+//
+// A checkout of the cart completed (checkout.completed.v1): the checked-out quantities were removed from the cart. Lines added or increased during the checkout keep the difference.
+type CartConvertedV1 struct {
+	CartID   string `json:"cart_id"`
+	UserID   string `json:"user_id"`
+	CartType string `json:"cart_type"`
+	// The checkout session.
+	SessionID string `json:"session_id"`
+	OrderID   string `json:"order_id"`
+	// Quantities removed from the cart per SKU.
+	Items       []CartConvertedV1ItemsItem `json:"items"`
+	ConvertedAt time.Time                  `json:"converted_at"`
+}
+
+// EventType returns cart.converted.v1.
+func (CartConvertedV1) EventType() string { return TypeCartConvertedV1 }
 
 // CartCreatedV1 is the payload of cart.created.v1.
 //
@@ -315,6 +466,149 @@ type CartMergedV1 struct {
 
 // EventType returns cart.merged.v1.
 func (CartMergedV1) EventType() string { return TypeCartMergedV1 }
+
+// CheckoutCompensatingV1 is the payload of checkout.compensating.v1.
+//
+// The saga failed or expired before payment succeeded and is undoing the steps already done.
+type CheckoutCompensatingV1 struct {
+	SessionID   string `json:"session_id"`
+	UserID      string `json:"user_id"`
+	FailedState string `json:"failed_state"`
+	// Machine-readable reason, e.g. insufficient_stock, payment_declined, reservation_expired, session_expired, cancelled, step_failed.
+	Reason         string    `json:"reason"`
+	CompensatingAt time.Time `json:"compensating_at"`
+}
+
+// EventType returns checkout.compensating.v1.
+func (CheckoutCompensatingV1) EventType() string { return TypeCheckoutCompensatingV1 }
+
+// CheckoutCompletedV1ItemsItem is a nested object.
+type CheckoutCompletedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// CheckoutCompletedV1 is the payload of checkout.completed.v1.
+//
+// The session completed: payment captured and the order confirmed. yc-cart removes the checked-out quantities from the cart.
+type CheckoutCompletedV1 struct {
+	SessionID   string                         `json:"session_id"`
+	UserID      string                         `json:"user_id"`
+	CartType    string                         `json:"cart_type"`
+	OrderID     string                         `json:"order_id"`
+	OrderNumber string                         `json:"order_number"`
+	Items       []CheckoutCompletedV1ItemsItem `json:"items"`
+	Total       Money                          `json:"total"`
+	CompletedAt time.Time                      `json:"completed_at"`
+}
+
+// EventType returns checkout.completed.v1.
+func (CheckoutCompletedV1) EventType() string { return TypeCheckoutCompletedV1 }
+
+// CheckoutConfirmedV1 is the payload of checkout.confirmed.v1.
+//
+// The customer confirmed the checkout; the saga moves on to reserve, pay and create the order.
+type CheckoutConfirmedV1 struct {
+	SessionID      string    `json:"session_id"`
+	UserID         string    `json:"user_id"`
+	PaymentGateway string    `json:"payment_gateway"`
+	Total          Money     `json:"total"`
+	ConfirmedAt    time.Time `json:"confirmed_at"`
+}
+
+// EventType returns checkout.confirmed.v1.
+func (CheckoutConfirmedV1) EventType() string { return TypeCheckoutConfirmedV1 }
+
+// CheckoutExpiredV1 is the payload of checkout.expired.v1.
+//
+// The session's TTL passed before payment succeeded (ADR-011); compensation has finished.
+type CheckoutExpiredV1 struct {
+	SessionID    string    `json:"session_id"`
+	UserID       string    `json:"user_id"`
+	ExpiredState string    `json:"expired_state"`
+	ExpiredAt    time.Time `json:"expired_at"`
+}
+
+// EventType returns checkout.expired.v1.
+func (CheckoutExpiredV1) EventType() string { return TypeCheckoutExpiredV1 }
+
+// CheckoutFailedV1 is the payload of checkout.failed.v1.
+//
+// The saga failed before payment succeeded and compensation has finished.
+type CheckoutFailedV1 struct {
+	SessionID   string `json:"session_id"`
+	UserID      string `json:"user_id"`
+	FailedState string `json:"failed_state"`
+	// Machine-readable reason, e.g. insufficient_stock, payment_declined, reservation_expired, session_expired, cancelled, step_failed.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns checkout.failed.v1.
+func (CheckoutFailedV1) EventType() string { return TypeCheckoutFailedV1 }
+
+// CheckoutPricedV1 is the payload of checkout.priced.v1.
+//
+// The session's quote was set at PRICING; it is honoured until the session expires (ADR-011).
+type CheckoutPricedV1 struct {
+	SessionID  string `json:"session_id"`
+	UserID     string `json:"user_id"`
+	ItemsTotal Money  `json:"items_total"`
+	// Tax included in the totals.
+	TaxTotal         Money     `json:"tax_total"`
+	Shipping         Money     `json:"shipping"`
+	Total            Money     `json:"total"`
+	RequiresShipping bool      `json:"requires_shipping"`
+	PricedAt         time.Time `json:"priced_at"`
+}
+
+// EventType returns checkout.priced.v1.
+func (CheckoutPricedV1) EventType() string { return TypeCheckoutPricedV1 }
+
+// CheckoutShippingSelectedV1 is the payload of checkout.shipping_selected.v1.
+//
+// The customer chose a shipping option.
+type CheckoutShippingSelectedV1 struct {
+	SessionID        string    `json:"session_id"`
+	UserID           string    `json:"user_id"`
+	ShippingOptionID string    `json:"shipping_option_id"`
+	Amount           Money     `json:"amount"`
+	SelectedAt       time.Time `json:"selected_at"`
+}
+
+// EventType returns checkout.shipping_selected.v1.
+func (CheckoutShippingSelectedV1) EventType() string { return TypeCheckoutShippingSelectedV1 }
+
+// CheckoutStartedV1 is the payload of checkout.started.v1.
+//
+// A checkout session was started from a cart.
+type CheckoutStartedV1 struct {
+	SessionID string `json:"session_id"`
+	UserID    string `json:"user_id"`
+	UserType  string `json:"user_type"`
+	CartType  string `json:"cart_type"`
+	// Number of lines.
+	ItemCount int64     `json:"item_count"`
+	ExpiresAt time.Time `json:"expires_at"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// EventType returns checkout.started.v1.
+func (CheckoutStartedV1) EventType() string { return TypeCheckoutStartedV1 }
+
+// CheckoutValidationFailedV1 is the payload of checkout.validation_failed.v1.
+//
+// A confirm request was rejected because required data was missing or invalid (ADR-010).
+type CheckoutValidationFailedV1 struct {
+	SessionID string `json:"session_id"`
+	UserID    string `json:"user_id"`
+	// The request fields that failed.
+	Fields   []string  `json:"fields"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns checkout.validation_failed.v1.
+func (CheckoutValidationFailedV1) EventType() string { return TypeCheckoutValidationFailedV1 }
 
 // Actor is the common/actor.v1.json fragment.
 //
@@ -538,6 +832,420 @@ type ImageUploadedV1 struct {
 
 // EventType returns image.uploaded.v1.
 func (ImageUploadedV1) EventType() string { return TypeImageUploadedV1 }
+
+// InventoryStockAdjustedV1 is the payload of inventory.stock.adjusted.v1.
+//
+// A shop admin adjusted on_hand (shrinkage, correction).
+type InventoryStockAdjustedV1 struct {
+	SKUID string `json:"sku_id"`
+	// Signed change to on_hand; never zero.
+	Delta    int64 `json:"delta"`
+	OnHand   int64 `json:"on_hand"`
+	Reserved int64 `json:"reserved"`
+	// on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired).
+	Available  int64     `json:"available"`
+	Reason     string    `json:"reason"`
+	AdjustedAt time.Time `json:"adjusted_at"`
+}
+
+// EventType returns inventory.stock.adjusted.v1.
+func (InventoryStockAdjustedV1) EventType() string { return TypeInventoryStockAdjustedV1 }
+
+// InventoryStockCommittedV1ItemsItem is a nested object.
+type InventoryStockCommittedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// InventoryStockCommittedV1OversoldItem is a nested object.
+type InventoryStockCommittedV1OversoldItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// InventoryStockCommittedV1 is the payload of inventory.stock.committed.v1.
+//
+// A reservation was committed after payment succeeded: on_hand is decremented by each item.
+type InventoryStockCommittedV1 struct {
+	ReservationID string                               `json:"reservation_id"`
+	SessionID     string                               `json:"session_id"`
+	Items         []InventoryStockCommittedV1ItemsItem `json:"items"`
+	// SKUs whose available stock went below zero because the reservation had expired before the commit.
+	Oversold    []InventoryStockCommittedV1OversoldItem `json:"oversold,omitempty"`
+	CommittedAt time.Time                               `json:"committed_at"`
+}
+
+// EventType returns inventory.stock.committed.v1.
+func (InventoryStockCommittedV1) EventType() string { return TypeInventoryStockCommittedV1 }
+
+// InventoryStockDepletedV1 is the payload of inventory.stock.depleted.v1.
+//
+// A tracked SKU's available stock dropped to zero or below.
+type InventoryStockDepletedV1 struct {
+	SKUID    string `json:"sku_id"`
+	OnHand   int64  `json:"on_hand"`
+	Reserved int64  `json:"reserved"`
+	// on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired).
+	Available  int64     `json:"available"`
+	DepletedAt time.Time `json:"depleted_at"`
+}
+
+// EventType returns inventory.stock.depleted.v1.
+func (InventoryStockDepletedV1) EventType() string { return TypeInventoryStockDepletedV1 }
+
+// InventoryStockLowThresholdReachedV1 is the payload of inventory.stock.low_threshold_reached.v1.
+//
+// A tracked SKU's available stock crossed below its low-stock threshold.
+type InventoryStockLowThresholdReachedV1 struct {
+	SKUID    string `json:"sku_id"`
+	OnHand   int64  `json:"on_hand"`
+	Reserved int64  `json:"reserved"`
+	// on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired).
+	Available    int64     `json:"available"`
+	LowThreshold int64     `json:"low_threshold"`
+	ReachedAt    time.Time `json:"reached_at"`
+}
+
+// EventType returns inventory.stock.low_threshold_reached.v1.
+func (InventoryStockLowThresholdReachedV1) EventType() string {
+	return TypeInventoryStockLowThresholdReachedV1
+}
+
+// InventoryStockReceivedV1 is the payload of inventory.stock.received.v1.
+//
+// A shop admin received stock for a SKU, increasing on_hand.
+type InventoryStockReceivedV1 struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+	OnHand   int64  `json:"on_hand"`
+	Reserved int64  `json:"reserved"`
+	// on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired).
+	Available  int64     `json:"available"`
+	Reason     *string   `json:"reason,omitempty"`
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+// EventType returns inventory.stock.received.v1.
+func (InventoryStockReceivedV1) EventType() string { return TypeInventoryStockReceivedV1 }
+
+// InventoryStockReservationExpiredV1ItemsItem is a nested object.
+type InventoryStockReservationExpiredV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// InventoryStockReservationExpiredV1 is the payload of inventory.stock.reservation_expired.v1.
+//
+// A reservation reached its TTL before it was committed or released. yc-checkout compensates the session if it has not passed the point of no return.
+type InventoryStockReservationExpiredV1 struct {
+	ReservationID string                                        `json:"reservation_id"`
+	SessionID     string                                        `json:"session_id"`
+	Items         []InventoryStockReservationExpiredV1ItemsItem `json:"items"`
+	ExpiredAt     time.Time                                     `json:"expired_at"`
+}
+
+// EventType returns inventory.stock.reservation_expired.v1.
+func (InventoryStockReservationExpiredV1) EventType() string {
+	return TypeInventoryStockReservationExpiredV1
+}
+
+// InventoryStockReservationFailedV1ShortagesItem is a nested object.
+type InventoryStockReservationFailedV1ShortagesItem struct {
+	SKUID     string `json:"sku_id"`
+	Requested int64  `json:"requested"`
+	Available int64  `json:"available"`
+}
+
+// InventoryStockReservationFailedV1 is the payload of inventory.stock.reservation_failed.v1.
+//
+// A reservation was declined because at least one tracked SKU is short (ADR-012: no partial reservations).
+type InventoryStockReservationFailedV1 struct {
+	SessionID string                                           `json:"session_id"`
+	Shortages []InventoryStockReservationFailedV1ShortagesItem `json:"shortages"`
+	FailedAt  time.Time                                        `json:"failed_at"`
+}
+
+// EventType returns inventory.stock.reservation_failed.v1.
+func (InventoryStockReservationFailedV1) EventType() string {
+	return TypeInventoryStockReservationFailedV1
+}
+
+// InventoryStockReservationReleasedV1ItemsItem is a nested object.
+type InventoryStockReservationReleasedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// InventoryStockReservationReleasedV1 is the payload of inventory.stock.reservation_released.v1.
+//
+// A reservation was released and its stock returned to available.
+type InventoryStockReservationReleasedV1 struct {
+	ReservationID string                                         `json:"reservation_id"`
+	SessionID     string                                         `json:"session_id"`
+	Items         []InventoryStockReservationReleasedV1ItemsItem `json:"items"`
+	Reason        string                                         `json:"reason"`
+	ReleasedAt    time.Time                                      `json:"released_at"`
+}
+
+// EventType returns inventory.stock.reservation_released.v1.
+func (InventoryStockReservationReleasedV1) EventType() string {
+	return TypeInventoryStockReservationReleasedV1
+}
+
+// InventoryStockReservedV1ItemsItem is a nested object.
+type InventoryStockReservedV1ItemsItem struct {
+	SKUID    string `json:"sku_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+// InventoryStockReservedV1 is the payload of inventory.stock.reserved.v1.
+//
+// Stock was reserved for a checkout session (ADR-019 RESERVING).
+type InventoryStockReservedV1 struct {
+	ReservationID string                              `json:"reservation_id"`
+	SessionID     string                              `json:"session_id"`
+	Items         []InventoryStockReservedV1ItemsItem `json:"items"`
+	ExpiresAt     time.Time                           `json:"expires_at"`
+	ReservedAt    time.Time                           `json:"reserved_at"`
+}
+
+// EventType returns inventory.stock.reserved.v1.
+func (InventoryStockReservedV1) EventType() string { return TypeInventoryStockReservedV1 }
+
+// InventoryStockRestoredV1 is the payload of inventory.stock.restored.v1.
+//
+// A tracked SKU's available stock rose above zero.
+type InventoryStockRestoredV1 struct {
+	SKUID    string `json:"sku_id"`
+	OnHand   int64  `json:"on_hand"`
+	Reserved int64  `json:"reserved"`
+	// on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired).
+	Available  int64     `json:"available"`
+	RestoredAt time.Time `json:"restored_at"`
+}
+
+// EventType returns inventory.stock.restored.v1.
+func (InventoryStockRestoredV1) EventType() string { return TypeInventoryStockRestoredV1 }
+
+// OrderCancelledV1 is the payload of order.cancelled.v1.
+//
+// A received order was cancelled before shipment. A captured payment is refunded through yc-payment.
+type OrderCancelledV1 struct {
+	OrderID     string `json:"order_id"`
+	OrderNumber string `json:"order_number"`
+	UserID      string `json:"user_id"`
+	Reason      string `json:"reason"`
+	// Amount refunded, when the payment had been captured.
+	Refund      *Money    `json:"refund,omitempty"`
+	CancelledAt time.Time `json:"cancelled_at"`
+}
+
+// EventType returns order.cancelled.v1.
+func (OrderCancelledV1) EventType() string { return TypeOrderCancelledV1 }
+
+// OrderPlacedV1ItemsItem is a nested object.
+type OrderPlacedV1ItemsItem struct {
+	SKUID        string `json:"sku_id"`
+	SKUCode      string `json:"sku_code"`
+	NameSnapshot string `json:"name_snapshot"`
+	Quantity     int64  `json:"quantity"`
+	UnitPrice    Money  `json:"unit_price"`
+	LineTotal    Money  `json:"line_total"`
+}
+
+// OrderPlacedV1 is the payload of order.placed.v1.
+//
+// An order was confirmed after its payment succeeded (ADR-019 rule 3). Published only for paid orders.
+type OrderPlacedV1 struct {
+	OrderID           string                   `json:"order_id"`
+	OrderNumber       string                   `json:"order_number"`
+	UserID            string                   `json:"user_id"`
+	UserType          string                   `json:"user_type"`
+	CheckoutSessionID string                   `json:"checkout_session_id"`
+	Items             []OrderPlacedV1ItemsItem `json:"items"`
+	RequiresShipping  bool                     `json:"requires_shipping"`
+	ItemsTotal        Money                    `json:"items_total"`
+	Shipping          Money                    `json:"shipping"`
+	// Tax included in the totals.
+	TaxTotal             Money   `json:"tax_total"`
+	Total                Money   `json:"total"`
+	PaymentTransactionID *string `json:"payment_transaction_id,omitempty"`
+	// Present for visitor orders (ADR-010).
+	GuestContact *GuestContact `json:"guest_contact,omitempty"`
+	PlacedAt     time.Time     `json:"placed_at"`
+}
+
+// EventType returns order.placed.v1.
+func (OrderPlacedV1) EventType() string { return TypeOrderPlacedV1 }
+
+// PaymentAuthorizationFailedV1 is the payload of payment.authorization_failed.v1.
+//
+// The gateway declined the authorization or the customer failed authentication.
+type PaymentAuthorizationFailedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string `json:"session_id"`
+	Gateway   string `json:"gateway"`
+	Amount    Money  `json:"amount"`
+	// Short machine-readable reason, e.g. card_declined, insufficient_funds, authentication_failed, gateway_error.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns payment.authorization_failed.v1.
+func (PaymentAuthorizationFailedV1) EventType() string { return TypePaymentAuthorizationFailedV1 }
+
+// PaymentAuthorizedV1 is the payload of payment.authorized.v1.
+//
+// The gateway authorized the amount (Variant A, ADR-013). yc-checkout resumes a session that was waiting on a pending authorization.
+type PaymentAuthorizedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID        string    `json:"session_id"`
+	Gateway          string    `json:"gateway"`
+	GatewayReference string    `json:"gateway_reference"`
+	Amount           Money     `json:"amount"`
+	AuthorizedAt     time.Time `json:"authorized_at"`
+}
+
+// EventType returns payment.authorized.v1.
+func (PaymentAuthorizedV1) EventType() string { return TypePaymentAuthorizedV1 }
+
+// PaymentCaptureFailedV1 is the payload of payment.capture_failed.v1.
+//
+// Capturing an authorized payment failed.
+type PaymentCaptureFailedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string `json:"session_id"`
+	Gateway   string `json:"gateway"`
+	Amount    Money  `json:"amount"`
+	// Short machine-readable reason, e.g. card_declined, insufficient_funds, authentication_failed, gateway_error.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns payment.capture_failed.v1.
+func (PaymentCaptureFailedV1) EventType() string { return TypePaymentCaptureFailedV1 }
+
+// PaymentCapturedV1 is the payload of payment.captured.v1.
+//
+// An authorized payment was captured (Variant A). The point of no return of the checkout saga.
+type PaymentCapturedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID  string    `json:"session_id"`
+	OrderID    *string   `json:"order_id,omitempty"`
+	Gateway    string    `json:"gateway"`
+	Amount     Money     `json:"amount"`
+	CapturedAt time.Time `json:"captured_at"`
+}
+
+// EventType returns payment.captured.v1.
+func (PaymentCapturedV1) EventType() string { return TypePaymentCapturedV1 }
+
+// PaymentIntentCreatedV1 is the payload of payment.intent.created.v1.
+//
+// yc-payment recorded a transaction before calling the gateway.
+type PaymentIntentCreatedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string    `json:"session_id"`
+	Gateway   string    `json:"gateway"`
+	Amount    Money     `json:"amount"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// EventType returns payment.intent.created.v1.
+func (PaymentIntentCreatedV1) EventType() string { return TypePaymentIntentCreatedV1 }
+
+// PaymentRefundCompletedV1 is the payload of payment.refund_completed.v1.
+//
+// The gateway completed a refund.
+type PaymentRefundCompletedV1 struct {
+	RefundID      string    `json:"refund_id"`
+	TransactionID string    `json:"transaction_id"`
+	OrderID       *string   `json:"order_id,omitempty"`
+	Amount        Money     `json:"amount"`
+	CompletedAt   time.Time `json:"completed_at"`
+}
+
+// EventType returns payment.refund_completed.v1.
+func (PaymentRefundCompletedV1) EventType() string { return TypePaymentRefundCompletedV1 }
+
+// PaymentRefundFailedV1 is the payload of payment.refund_failed.v1.
+//
+// The gateway refused or failed a refund.
+type PaymentRefundFailedV1 struct {
+	RefundID      string  `json:"refund_id"`
+	TransactionID string  `json:"transaction_id"`
+	OrderID       *string `json:"order_id,omitempty"`
+	Amount        Money   `json:"amount"`
+	// Short machine-readable reason, e.g. card_declined, insufficient_funds, authentication_failed, gateway_error.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns payment.refund_failed.v1.
+func (PaymentRefundFailedV1) EventType() string { return TypePaymentRefundFailedV1 }
+
+// PaymentRefundInitiatedV1 is the payload of payment.refund_initiated.v1.
+//
+// A refund of a captured payment was requested at the gateway.
+type PaymentRefundInitiatedV1 struct {
+	RefundID      string    `json:"refund_id"`
+	TransactionID string    `json:"transaction_id"`
+	OrderID       *string   `json:"order_id,omitempty"`
+	Amount        Money     `json:"amount"`
+	Reason        *string   `json:"reason,omitempty"`
+	InitiatedAt   time.Time `json:"initiated_at"`
+}
+
+// EventType returns payment.refund_initiated.v1.
+func (PaymentRefundInitiatedV1) EventType() string { return TypePaymentRefundInitiatedV1 }
+
+// PaymentVoidFailedV1 is the payload of payment.void_failed.v1.
+//
+// Voiding an authorization failed; the hold lapses at the gateway, but an operator should check.
+type PaymentVoidFailedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string `json:"session_id"`
+	Gateway   string `json:"gateway"`
+	// Short machine-readable reason, e.g. card_declined, insufficient_funds, authentication_failed, gateway_error.
+	Reason   string    `json:"reason"`
+	FailedAt time.Time `json:"failed_at"`
+}
+
+// EventType returns payment.void_failed.v1.
+func (PaymentVoidFailedV1) EventType() string { return TypePaymentVoidFailedV1 }
+
+// PaymentVoidedV1 is the payload of payment.voided.v1.
+//
+// An authorization was voided (checkout compensation).
+type PaymentVoidedV1 struct {
+	TransactionID string `json:"transaction_id"`
+	// The checkout session the payment belongs to.
+	SessionID string    `json:"session_id"`
+	Gateway   string    `json:"gateway"`
+	Amount    Money     `json:"amount"`
+	VoidedAt  time.Time `json:"voided_at"`
+}
+
+// EventType returns payment.voided.v1.
+func (PaymentVoidedV1) EventType() string { return TypePaymentVoidedV1 }
+
+// PaymentWebhookSignatureFailedV1 is the payload of payment.webhook_signature_failed.v1.
+//
+// A webhook arrived with a missing or invalid signature. A potential security event.
+type PaymentWebhookSignatureFailedV1 struct {
+	Gateway    string    `json:"gateway"`
+	Reason     string    `json:"reason"`
+	ReceivedAt time.Time `json:"received_at"`
+}
+
+// EventType returns payment.webhook_signature_failed.v1.
+func (PaymentWebhookSignatureFailedV1) EventType() string { return TypePaymentWebhookSignatureFailedV1 }
 
 // PlatformServiceDeregisteredV1 is the payload of platform.service.deregistered.v1.
 //

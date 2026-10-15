@@ -112,6 +112,18 @@ func (Carts) DeleteItem(ctx context.Context, tx pgx.Tx, cartID, skuID string) er
 	return nil
 }
 
+// RecordConversion marks a checkout session as removed from its cart;
+// false means it already was.
+func (Carts) RecordConversion(ctx context.Context, tx pgx.Tx, tenantID, sessionID, orderID string, now time.Time) (bool, error) {
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO cart_conversions (tenant_id, session_id, order_id, converted_at)
+		VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, tenantID, sessionID, orderID, now)
+	if err != nil {
+		return false, fmt.Errorf("record cart conversion: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // Clear removes every line of a cart.
 func (Carts) Clear(ctx context.Context, tx pgx.Tx, cartID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM cart_items WHERE cart_id = $1`, cartID); err != nil {

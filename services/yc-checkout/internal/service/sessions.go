@@ -1,0 +1,418 @@
+package service
+
+import (
+	"context"
+	"net/http"
+	"slices"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
+	events "github.com/slaghuis/yc-platform/libs/yc-events"
+	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
+
+	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/domain"
+	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/integration"
+	"github.com/slaghuis/yc-platform/services/yc-checkout/internal/repository"
+)
+
+// DefaultCartType is checked out when the request names none.
+const DefaultCartType = "shopping"
+
+// Start snapshots the caller's cart, prices it with yc-pricing and opens
+// a session in PRICING. The quote holds until the session expires
+// (ADR-011).
+func (s *Service) Start(ctx context.Context, cartType string) (domain.Session, error) {
+	a, err := requireActor(ctx, authctx.ActorCustomer, authctx.ActorVisitor)
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if err := validateShopTenant(a.TenantID); err != nil {
+		return domain.Session{}, err
+	}
+	if cartType == "" {
+		cartType = DefaultCartType
+	}
+	sess, err := s.quote(ctx, a, cartType)
+	if err != nil {
+		return sess, err
+	}
+	err = s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		if err := s.repo.InsertSession(ctx, tx, tenantID, sess); err != nil {
+			return err
+		}
+		if err := s.history(ctx, tx, tenantID, sess.ID, "started", "", sess.State, map[string]any{
+			"cart_type": sess.CartType, "items": len(sess.Items),
+		}); err != nil {
+			return err
+		}
+		if err := s.publish(ctx, tx, tenantID, events.TypeCheckoutStartedV1, events.CheckoutStartedV1{
+			SessionID: sess.ID, UserID: sess.UserID, UserType: string(sess.UserType), CartType: sess.CartType,
+			ItemCount: int64(len(sess.Items)), ExpiresAt: sess.ExpiresAt, StartedAt: sess.CreatedAt,
+		}); err != nil {
+			return err
+		}
+		m := moneyIn(sess.Currency)
+		return s.publish(ctx, tx, tenantID, events.TypeCheckoutPricedV1, events.CheckoutPricedV1{
+			SessionID: sess.ID, UserID: sess.UserID, ItemsTotal: m(sess.ItemsTotalMinor), TaxTotal: m(sess.TaxTotalMinor),
+			Shipping: m(sess.ShippingMinor), Total: m(sess.TotalMinor), RequiresShipping: sess.RequiresShipping,
+			PricedAt: sess.CreatedAt,
+		})
+	})
+	return sess, err
+}
+
+func moneyIn(currency string) func(int64) events.Money {
+	return func(minor int64) events.Money { return events.Money{AmountMinor: minor, Currency: currency} }
+}
+
+// quote builds a new session from the cart, the catalogue and pricing.
+func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType string) (domain.Session, error) {
+	cart, err := s.p.Cart(ctx, a.ActorID, cartType)
+	if err != nil {
+		return domain.Session{}, startError("cart", err)
+	}
+	if !cart.Convertible {
+		return domain.Session{}, ycerrors.Conflict("A " + cartType + " cart cannot be checked out")
+	}
+	if len(cart.Items) == 0 {
+		return domain.Session{}, ycerrors.Conflict("The cart is empty")
+	}
+	ids := make([]string, len(cart.Items))
+	for i, l := range cart.Items {
+		ids[i] = l.SKUID
+	}
+	batch, err := s.p.SKUs(ctx, ids)
+	if err != nil {
+		return domain.Session{}, startError("catalogue", err)
+	}
+	skus := make(map[string]integration.SKU, len(batch.SKUs))
+	for _, k := range batch.SKUs {
+		skus[k.SKUID] = k
+	}
+	unavailable := slices.Clone(batch.Missing)
+	for _, id := range ids {
+		if k, ok := skus[id]; ok && k.Status != "active" {
+			unavailable = append(unavailable, id)
+		}
+	}
+	if len(unavailable) > 0 {
+		return domain.Session{}, ycerrors.Conflict("Some items are no longer available").With("unavailable_skus", unavailable)
+	}
+	pricing, err := s.p.Evaluate(ctx, cart.Items)
+	if err != nil {
+		return domain.Session{}, startError("pricing", err)
+	}
+	if len(pricing.Unpriced) > 0 {
+		return domain.Session{}, ycerrors.Conflict("Some items cannot be priced").With("unpriced", pricing.Unpriced)
+	}
+	priced := make(map[string]integration.PricedLine, len(pricing.Lines))
+	for _, l := range pricing.Lines {
+		priced[l.SKUID] = l
+	}
+
+	now := s.now().UTC()
+	sess := domain.Session{
+		ID: uuid.NewString(), UserID: a.ActorID, UserType: domain.UserType(a.ActorType), CartType: cartType,
+		CartID: cart.CartID, State: domain.StatePricing, Currency: pricing.StoreCurrency,
+		TaxInclusive: pricing.TaxInclusive, TaxTotalMinor: pricing.Totals.TaxTotal.AmountMinor,
+		PricingSnapshot: pricing.Raw, ExpiresAt: now.Add(s.cfg.SessionTTL), CreatedAt: now, UpdatedAt: now,
+	}
+	for _, l := range cart.Items {
+		k, p := skus[l.SKUID], priced[l.SKUID]
+		if p.Quantity != l.Quantity {
+			return domain.Session{}, ycerrors.Internal("pricing did not price every line").
+				WithInternal("sku %s: priced %d of %d", l.SKUID, p.Quantity, l.Quantity)
+		}
+		sess.Items = append(sess.Items, domain.Item{
+			SKUID: l.SKUID, ProductID: k.ProductID, SKUCode: k.SKUCode, Name: k.ProductName,
+			VariantValues: k.VariantValues, Quantity: l.Quantity, IsDigital: k.IsDigital,
+			InventoryTracked: k.InventoryTracked, TaxClass: k.TaxClass,
+			UnitPriceMinor: (p.Gross.AmountMinor + l.Quantity/2) / l.Quantity, LineTotalMinor: p.Gross.AmountMinor,
+			TaxMinor: p.Tax.AmountMinor,
+		})
+		sess.ItemsTotalMinor += p.Gross.AmountMinor
+		sess.RequiresShipping = sess.RequiresShipping || !k.IsDigital
+		sess.HasTrackedItems = sess.HasTrackedItems || k.InventoryTracked
+	}
+	sess.TotalMinor = sess.ItemsTotalMinor
+	if sess.RequiresShipping {
+		sess.ShippingOptions = []domain.ShippingOption{s.cfg.Shipping}
+		sess.SelectShipping(s.cfg.Shipping.ID)
+	}
+	return sess, nil
+}
+
+func startError(participant string, err error) error {
+	r, ok := integration.Rejected(err)
+	if !ok {
+		return err
+	}
+	if participant == "cart" && r.Status == http.StatusNotFound {
+		return ycerrors.NotFound("cart type", "").Wrap(err)
+	}
+	return ycerrors.Conflict("Checkout cannot start: " + r.Problem.Detail).Wrap(err)
+}
+
+// Session returns one of the caller's sessions.
+func (s *Service) Session(ctx context.Context, id string) (domain.Session, error) {
+	var sess domain.Session
+	err := s.asOwner(ctx, id, false, func(_ pgx.Tx, _ string, x *domain.Session) error {
+		sess = *x
+		return nil
+	})
+	return sess, err
+}
+
+// asOwner runs fn on one of the caller's sessions; forUpdate locks it.
+func (s *Service) asOwner(ctx context.Context, id string, forUpdate bool, fn func(tx pgx.Tx, tenantID string, sess *domain.Session) error) error {
+	a, err := requireActor(ctx, authctx.ActorCustomer, authctx.ActorVisitor)
+	if err != nil {
+		return err
+	}
+	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		sess, ok, err := s.repo.Session(ctx, tx, tenantID, id, forUpdate)
+		if err != nil {
+			return err
+		}
+		if !ok || !sess.Owns(a.ActorID, domain.UserType(a.ActorType)) {
+			return ycerrors.NotFound("checkout session", id)
+		}
+		return fn(tx, tenantID, &sess)
+	})
+}
+
+func (s *Service) requireQuote(sess domain.Session) error {
+	switch {
+	case sess.State == domain.StateExpired || (sess.State == domain.StatePricing && sess.Expired(s.now())):
+		return ycerrors.Gone("The checkout session has expired; start a new checkout")
+	case sess.State == domain.StateFailed:
+		return ycerrors.Conflict("The checkout has ended; start a new checkout").With("state", string(sess.State))
+	case sess.State != domain.StatePricing:
+		return ycerrors.Conflict("The checkout has already been confirmed").With("state", string(sess.State))
+	}
+	return nil
+}
+
+// SelectShipping chooses a shipping option before confirm.
+func (s *Service) SelectShipping(ctx context.Context, id, optionID string) (domain.Session, error) {
+	var out domain.Session
+	err := s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, sess *domain.Session) error {
+		if err := s.requireQuote(*sess); err != nil {
+			return err
+		}
+		if !sess.RequiresShipping {
+			return ycerrors.Validation().Field("shipping_option_id", "invalid", "Digital-only checkouts are not shipped").Build()
+		}
+		if !sess.SelectShipping(optionID) {
+			return ycerrors.Validation().Field("shipping_option_id", "invalid", "Choose one of the session's shipping options").Build()
+		}
+		now := s.now().UTC()
+		sess.UpdatedAt = now
+		if err := s.repo.UpdateSession(ctx, tx, tenantID, *sess); err != nil {
+			return err
+		}
+		if err := s.history(ctx, tx, tenantID, sess.ID, "shipping_selected", "", "", map[string]any{"shipping_option_id": optionID}); err != nil {
+			return err
+		}
+		out = *sess
+		return s.publish(ctx, tx, tenantID, events.TypeCheckoutShippingSelectedV1, events.CheckoutShippingSelectedV1{
+			SessionID: sess.ID, UserID: sess.UserID, ShippingOptionID: optionID,
+			Amount: events.Money{AmountMinor: sess.ShippingMinor, Currency: sess.Currency}, SelectedAt: now,
+		})
+	})
+	return out, err
+}
+
+// Confirm validates the customer's details (ADR-010) and runs the saga
+// inline until it finishes, waits on the customer or the deadline passes
+// (ADR-019 rule 7). Repeating key resumes the saga, e.g. after 3-D
+// Secure; another key for a confirmed session is a conflict.
+func (s *Service) Confirm(ctx context.Context, id, key string, in domain.ConfirmInput) (domain.Session, error) {
+	if key == "" || len(key) > 255 {
+		return domain.Session{}, ycerrors.Validation().Field("Idempotency-Key", "required", "Idempotency-Key is required").Build()
+	}
+	var sess domain.Session
+	var token string
+	var rejected error
+	err := s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, x *domain.Session) error {
+		sess = *x
+		if sess.State != domain.StatePricing {
+			if sess.ConfirmKey != key {
+				return s.requireQuote(sess)
+			}
+			return nil
+		}
+		if err := s.requireQuote(sess); err != nil {
+			return err
+		}
+		if in.PaymentGateway == "" {
+			in.PaymentGateway = s.cfg.Gateways[0]
+		}
+		violations := sess.ValidateConfirm(in)
+		if !slices.Contains(s.cfg.Gateways, in.PaymentGateway) {
+			violations = append(violations, domain.Violation{Field: "payment_gateway", Code: "invalid", Message: "The shop does not accept this payment gateway"})
+		}
+		if len(violations) > 0 {
+			rejected = validationError(violations)
+			return s.validationFailed(ctx, tx, tenantID, sess, violations)
+		}
+		now := s.now().UTC()
+		token = s.newToken()
+		until := now.Add(s.cfg.LeaseTTL)
+		sess.Confirm(in, key, now)
+		sess.LeaseOwner, sess.LeaseUntil = token, &until
+		if err := s.repo.UpdateSession(ctx, tx, tenantID, sess); err != nil {
+			return err
+		}
+		if err := s.history(ctx, tx, tenantID, sess.ID, "confirmed", domain.StatePricing, sess.State, nil); err != nil {
+			return err
+		}
+		return s.publish(ctx, tx, tenantID, events.TypeCheckoutConfirmedV1, events.CheckoutConfirmedV1{
+			SessionID: sess.ID, UserID: sess.UserID, PaymentGateway: sess.PaymentGateway,
+			Total: events.Money{AmountMinor: sess.TotalMinor, Currency: sess.Currency}, ConfirmedAt: now,
+		})
+	})
+	if err != nil {
+		return domain.Session{}, err
+	}
+	if rejected != nil {
+		return domain.Session{}, rejected
+	}
+	if sess.State.Terminal() {
+		return sess, nil
+	}
+	return s.runInline(ctx, sess, token)
+}
+
+// runInline drives the session for the request, bounded by the confirm
+// deadline. The saga outlives a client that disconnects.
+func (s *Service) runInline(ctx context.Context, sess domain.Session, token string) (domain.Session, error) {
+	a, _ := authctx.FromContext(ctx)
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.ConfirmDeadline)
+	defer cancel()
+	out, err := s.drive(runCtx, a.TenantID, sess.ID, token)
+	if err != nil {
+		telemetry.LoggerFromContext(ctx).Warn("checkout saga interrupted; the sweeper resumes it",
+			"session_id", sess.ID, "err", err)
+		if out.ID == "" {
+			return s.load(context.WithoutCancel(ctx), a.TenantID, sess.ID)
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) validationFailed(ctx context.Context, tx pgx.Tx, tenantID string, sess domain.Session, violations []domain.Violation) error {
+	fields := make([]string, len(violations))
+	for i, v := range violations {
+		fields[i] = v.Field
+	}
+	if err := s.history(ctx, tx, tenantID, sess.ID, "validation_failed", "", "", map[string]any{"fields": fields}); err != nil {
+		return err
+	}
+	return s.publish(ctx, tx, tenantID, events.TypeCheckoutValidationFailedV1, events.CheckoutValidationFailedV1{
+		SessionID: sess.ID, UserID: sess.UserID, Fields: fields, FailedAt: s.now().UTC(),
+	})
+}
+
+func validationError(violations []domain.Violation) error {
+	v := ycerrors.Validation()
+	for _, x := range violations {
+		v.Field(x.Field, x.Code, x.Message)
+	}
+	return v.Build()
+}
+
+// Cancel abandons the caller's session. A quote just ends; a payment
+// waiting on the customer is compensated. Once the saga is running on
+// its own it cannot be cancelled.
+func (s *Service) Cancel(ctx context.Context, id string) (domain.Session, error) {
+	var sess domain.Session
+	var token string
+	err := s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, x *domain.Session) error {
+		sess = *x
+		now := s.now().UTC()
+		switch {
+		case sess.State == domain.StateFailed || sess.State == domain.StateExpired:
+			return nil
+		case sess.State == domain.StatePricing:
+			if err := sess.Compensate(domain.ReasonCancelled, nil, domain.StateFailed, now); err != nil {
+				return err
+			}
+			sess.Finish(now)
+			if err := s.repo.UpdateSession(ctx, tx, tenantID, sess); err != nil {
+				return err
+			}
+			if err := s.history(ctx, tx, tenantID, sess.ID, "state_changed", domain.StatePricing, sess.State, nil); err != nil {
+				return err
+			}
+			return s.ended(ctx, tx, tenantID, sess, domain.StatePricing)
+		case sess.State == domain.StateAuthorizing && !sess.Leased(now) &&
+			(sess.PaymentStatus == integration.PaymentPending || sess.PaymentStatus == integration.PaymentCreated):
+			token = s.newToken()
+			until := now.Add(s.cfg.LeaseTTL)
+			sess.LeaseOwner, sess.LeaseUntil = token, &until
+			if err := s.beginCompensation(ctx, tx, tenantID, &sess, domain.ReasonCancelled, nil, domain.StateFailed); err != nil {
+				return err
+			}
+			if err := s.repo.UpdateSession(ctx, tx, tenantID, sess); err != nil {
+				return err
+			}
+			return s.history(ctx, tx, tenantID, sess.ID, "state_changed", domain.StateAuthorizing, sess.State, nil)
+		default:
+			return ycerrors.Conflict("The checkout is being processed and cannot be cancelled").With("state", string(sess.State))
+		}
+	})
+	if err != nil || token == "" {
+		return sess, err
+	}
+	return s.runInline(ctx, sess, token)
+}
+
+// AdminSessions returns a page of the shop's sessions.
+func (s *Service) AdminSessions(ctx context.Context, state domain.State, after *repository.SessionCursor, limit int) ([]domain.Session, error) {
+	if _, err := requireActor(ctx, authctx.ActorShopAdmin); err != nil {
+		return nil, err
+	}
+	var out []domain.Session
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		out, err = s.repo.ListSessions(ctx, tx, tenantID, state, after, limit)
+		return err
+	})
+	return out, err
+}
+
+// AdminSession returns a session with its history for a shop admin.
+func (s *Service) AdminSession(ctx context.Context, id string) (domain.Session, []repository.Event, error) {
+	if _, err := requireActor(ctx, authctx.ActorShopAdmin); err != nil {
+		return domain.Session{}, nil, err
+	}
+	return s.detail(ctx, id)
+}
+
+// InternalSession returns a session for a service caller.
+func (s *Service) InternalSession(ctx context.Context, id string) (domain.Session, error) {
+	sess, _, err := s.detail(ctx, id)
+	return sess, err
+}
+
+func (s *Service) detail(ctx context.Context, id string) (domain.Session, []repository.Event, error) {
+	var sess domain.Session
+	var history []repository.Event
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var ok bool
+		var err error
+		if sess, ok, err = s.repo.Session(ctx, tx, tenantID, id, false); err != nil {
+			return err
+		}
+		if !ok {
+			return ycerrors.NotFound("checkout session", id)
+		}
+		history, err = s.repo.Events(ctx, tx, tenantID, id)
+		return err
+	})
+	return sess, history, err
+}

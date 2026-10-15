@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.shipping_selected.v1.json",
+  "title": "checkout.shipping_selected.v1",
+  "description": "The customer chose a shipping option.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "shipping_option_id",
+    "amount",
+    "selected_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "shipping_option_id": {
+      "type": "string"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "selected_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

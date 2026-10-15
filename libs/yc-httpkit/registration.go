@@ -28,6 +28,10 @@ type RegisteredRoute struct {
 	Roles   []string `json:"roles,omitempty"`
 	// Anonymous routes are reachable without a token on platform hosts.
 	Anonymous bool `json:"anonymous,omitempty"`
+	// Callback routes take third-party callbacks without a token (payment
+	// webhooks): the gateway forwards them with the host's tenant and no
+	// actor, and the service verifies them itself.
+	Callback bool `json:"callback,omitempty"`
 }
 
 // Deregistration is the body of POST /internal/deregister.

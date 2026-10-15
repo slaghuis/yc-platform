@@ -43,6 +43,13 @@ func as(t *testing.T, srv *httptest.Server, tenant, actorType string) client {
 	return client{t: t, srv: srv, hdr: h}
 }
 
+// withCaller marks the client as a service call through yc-gateway's
+// internal listener (ADR-021).
+func (c client) withCaller() client {
+	c.hdr[authctx.HeaderCallerService] = "yc-checkout"
+	return c
+}
+
 func (c client) do(method, path string, body, out any) int {
 	c.t.Helper()
 	var buf bytes.Buffer
@@ -290,7 +297,7 @@ func TestProduct(t *testing.T) {
 		require.NoError(t, err)
 		upstream, err := eventbus.NewClient(ctx, eventbus.Config{
 			NATSURL: natsURL, ServiceName: "yc-upstream", Validator: validator,
-			Streams: []eventbus.StreamConfig{eventbus.CartStream(), eventbus.PricingStream()},
+			Streams: []eventbus.StreamConfig{eventbus.CartStream(), eventbus.PricingStream(), eventbus.InventoryStream()},
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = upstream.Close(context.Background()) })
@@ -380,6 +387,56 @@ func TestProduct(t *testing.T) {
 		require.Equal(t, http.StatusOK,
 			visitor.do("GET", "/products?sort=price_asc&page_size=1&cursor="+page1.Page.NextCursor, nil, &page2))
 		assert.Equal(t, "Acme Organic T-Shirt", page2.Items[0].Name)
+
+		inStock := func() map[string]bool {
+			var l api.ProductList
+			require.Equal(t, http.StatusOK, visitor.do("GET", "/products", nil, &l))
+			out := map[string]bool{}
+			for _, it := range l.Items {
+				out[it.Name] = it.InStock
+			}
+			return out
+		}
+		assert.Equal(t, map[string]bool{"Cap": true, "Mug": true, "Acme Organic T-Shirt": true}, inStock(),
+			"no stock signal yet: in stock")
+		publish(events.TypeInventoryStockDepletedV1, events.InventoryStockDepletedV1{
+			SKUID: sku["Cap"], OnHand: 0, Reserved: 0, Available: 0, DepletedAt: now.UTC(),
+		})
+		require.Eventually(t, func() bool { return !inStock()["Cap"] }, 10*time.Second, 50*time.Millisecond)
+		_, got = names(visitor, "?in_stock=true")
+		assert.Equal(t, []string{"Mug", "Acme Organic T-Shirt"}, got)
+		publish(events.TypeInventoryStockRestoredV1, events.InventoryStockRestoredV1{
+			SKUID: sku["Cap"], OnHand: 3, Reserved: 0, Available: 3, RestoredAt: now.Add(-time.Minute).UTC(),
+		})
+		publish(events.TypeInventoryStockRestoredV1, events.InventoryStockRestoredV1{
+			SKUID: sku["Mug"], OnHand: 3, Reserved: 0, Available: 3, RestoredAt: now.UTC(),
+		})
+		time.Sleep(500 * time.Millisecond)
+		assert.False(t, inStock()["Cap"], "an older restore is ignored")
+
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/skus/"+sku["Cap"],
+			map[string]any{"sku_code": "Cap", "tax_class": "za-standard", "inventory_tracked": false}, nil))
+		assert.True(t, inStock()["Cap"], "an untracked SKU is always in stock")
+	})
+
+	t.Run("internal SKU batch", func(t *testing.T) {
+		svc := as(t, srv, "shop-a", "service").withCaller()
+		missing := uuid.NewString()
+		var batch api.SKUBatch
+		require.Equal(t, http.StatusOK, svc.do("GET", "/internal/skus/batch?ids="+red.SkuID.String()+","+missing, nil, &batch))
+		require.Len(t, batch.Skus, 1)
+		d := batch.Skus[0]
+		assert.Equal(t, "Acme Organic T-Shirt", d.ProductName)
+		assert.Equal(t, red.SkuCode, d.SkuCode)
+		assert.Equal(t, api.SKUDetailStatusActive, d.Status)
+		assert.True(t, d.InventoryTracked)
+		assert.False(t, d.IsDigital)
+		assert.Equal(t, missing, batch.Missing[0].String())
+
+		assert.NotEqual(t, http.StatusOK, visitor.do("GET", "/internal/skus/batch?ids="+red.SkuID.String(), nil, nil),
+			"service callers only")
+		assert.Equal(t, http.StatusOK, as(t, srv, "shop-b", "service").withCaller().do("GET", "/internal/skus/batch?ids="+red.SkuID.String(), nil, &batch))
+		assert.Empty(t, batch.Skus, "tenant-scoped")
 	})
 
 	t.Run("roles are enforced", func(t *testing.T) {

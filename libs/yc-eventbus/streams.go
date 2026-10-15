@@ -9,10 +9,11 @@ import (
 
 // Retention per domain (ADR-004). Zero means unlimited.
 const (
-	retentionYear = 365 * 24 * time.Hour
-	retentionDLQ  = 90 * 24 * time.Hour
-	retentionOps  = 90 * 24 * time.Hour
-	retentionWeek = 7 * 24 * time.Hour
+	retention7Years = 7 * 365 * 24 * time.Hour
+	retentionYear   = 365 * 24 * time.Hour
+	retentionDLQ    = 90 * 24 * time.Hour
+	retentionOps    = 90 * 24 * time.Hour
+	retentionWeek   = 7 * 24 * time.Hour
 )
 
 // DLQStreamName captures every dead-letter subject, yc.<tenant>.<domain>.dlq.v1.
@@ -61,7 +62,7 @@ func IdentityStream() StreamConfig {
 
 // CartStream is the cart domain (90-day retention, ADR-004).
 func CartStream() StreamConfig {
-	return DomainStream("cart", retentionOps, "cart.created.v1", "cart.cleared.v1", "cart.merged.v1")
+	return DomainStream("cart", retentionOps, "cart.created.v1", "cart.cleared.v1", "cart.merged.v1", "cart.converted.v1")
 }
 
 // PreferenceStream is the preference domain (90-day retention, ADR-004).
@@ -88,4 +89,37 @@ func PricingStream() StreamConfig {
 func ImageStream() StreamConfig {
 	return DomainStream("image", retentionWeek,
 		"image.uploaded.v1", "image.processed.v1", "image.processing_failed.v1", "image.deleted.v1")
+}
+
+// InventoryStream is the inventory domain (1-year retention, ADR-004).
+func InventoryStream() StreamConfig { return DomainStream("inventory", retentionYear) }
+
+// PaymentStream is the payment domain (7-year retention, ADR-004).
+func PaymentStream() StreamConfig {
+	return DomainStream("payment", retention7Years,
+		"payment.authorized.v1", "payment.authorization_failed.v1",
+		"payment.captured.v1", "payment.capture_failed.v1",
+		"payment.charged.v1", "payment.charge_failed.v1",
+		"payment.voided.v1", "payment.void_failed.v1",
+		"payment.refund_initiated.v1", "payment.refund_completed.v1", "payment.refund_failed.v1",
+		"payment.chargeback_received.v1", "payment.webhook_signature_failed.v1")
+}
+
+// OrderStream is the order domain (7-year retention, ADR-004).
+func OrderStream() StreamConfig {
+	return DomainStream("order", retention7Years,
+		"order.placed.v1", "order.packaged.v1", "order.shipped.v1", "order.delivered.v1",
+		"order.cancelled.v1", "order.cancellation_failed.v1",
+		"order.refund_requested.v1", "order.refunded.v1",
+		"order.return_requested.v1", "order.return_accepted.v1", "order.return_received.v1",
+		"order.disputed.v1", "order.note_added.v1")
+}
+
+// CheckoutStream is the checkout domain (7-year retention, ADR-004). Every
+// checkout event names the aggregate only, so all are listed.
+func CheckoutStream() StreamConfig {
+	return DomainStream("checkout", retention7Years,
+		"checkout.started.v1", "checkout.priced.v1", "checkout.shipping_selected.v1",
+		"checkout.confirmed.v1", "checkout.validation_failed.v1", "checkout.compensating.v1",
+		"checkout.completed.v1", "checkout.failed.v1", "checkout.expired.v1")
 }

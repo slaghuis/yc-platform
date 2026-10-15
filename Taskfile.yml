@@ -147,6 +147,11 @@ tasks:
     cmds:
       - ./scripts/demo-phase3.sh
 
+  demo:phase4:
+    desc: Run the Phase 4 checkout demo against the running stack (see scripts/demo-phase4.sh)
+    cmds:
+      - ./scripts/demo-phase4.sh
+
   devstack:down:
     desc: Stop local dev stack
     cmds:

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.started.v1.json",
+  "title": "checkout.started.v1",
+  "description": "A checkout session was started from a cart.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "user_type",
+    "cart_type",
+    "item_count",
+    "expires_at",
+    "started_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_type": {
+      "type": "string",
+      "enum": [
+        "customer",
+        "visitor"
+      ]
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "item_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of lines."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

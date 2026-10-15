@@ -21,6 +21,32 @@ func scanSKU(row pgx.Row) (domain.SKU, error) {
 	return s, err
 }
 
+// SKUDetails returns the SKUs with ids, deleted ones included, with their
+// product's name and digital flag.
+func (Catalog) SKUDetails(ctx context.Context, tx pgx.Tx, ids []string) ([]domain.SKUDetail, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT s.id, s.tenant_id, s.product_id, s.sku_code, s.variant_values, s.inventory_tracked, s.tax_class,
+			s.weight_grams, CASE WHEN p.status = 'deleted' THEN 'deleted' ELSE s.status END, s.created_at, s.updated_at,
+			p.name, p.is_digital, p.status = 'active' AND s.status = 'active'
+		FROM skus s JOIN products p ON p.id = s.product_id
+		WHERE s.id = ANY($1::uuid[])
+		ORDER BY s.id`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("sku details: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.SKUDetail, error) {
+		var d domain.SKUDetail
+		s := &d.SKU
+		err := r.Scan(&s.ID, &s.TenantID, &s.ProductID, &s.Code, &s.VariantValues, &s.InventoryTracked,
+			&s.TaxClass, &s.WeightGrams, &s.Status, &s.CreatedAt, &s.UpdatedAt, &d.ProductName, &d.IsDigital, &d.Active)
+		return d, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sku details: %w", err)
+	}
+	return out, nil
+}
+
 // CreateSKU inserts a SKU of p.
 func (Catalog) CreateSKU(ctx context.Context, tx pgx.Tx, p domain.Product, in domain.SKUInput) (domain.SKU, error) {
 	s, err := scanSKU(tx.QueryRow(ctx, `

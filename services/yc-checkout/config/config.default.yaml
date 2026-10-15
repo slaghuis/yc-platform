@@ -1,11 +1,61 @@
 service: yc-checkout
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_CHECKOUT_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_CHECKOUT_ADVERTISE_URL:-http://yc-checkout:8080}
+  interval: 30s
+# Saga calls through yc-gateway (ADR-019 rule 1, ADR-021). The secret is
+# yc-checkout's client secret registered with yc-identity. Each attempt
+# has a timeout; payment calls outlast the gateway's own 30 s.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_CHECKOUT_SERVICE_SECRET}
+  timeout: 10s
+calls:
+  payment_timeout: 35s
+  max_attempts: 3
+checkout:
+  # The quote is honoured this long (ADR-011: 10 to 60 minutes).
+  session_ttl: 30m
+  # Asked of yc-inventory; shorter than the session (ADR-011, ADR-012).
+  reservation_ttl: 15m
+  # Payment gateways a session may use; the first is the default.
+  gateways: [stripe]
+  # One flat-fee option for physical items, in store-currency minor units.
+  # It is untaxed; digital-only checkouts are not shipped.
+  shipping:
+    id: standard
+    name: Standard
+    fee_minor: ${YC_CHECKOUT_SHIPPING_FEE_MINOR:-0}
+saga:
+  # Confirm answers 202 after this and the sweeper carries on (ADR-019 rule 7).
+  confirm_deadline: 60s
+  # A replica holds a session this long without saving it.
+  lease_ttl: 2m
+  # Expires sessions and resumes interrupted or retrying ones.
+  sweeper_interval: 30s
+  retry_base: 5s
+  retry_max: 5m
+  # Re-checks a payment awaiting the customer when no webhook arrives.
+  pending_poll: 30s
+  # Failed background attempts before a stuck session logs a critical alert
+  # (about 5 minutes at the default backoff).
+  alert_after: 6
+# Development only (refused in production): stall the saga before a step,
+# e.g. YC_CHECKOUT_PAUSE_BEFORE=CAPTURING and YC_CHECKOUT_PAUSE_FOR=20s, to
+# kill yc-checkout mid-saga (scripts/demo-phase4.sh).
+debug:
+  pause_before: "${YC_CHECKOUT_PAUSE_BEFORE}"
+  pause_for: ${YC_CHECKOUT_PAUSE_FOR:-0s}

@@ -40,6 +40,11 @@ type Route struct {
 	// Anonymous routes admit requests without a token on platform hosts,
 	// where no visitor is issued (ADR-020 rule 5).
 	Anonymous bool
+	// Callback routes receive third-party callbacks such as payment
+	// gateway webhooks, which carry no token. They are forwarded on any
+	// host with the host's tenant and no actor, and never issue a visitor;
+	// the upstream authenticates the request itself (a signature).
+	Callback bool
 	// Service is the registered service that owns the route; "" for
 	// static routes.
 	Service string
@@ -91,6 +96,9 @@ func NewRoutes(routes []Route) (*Routes, error) {
 		if r.Anonymous && len(r.Roles) > 0 {
 			return nil, fmt.Errorf("route %q: an anonymous route cannot require roles", r.Prefix)
 		}
+		if r.Callback && (len(r.Roles) > 0 || r.Anonymous) {
+			return nil, fmt.Errorf("route %q: a callback route has no roles and is not anonymous", r.Prefix)
+		}
 		methods := make([]string, len(r.Methods))
 		for i, m := range r.Methods {
 			methods[i] = strings.ToUpper(m)
@@ -120,7 +128,7 @@ func validInternal(r Route) error {
 	if len(r.Prefix) <= len(InternalPrefix) {
 		return fmt.Errorf("route %q: an internal route needs a path below %s", r.Prefix, InternalPrefix)
 	}
-	if len(r.Roles) > 0 || r.Anonymous {
+	if len(r.Roles) > 0 || r.Anonymous || r.Callback {
 		return fmt.Errorf("route %q: internal routes admit service tokens only", r.Prefix)
 	}
 	for _, own := range gatewayInternal {

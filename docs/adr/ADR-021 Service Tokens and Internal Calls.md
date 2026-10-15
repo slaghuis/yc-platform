@@ -25,7 +25,7 @@
 
 5. **Audience.** `authctx.Audience` admits `/internal/` requests only when `X-YC-Caller-Service` is present. yc-gateway sets it on its own calls to yc-identity (`yc-gateway`) and on proxied service-token requests. The public listener strips it, along with the other identity headers.
 
-6. **Client.** `httpkit.InternalClient` fetches a token with its client credentials, caches it until shortly before expiry, and fetches a new one once if a call returns 401. It propagates headers from the context as rule 4 describes and applies the standard client timeout. Retries with a fixed `Idempotency-Key` (ADR-019 rule 5) are added when yc-checkout needs them.
+6. **Client.** `httpkit.InternalClient` fetches a token with its client credentials, caches it until shortly before expiry, and fetches a new one once if a call returns 401. It propagates headers from the context as rule 4 describes and applies the standard client timeout. `Call` takes per-call options: an `Idempotency-Key` sent unchanged on every attempt (ADR-019 rule 5), a per-attempt timeout, and a number of attempts. It retries network errors, timeouts and 5xx responses with doubling backoff (200 ms by default), never a 4xx, and stops when the caller's context ends. *(Amended in Phase 4, when yc-checkout and yc-orders started calling.)*
 
 7. **No per-route caller lists yet.** Any service token may call any internal route. Restricting routes to named callers is future work, should a service ever hold data another service must not read.
 

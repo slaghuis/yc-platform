@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.failed.v1.json",
+  "title": "checkout.failed.v1",
+  "description": "The saga failed before payment succeeded and compensation has finished.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "failed_state",
+    "reason",
+    "failed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "failed_state": {
+      "type": "string",
+      "enum": [
+        "STARTED",
+        "PRICING",
+        "RESERVING",
+        "AUTHORIZING",
+        "ORDER_CREATE",
+        "CAPTURING",
+        "CHARGING",
+        "CONFIRMING",
+        "COMPENSATING",
+        "COMPLETED",
+        "FAILED",
+        "EXPIRED"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Machine-readable reason, e.g. insufficient_stock, payment_declined, reservation_expired, session_expired, cancelled, step_failed."
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

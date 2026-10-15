@@ -46,6 +46,22 @@ func TestWriteErrorProblemJSON(t *testing.T) {
 	assert.Contains(t, buf.String(), `"level":"INFO"`)
 }
 
+func TestWriteErrorExtensions(t *testing.T) {
+	telemetry.InitForTest(t, "yc-errors-test")
+
+	base := ycerrors.New(ycerrors.CodeInsufficientStock, "Not enough stock")
+	err := base.With("shortages", []map[string]any{{"sku_id": "a", "requested": 2, "available": 1}})
+	assert.Nil(t, base.Extensions, "With copies")
+	rec, p := writeError(t, err)
+
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"shortages":[{"available":1,"requested":2,"sku_id":"a"}]`)
+	assert.Equal(t, ycerrors.CodeInsufficientStock, p.Code)
+	assert.Equal(t, []any{map[string]any{"sku_id": "a", "requested": float64(2), "available": float64(1)}}, p.Extensions["shortages"])
+	assert.NotContains(t, p.Extensions, "code")
+	assert.Panics(t, func() { base.With("status", 1) })
+}
+
 func TestWriteErrorHidesInternals(t *testing.T) {
 	buf := telemetry.InitForTest(t, "yc-errors-test")
 

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.refund_initiated.v1.json",
+  "title": "payment.refund_initiated.v1",
+  "description": "A refund of a captured payment was requested at the gateway.",
+  "type": "object",
+  "required": [
+    "refund_id",
+    "transaction_id",
+    "amount",
+    "initiated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "refund_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "initiated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

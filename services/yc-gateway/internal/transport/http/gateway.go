@@ -115,6 +115,21 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
+		// Third-party callbacks carry no token and must not mint visitors;
+		// the upstream verifies them.
+		if route.Callback {
+			if !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+				return
+			}
+			ctx := authctx.WithAuth(r.Context(), authctx.AuthContext{
+				TenantID:      tenantID,
+				CorrelationID: authctx.CorrelationID(r.Context()),
+			})
+			ctx = context.WithValue(ctx, routeKey{}, route)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
 		// Callers without credentials are limited by address before a
 		// visitor is issued for them.
 		bearer := authctx.BearerToken(r.Header)

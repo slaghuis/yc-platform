@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.authorized.v1.json",
+  "title": "payment.authorized.v1",
+  "description": "The gateway authorized the amount (Variant A, ADR-013). yc-checkout resumes a session that was waiting on a pending authorization.",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "session_id",
+    "gateway",
+    "gateway_reference",
+    "amount",
+    "authorized_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session the payment belongs to."
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "gateway_reference": {
+      "type": "string"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "authorized_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

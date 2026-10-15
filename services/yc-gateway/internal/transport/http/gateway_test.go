@@ -101,6 +101,7 @@ func setupLimited(t *testing.T, limiter transport.Limiter) (http.Handler, *fakeI
 		{Prefix: "/me", Methods: []string{"GET"}, Upstream: up},
 		{Prefix: "/account", Upstream: up, Roles: []authctx.ActorType{authctx.ActorCustomer}},
 		{Prefix: "/login", Upstream: up, Anonymous: true},
+		{Prefix: "/webhooks/stripe", Methods: []string{"POST"}, Upstream: up, Callback: true},
 	})
 	require.NoError(t, err)
 
@@ -163,6 +164,25 @@ func TestAnonymousGetsVisitorCookie(t *testing.T) {
 	assert.True(t, c[0].HttpOnly)
 	assert.Equal(t, http.SameSiteLaxMode, c[0].SameSite)
 	assert.Equal(t, 1, id.issued)
+}
+
+func TestCallbackRoute(t *testing.T) {
+	h, id, seen := setup(t)
+
+	w := do(h, "POST", "shop-a.test", "/webhooks/stripe", func(r *http.Request) {
+		r.Header.Set(authctx.HeaderActorID, "spoofed")
+	})
+
+	require.Equal(t, http.StatusTeapot, w.Code)
+	got := <-seen
+	assert.Equal(t, "shop-a", got.Tenant)
+	assert.Empty(t, got.Actor)
+	assert.Empty(t, got.Auth)
+	assert.Empty(t, w.Result().Cookies(), "no visitor is issued")
+	assert.Zero(t, id.issued)
+
+	w = do(h, "POST", "unknown.test", "/webhooks/stripe")
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestVisitorCookieReused(t *testing.T) {

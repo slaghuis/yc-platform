@@ -27,7 +27,9 @@
 6. **Internal listener.** Registration endpoints (`/internal/register`, `/internal/deregister`, `/internal/routes`) are served on a second listener (`internal_http.listen`, default `:8091`) that must not be exposed outside the platform network. Until service tokens exist (ADR-019's internal-call client, Phase 4), network placement is their only protection. The public listener still never routes `/internal/`. *(ADR-021 adds service tokens and routes other `/internal/` calls on this listener; registration stays on network placement.)*
 7. **Registrations live in memory.** A registration replaces the service's previous routes and is published as `platform.service.registered.v1` through the outbox. The gateway polls each registered `health_url` every 5 seconds and deregisters after 3 consecutive failures (`platform.service.deregistered.v1`). Static routes are never deregistered, and a registered route may not reuse a static route's prefix. With several gateway instances each instance holds only the registrations it received; services register with every instance, or rely on static routes, until registrations are shared.
 
-*Amended 2026-10-14 (Phase 2): rules 5–7.*
+8. **Callback routes.** A registered route may be marked `callback` for third-party calls that carry no token, such as payment gateway webhooks (`POST /webhooks/stripe`, yc-payment). The gateway forwards them on the shop's host with the host's tenant and no actor, never issues a visitor, and rate-limits them per client address like visitors. The upstream must authenticate the request itself (yc-payment checks the gateway's signature with the shop's webhook secret). A callback route has no roles, is not `anonymous`, and cannot be under `/internal/`.
+
+*Amended 2026-10-14 (Phase 2): rules 5–7. Amended 2026-10-15 (Phase 4): rule 8.*
 
 ## Consequences
 

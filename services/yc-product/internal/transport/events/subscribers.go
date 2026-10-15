@@ -17,6 +17,7 @@ import (
 type Handlers interface {
 	RecordCartAdd(ctx context.Context, tenantID, skuID string) error
 	SetBasePrice(ctx context.Context, tenantID, skuID string, minor *int64, at time.Time) error
+	SetInStock(ctx context.Context, tenantID, skuID string, inStock bool, at time.Time) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -68,11 +69,37 @@ func Subscriptions(h Handlers) []Subscription {
 				return poisonInvalid(h.SetBasePrice(ctx, evt.Envelope.TenantID, p.SKUID, nil, setAt(evt, p.RemovedAt)))
 			},
 		},
+		{
+			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeInventoryStockDepletedV1,
+				DurableName: "yc-product-stock-depleted",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.InventoryStockDepletedV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				return poisonInvalid(h.SetInStock(ctx, evt.Envelope.TenantID, p.SKUID, false, setAt(evt, p.DepletedAt)))
+			},
+		},
+		{
+			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeInventoryStockRestoredV1,
+				DurableName: "yc-product-stock-restored",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.InventoryStockRestoredV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				return poisonInvalid(h.SetInStock(ctx, evt.Envelope.TenantID, p.SKUID, true, setAt(evt, p.RestoredAt)))
+			},
+		},
 	}
 }
 
-// setAt orders price events: the payload's time, else when the event
-// occurred.
+// setAt orders price and stock events: the payload's time, else when the
+// event occurred.
 func setAt(evt eventbus.ConsumedEvent, at time.Time) time.Time {
 	if at.IsZero() {
 		return evt.Envelope.EventTime

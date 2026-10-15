@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/checkout/checkout.priced.v1.json",
+  "title": "checkout.priced.v1",
+  "description": "The session's quote was set at PRICING; it is honoured until the session expires (ADR-011).",
+  "type": "object",
+  "required": [
+    "session_id",
+    "user_id",
+    "items_total",
+    "tax_total",
+    "shipping",
+    "total",
+    "requires_shipping",
+    "priced_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items_total": {
+      "$ref": "../common/money.v1.json"
+    },
+    "tax_total": {
+      "$ref": "../common/money.v1.json",
+      "description": "Tax included in the totals."
+    },
+    "shipping": {
+      "$ref": "../common/money.v1.json"
+    },
+    "total": {
+      "$ref": "../common/money.v1.json"
+    },
+    "requires_shipping": {
+      "type": "boolean"
+    },
+    "priced_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

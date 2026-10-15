@@ -294,7 +294,7 @@ func (r *Registry) validate(req httpkit.Registration) (*registration, error) {
 		}
 		routes = append(routes, domain.Route{
 			Prefix: rr.Prefix, Methods: rr.Methods, Upstream: base, Roles: roles,
-			Anonymous: rr.Anonymous, Service: req.ServiceName,
+			Anonymous: rr.Anonymous, Callback: rr.Callback, Service: req.ServiceName,
 		})
 	}
 	if v.HasErrors() {
@@ -343,7 +343,7 @@ func sameRegistration(a, b httpkit.Registration) bool {
 	}
 	for i := range a.Routes {
 		x, y := a.Routes[i], b.Routes[i]
-		if x.Prefix != y.Prefix || x.Anonymous != y.Anonymous ||
+		if x.Prefix != y.Prefix || x.Anonymous != y.Anonymous || x.Callback != y.Callback ||
 			!slices.Equal(x.Methods, y.Methods) || !slices.Equal(x.Roles, y.Roles) {
 			return false
 		}

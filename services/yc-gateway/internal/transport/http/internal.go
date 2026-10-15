@@ -38,6 +38,7 @@ type RouteView struct {
 	Upstream  string   `json:"upstream"`
 	Roles     []string `json:"roles,omitempty"`
 	Anonymous bool     `json:"anonymous,omitempty"`
+	Callback  bool     `json:"callback,omitempty"`
 	Service   string   `json:"service,omitempty"` // empty for static routes
 }
 
@@ -116,7 +117,7 @@ func NewInternalRouter(reg Registrar, in *Internal, build httpkit.BuildInfo) htt
 			}
 			out[i] = RouteView{
 				Prefix: rt.Prefix, Methods: rt.Methods, Upstream: rt.Upstream.String(),
-				Roles: roles, Anonymous: rt.Anonymous, Service: rt.Service,
+				Roles: roles, Anonymous: rt.Anonymous, Callback: rt.Callback, Service: rt.Service,
 			}
 		}
 		httpkit.WriteJSON(w, http.StatusOK, map[string]any{"routes": out})

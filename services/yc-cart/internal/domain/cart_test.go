@@ -55,6 +55,19 @@ func TestMergeItems(t *testing.T) {
 	assert.Equal(t, writes, again, "deterministic")
 }
 
+func TestConvertItems(t *testing.T) {
+	lines := []domain.Item{
+		{SKUID: "a", Quantity: 2},
+		{SKUID: "b", Quantity: 5},
+		{SKUID: "c", Quantity: 1},
+		{SKUID: "d", Quantity: 1},
+	}
+	writes, deletes, removed := domain.ConvertItems(lines, map[string]int{"a": 2, "b": 3, "c": 4, "x": 1})
+	assert.Equal(t, []domain.Item{{SKUID: "b", Quantity: 2}}, writes, "added during checkout: the difference stays")
+	assert.Equal(t, []string{"a", "c"}, deletes)
+	assert.Equal(t, map[string]int{"a": 2, "b": 3, "c": 1}, removed, "lowered meanwhile: only what is there")
+}
+
 func TestPrice(t *testing.T) {
 	c := domain.Cart{Items: []domain.Item{
 		{SKUID: "a", Quantity: 2, UnitPrice: zar(100)},

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/inventory/inventory.stock.adjusted.v1.json",
+  "title": "inventory.stock.adjusted.v1",
+  "description": "A shop admin adjusted on_hand (shrinkage, correction).",
+  "type": "object",
+  "required": [
+    "sku_id",
+    "delta",
+    "on_hand",
+    "reserved",
+    "available",
+    "reason",
+    "adjusted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "delta": {
+      "type": "integer",
+      "description": "Signed change to on_hand; never zero."
+    },
+    "on_hand": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reserved": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "available": {
+      "type": "integer",
+      "description": "on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired)."
+    },
+    "reason": {
+      "type": "string"
+    },
+    "adjusted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

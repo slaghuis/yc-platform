@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.captured.v1.json",
+  "title": "payment.captured.v1",
+  "description": "An authorized payment was captured (Variant A). The point of no return of the checkout saga.",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "session_id",
+    "gateway",
+    "amount",
+    "captured_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session the payment belongs to."
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "gateway": {
+      "type": "string",
+      "enum": [
+        "stripe",
+        "yoco"
+      ]
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

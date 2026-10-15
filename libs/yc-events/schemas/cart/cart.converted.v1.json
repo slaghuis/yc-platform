@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.converted.v1.json",
+  "title": "cart.converted.v1",
+  "description": "A checkout of the cart completed (checkout.completed.v1): the checked-out quantities were removed from the cart. Lines added or increased during the checkout keep the difference.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "cart_type", "session_id", "order_id", "items", "converted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The checkout session."
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "items": {
+      "type": "array",
+      "description": "Quantities removed from the cart per SKU.",
+      "items": {
+        "type": "object",
+        "required": ["sku_id", "quantity"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "converted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

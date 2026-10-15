@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/payment/payment.refund_completed.v1.json",
+  "title": "payment.refund_completed.v1",
+  "description": "The gateway completed a refund.",
+  "type": "object",
+  "required": [
+    "refund_id",
+    "transaction_id",
+    "amount",
+    "completed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "refund_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "amount": {
+      "$ref": "../common/money.v1.json"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

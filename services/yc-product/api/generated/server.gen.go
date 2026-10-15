@@ -18,6 +18,27 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 )
 
+// Defines values for SKUDetailStatus.
+const (
+	SKUDetailStatusActive   SKUDetailStatus = "active"
+	SKUDetailStatusDeleted  SKUDetailStatus = "deleted"
+	SKUDetailStatusInactive SKUDetailStatus = "inactive"
+)
+
+// Valid indicates whether the value is a known member of the SKUDetailStatus enum.
+func (e SKUDetailStatus) Valid() bool {
+	switch e {
+	case SKUDetailStatusActive:
+		return true
+	case SKUDetailStatusDeleted:
+		return true
+	case SKUDetailStatusInactive:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Sort.
 const (
 	Newest    Sort = "newest"
@@ -44,16 +65,16 @@ func (e Sort) Valid() bool {
 
 // Defines values for Status.
 const (
-	Active   Status = "active"
-	Inactive Status = "inactive"
+	StatusActive   Status = "active"
+	StatusInactive Status = "inactive"
 )
 
 // Valid indicates whether the value is a known member of the Status enum.
 func (e Status) Valid() bool {
 	switch e {
-	case Active:
+	case StatusActive:
 		return true
-	case Inactive:
+	case StatusInactive:
 		return true
 	default:
 		return false
@@ -182,12 +203,16 @@ type ProductList struct {
 
 // ProductSummary defines model for ProductSummary.
 type ProductSummary struct {
-	CategoryIds    []openapi_types.UUID `json:"category_ids"`
-	Description    string               `json:"description"`
-	IsDigital      bool                 `json:"is_digital"`
-	Name           string               `json:"name"`
-	PrimaryImageID *openapi_types.UUID  `json:"primary_image_id,omitempty"`
-	ProductID      openapi_types.UUID   `json:"product_id"`
+	CategoryIds []openapi_types.UUID `json:"category_ids"`
+	Description string               `json:"description"`
+
+	// InStock An active SKU has stock available (yc-inventory). SKUs that are
+	// not tracked, or in shops without inventory, are always in stock.
+	InStock        bool                `json:"in_stock"`
+	IsDigital      bool                `json:"is_digital"`
+	Name           string              `json:"name"`
+	PrimaryImageID *openapi_types.UUID `json:"primary_image_id,omitempty"`
+	ProductID      openapi_types.UUID  `json:"product_id"`
 
 	// Skus Active SKUs; pass their IDs to POST /prices/evaluate.
 	Skus       []SKUSummary        `json:"skus"`
@@ -209,6 +234,33 @@ type SKU struct {
 	VariantValues VariantValues `json:"variant_values"`
 	WeightGrams   *int          `json:"weight_grams,omitempty"`
 }
+
+// SKUBatch defines model for SKUBatch.
+type SKUBatch struct {
+	Missing []openapi_types.UUID `json:"missing"`
+	Skus    []SKUDetail          `json:"skus"`
+}
+
+// SKUDetail defines model for SKUDetail.
+type SKUDetail struct {
+	InventoryTracked bool               `json:"inventory_tracked"`
+	IsDigital        bool               `json:"is_digital"`
+	ProductID        openapi_types.UUID `json:"product_id"`
+	ProductName      string             `json:"product_name"`
+	SkuCode          string             `json:"sku_code"`
+	SkuID            openapi_types.UUID `json:"sku_id"`
+
+	// Status active only when both the SKU and its product are active.
+	Status   SKUDetailStatus `json:"status"`
+	TaxClass string          `json:"tax_class"`
+
+	// VariantValues Variant axis to value, e.g. {"color":"Red","size":"M"}.
+	VariantValues VariantValues `json:"variant_values"`
+	WeightGrams   *int          `json:"weight_grams,omitempty"`
+}
+
+// SKUDetailStatus active only when both the SKU and its product are active.
+type SKUDetailStatus string
 
 // SKUInput defines model for SKUInput.
 type SKUInput struct {
@@ -299,11 +351,19 @@ type ID = openapi_types.UUID
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// GetSKUsBatchParams defines parameters for GetSKUsBatch.
+type GetSKUsBatchParams struct {
+	Ids []openapi_types.UUID `form:"ids" json:"ids"`
+}
+
 // BrowseProductsParams defines parameters for BrowseProducts.
 type BrowseProductsParams struct {
 	Q          *string             `form:"q,omitempty" json:"q,omitempty"`
 	Category   *openapi_types.UUID `form:"category,omitempty" json:"category,omitempty"`
 	SupplierID *openapi_types.UUID `form:"supplier_id,omitempty" json:"supplier_id,omitempty"`
+
+	// InStock true keeps only products with an active SKU in stock.
+	InStock *bool `form:"in_stock,omitempty" json:"in_stock,omitempty"`
 
 	// Sort popular (adds to cart, shop-wide), newest, or price_asc and
 	// price_desc by the lowest base price of the active SKUs, unpriced
@@ -392,6 +452,9 @@ type ServerInterface interface {
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(w http.ResponseWriter, r *http.Request)
+	// GetSKUsBatch Look up SKUs for a service
+	// (GET /internal/skus/batch)
+	GetSKUsBatch(w http.ResponseWriter, r *http.Request, params GetSKUsBatchParams)
 	// BrowseProducts Browse active products
 	// (GET /products)
 	BrowseProducts(w http.ResponseWriter, r *http.Request, params BrowseProductsParams)
@@ -500,6 +563,12 @@ func (_ Unimplemented) UpdateSKU(w http.ResponseWriter, r *http.Request, id ID) 
 // GetCategoryTree The category tree
 // (GET /categories)
 func (_ Unimplemented) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSKUsBatch Look up SKUs for a service
+// (GET /internal/skus/batch)
+func (_ Unimplemented) GetSKUsBatch(w http.ResponseWriter, r *http.Request, params GetSKUsBatchParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -877,6 +946,39 @@ func (siw *ServerInterfaceWrapper) GetCategoryTree(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetSKUsBatch operation middleware
+func (siw *ServerInterfaceWrapper) GetSKUsBatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSKUsBatchParams
+
+	// ------------- Required query parameter "ids" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, true, "ids", r.URL.Query(), &params.Ids, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "ids"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ids", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSKUsBatch(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // BrowseProducts operation middleware
 func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http.Request) {
 
@@ -921,6 +1023,19 @@ func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "supplier_id"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "supplier_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "in_stock" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "in_stock", r.URL.Query(), &params.InStock, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "in_stock"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "in_stock", Err: err})
 		}
 		return
 	}
@@ -1355,6 +1470,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/admin/categories/{id}", wrapper.UpdateCategory)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/skus/batch", wrapper.GetSKUsBatch)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sysadmin/suppliers", wrapper.ListSuppliers)
@@ -2021,6 +2139,44 @@ func (response GetCategoryTree200JSONResponse) VisitGetCategoryTreeResponse(w ht
 	return err
 }
 
+type GetSKUsBatchRequestObject struct {
+	Params GetSKUsBatchParams
+}
+
+type GetSKUsBatchResponseObject interface {
+	VisitGetSKUsBatchResponse(w http.ResponseWriter) error
+}
+
+type GetSKUsBatch200JSONResponse SKUBatch
+
+func (response GetSKUsBatch200JSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSKUsBatch400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSKUsBatch400ApplicationProblemPlusJSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type BrowseProductsRequestObject struct {
 	Params BrowseProductsParams
 }
@@ -2412,6 +2568,9 @@ type StrictServerInterface interface {
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(ctx context.Context, request GetCategoryTreeRequestObject) (GetCategoryTreeResponseObject, error)
+	// GetSKUsBatch Look up SKUs for a service
+	// (GET /internal/skus/batch)
+	GetSKUsBatch(ctx context.Context, request GetSKUsBatchRequestObject) (GetSKUsBatchResponseObject, error)
 	// BrowseProducts Browse active products
 	// (GET /products)
 	BrowseProducts(ctx context.Context, request BrowseProductsRequestObject) (BrowseProductsResponseObject, error)
@@ -2862,6 +3021,32 @@ func (sh *strictHandler) GetCategoryTree(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetCategoryTreeResponseObject); ok {
 		if err := validResponse.VisitGetCategoryTreeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSKUsBatch operation middleware
+func (sh *strictHandler) GetSKUsBatch(w http.ResponseWriter, r *http.Request, params GetSKUsBatchParams) {
+	var request GetSKUsBatchRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSKUsBatch(ctx, request.(GetSKUsBatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSKUsBatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSKUsBatchResponseObject); ok {
+		if err := validResponse.VisitGetSKUsBatchResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/inventory/inventory.stock.received.v1.json",
+  "title": "inventory.stock.received.v1",
+  "description": "A shop admin received stock for a SKU, increasing on_hand.",
+  "type": "object",
+  "required": [
+    "sku_id",
+    "quantity",
+    "on_hand",
+    "reserved",
+    "available",
+    "received_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "on_hand": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reserved": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "available": {
+      "type": "integer",
+      "description": "on_hand minus reserved. Negative only after an oversell (a reservation committed after it expired)."
+    },
+    "reason": {
+      "type": "string"
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -156,6 +156,12 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **Facets.** Customers get a `facets.favourites` entry with `product_count` 0: the favourites projection is fed by `order.placed.v1` in Phase 4. Other roles get no favourites facet.
 - **Internal SKU endpoints** are still deferred: yc-cart validates SKUs through yc-pricing's internal evaluate (an unknown SKU is reported as `unknown_sku`) and removes lines on `product.sku.deleted.v1` and `product.deleted.v1`.
 
+### Phase 4 Implementation Notes
+
+- **`GET /internal/skus/batch?ids=…`** (service callers, ADR-021) returns, for each SKU, its code, product name, variant values and the digital and inventory-tracked flags; yc-checkout reads it when a session starts. Deleted SKUs come back with their status; unknown IDs are listed in `missing`.
+- **Stock.** `in_stock` follows `inventory.stock.depleted.v1` and `inventory.stock.restored.v1` only, not received or adjusted: yc-inventory publishes those two whenever availability crosses zero, including when a shop turns inventory on or off. `in_stock_at` keeps an older event from overwriting a newer one. Untracked SKUs, and shops without inventory, have no stock signal and count as in stock. Products show `in_stock` (an active SKU is in stock), and `GET /products?in_stock=true` filters on it.
+- **Popularity and favourites** still come from `cart.item.added.v1` and stay empty respectively; moving them to `order.placed.v1` is not done yet.
+
 ## Database Schema
 
 Database: **`yc_product`**
@@ -316,9 +322,8 @@ CREATE POLICY tenant_isolation ON products
 | `cart.item.added.v1` | Increment `popularity_score` for the SKU (Phase 3 signal until orders exist) |
 | `pricing.promotion.started.v1` | Flag affected SKUs in projection (on sale) |
 | `pricing.promotion.ended.v1` | Unflag |
-| `inventory.stock.received.v1` | `in_stock = true` for affected SKU |
 | `inventory.stock.depleted.v1` | `in_stock = false` for affected SKU |
-| `inventory.stock.adjusted.v1` | Recompute `in_stock` |
+| `inventory.stock.restored.v1` | `in_stock = true` for affected SKU |
 | `review.approved.v1` | Recompute `avg_rating` and `rating_count` |
 | `review.like.added.v1` | Increment `like_count` |
 | `review.like.removed.v1` | Decrement `like_count` |

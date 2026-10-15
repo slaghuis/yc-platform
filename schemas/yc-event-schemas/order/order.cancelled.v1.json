@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/order/order.cancelled.v1.json",
+  "title": "order.cancelled.v1",
+  "description": "A received order was cancelled before shipment. A captured payment is refunded through yc-payment.",
+  "type": "object",
+  "required": [
+    "order_id",
+    "order_number",
+    "user_id",
+    "reason",
+    "cancelled_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "order_number": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "refund": {
+      "$ref": "../common/money.v1.json",
+      "description": "Amount refunded, when the payment had been captured."
+    },
+    "cancelled_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

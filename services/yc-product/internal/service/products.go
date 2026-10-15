@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 
@@ -249,6 +250,35 @@ func (s *Service) GetSKU(ctx context.Context, id string) (domain.SKU, error) {
 		return err
 	})
 	return sku, err
+}
+
+// SKUDetails returns the SKUs with ids for a service caller, deleted ones
+// included, and the IDs not found.
+func (s *Service) SKUDetails(ctx context.Context, ids []string) ([]domain.SKUDetail, []string, error) {
+	if len(ids) == 0 || len(ids) > domain.MaxSKUBatch {
+		return nil, nil, ycerrors.Validation().Field("ids", "invalid", fmt.Sprintf("Pass 1 to %d SKU IDs", domain.MaxSKUBatch)).Build()
+	}
+	var found []domain.SKUDetail
+	err := s.read(ctx, func(tx pgx.Tx) error {
+		var err error
+		found, err = s.cat.SKUDetails(ctx, tx, ids)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := make(map[string]bool, len(found))
+	for _, d := range found {
+		seen[d.ID] = true
+	}
+	missing := []string{}
+	for _, id := range ids {
+		if !seen[id] {
+			missing = append(missing, id)
+			seen[id] = true
+		}
+	}
+	return found, missing, nil
 }
 
 // Browse returns a page of active products matching f.

@@ -236,7 +236,7 @@ func TestCart(t *testing.T) {
 	require.NoError(t, err)
 	upstream, err := eventbus.NewClient(ctx, eventbus.Config{
 		NATSURL: natsURL, ServiceName: "yc-upstream", Validator: validator,
-		Streams: []eventbus.StreamConfig{eventbus.IdentityStream(), eventbus.PreferenceStream(), eventbus.ProductStream()},
+		Streams: []eventbus.StreamConfig{eventbus.IdentityStream(), eventbus.PreferenceStream(), eventbus.ProductStream(), eventbus.CheckoutStream()},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = upstream.Close(context.Background()) })
@@ -435,6 +435,55 @@ func TestCart(t *testing.T) {
 		cleared := outbox("shop-a", events.TypeCartClearedV1)
 		require.Len(t, cleared, 1)
 		assert.Equal(t, float64(1), cleared[0]["item_count"])
+	})
+
+	t.Run("checkout reads a cart and a completed checkout removes its quantities", func(t *testing.T) {
+		checkout := as(t, srv, "shop-a", "yc-checkout", "service")
+		checkout.hdr[authctx.HeaderCallerService] = "yc-checkout"
+		var empty api.InternalCart
+		require.Equal(t, http.StatusOK, checkout.do("GET", "/internal/carts/"+uuid.NewString()+"/shopping", nil, &empty))
+		assert.Nil(t, empty.CartID)
+		assert.Empty(t, empty.Items)
+		assert.Equal(t, http.StatusNotFound, checkout.do("GET", "/internal/carts/"+alice+"/layaway", nil, nil))
+		assert.Equal(t, http.StatusUnauthorized, aliceC.do("GET", "/internal/carts/"+alice+"/shopping", nil, nil), "service callers only")
+
+		code, _ := add(aliceC, "shopping", skuA, 3)
+		require.Equal(t, http.StatusOK, code)
+		code, _ = add(aliceC, "shopping", skuC, 1)
+		require.Equal(t, http.StatusOK, code)
+		var ic api.InternalCart
+		require.Equal(t, http.StatusOK, checkout.do("GET", "/internal/carts/"+alice+"/shopping", nil, &ic))
+		require.NotNil(t, ic.CartID)
+		assert.True(t, ic.Convertible)
+		require.Len(t, ic.Items, 2)
+		assert.Equal(t, skuA, ic.Items[0].SkuID.String())
+		assert.Equal(t, 3, ic.Items[0].Quantity)
+		assert.Equal(t, money.New(10000, "ZAR"), ic.Items[0].UnitPrice)
+
+		// The session checked out 2 of skuA and 1 of skuC; one skuA was
+		// added after the session started and stays.
+		session, order := uuid.NewString(), uuid.NewString()
+		completed := events.CheckoutCompletedV1{
+			SessionID: session, UserID: alice, CartType: "shopping", OrderID: order, OrderNumber: "SHOP-A-000001",
+			Items: []events.CheckoutCompletedV1ItemsItem{{SKUID: skuA, Quantity: 2}, {SKUID: skuC, Quantity: 1}},
+			Total: events.Money{AmountMinor: 20400, Currency: "ZAR"}, CompletedAt: time.Now().UTC(),
+		}
+		publish("shop-a", events.TypeCheckoutCompletedV1, completed)
+		require.Eventually(t, func() bool { return len(outbox("shop-a", events.TypeCartConvertedV1)) == 1 },
+			10*time.Second, 50*time.Millisecond)
+		c := aliceC.cart("shopping", "")
+		require.Len(t, c.Items, 1)
+		assert.Equal(t, skuA, c.Items[0].SkuID.String())
+		assert.Equal(t, 1, c.Items[0].Quantity)
+		converted := outbox("shop-a", events.TypeCartConvertedV1)[0]
+		assert.Equal(t, session, converted["session_id"])
+		assert.Equal(t, order, converted["order_id"])
+		assert.Len(t, converted["items"], 2)
+
+		publish("shop-a", events.TypeCheckoutCompletedV1, completed)
+		time.Sleep(500 * time.Millisecond)
+		assert.Len(t, outbox("shop-a", events.TypeCartConvertedV1), 1, "a session converts once")
+		assert.Equal(t, 1, aliceC.cart("shopping", "").Items[0].Quantity)
 	})
 
 	t.Run("carts are for shoppers in their own shop", func(t *testing.T) {

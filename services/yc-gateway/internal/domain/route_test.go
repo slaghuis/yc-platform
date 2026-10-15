@@ -77,6 +77,8 @@ func TestNewRoutesRejects(t *testing.T) {
 		"relative":            {Prefix: "me", Upstream: u("http://x")},
 		"no upstream":         {Prefix: "/me"},
 		"bad role":            {Prefix: "/me", Upstream: u("http://x"), Roles: []authctx.ActorType{"root"}},
+		"callback with roles": {Prefix: "/hooks", Upstream: u("http://x"), Callback: true, Roles: []authctx.ActorType{authctx.ActorCustomer}},
+		"internal callback":   {Prefix: "/internal/x", Upstream: u("http://x"), Service: "yc-x", Callback: true},
 	} {
 		_, err := domain.NewRoutes([]domain.Route{r})
 		assert.Error(t, err, name)

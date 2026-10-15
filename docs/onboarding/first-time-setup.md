@@ -27,7 +27,9 @@ Once the dev stack is up:
 
 ## Application Services
 
-`task devstack:app` builds and starts the application services in Docker (compose profile `app`). `task demo:phase1` runs the Phase 1 milestone demo and the outbox and DLQ drills (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part); `task demo:phase2` runs the catalog-and-browse milestone through the gateway; `task demo:phase3` runs the cart milestone (visitor cart, registration, fake Google login and merge, display currency, price change, popularity search, rate limits). Product, pricing, image, preference and cart register their routes with the gateway on start-up, so give them a few seconds after `readyz`.
+`task devstack:app` builds and starts the application services in Docker (compose profile `app`). `task demo:phase1` runs the Phase 1 milestone demo and the outbox and DLQ drills (`scripts/demo-phase1.sh milestone|outbox|dlq` runs one part); `task demo:phase2` runs the catalog-and-browse milestone through the gateway; `task demo:phase3` runs the cart milestone (visitor cart, registration, fake Google login and merge, display currency, price change, popularity search, rate limits); `task demo:phase4` runs the checkout milestone (a paid order, a declined card, out of stock, guest checkout, 3-D Secure, and killing yc-checkout mid-saga). Product, pricing, image, preference, cart, inventory, payment, orders and checkout register their routes with the gateway on start-up, so give them a few seconds after `readyz`.
+
+**Payments.** With `STRIPE_API_KEY` (a `sk_test_` key) in `.env`, the Phase 4 demo pays through Stripe test mode and the payments appear in the Stripe dashboard. Without it, the demo runs the fake Stripe from `services/yc-payment/cmd/fake-stripe` on the host (port 12111) and points yc-payment at it. Either way it recreates the yc-payment container with the matching `YC_PAYMENT_STRIPE_API_BASE`. To receive Stripe webhooks locally, run `stripe listen --forward-to localhost:8090/webhooks/stripe -H "Host: demo-shop.localhost"` and store the `whsec_` secret it prints with `PUT /admin/gateway-config/stripe` (the demo does this when `STRIPE_WEBHOOK_SECRET` is set).
 
 | Service | URL |
 |---|---|
@@ -39,6 +41,10 @@ Once the dev stack is up:
 | yc-image | http://localhost:8085 — image URLs point at the S3 bucket on http://localhost:9000 |
 | yc-preference | http://localhost:8086 |
 | yc-cart | http://localhost:8087 — prices carts through the gateway's internal listener (`YC_CART_SERVICE_SECRET`) |
+| yc-inventory | http://localhost:8088 |
+| yc-payment | http://localhost:8089 — needs `YC_PAYMENT_CIPHER_KEY` (base64 of 32 bytes); Stripe or the fake, see below |
+| yc-orders | http://localhost:8092 — refunds cancelled orders through yc-payment (`YC_ORDERS_SERVICE_SECRET`) |
+| yc-checkout | http://localhost:8093 — calls cart, product, pricing, inventory, payment and orders (`YC_CHECKOUT_SERVICE_SECRET`); Standard shipping is `YC_CHECKOUT_SHIPPING_FEE_MINOR` (R100 in the dev stack) |
 
 The first system admin is created with `docker exec -e YC_BOOTSTRAP_ADMIN_PASSWORD=… yc-identity /app/service bootstrap-admin --email you@example.com` (or `task run SERVICE=yc-identity -- bootstrap-admin …` locally); log in on `admin.localhost`. Shop admins register on their shop as customers and a system admin promotes them (`POST /admin/users/{id}/promote` on the admin host).
 
@@ -49,6 +55,8 @@ The first system admin is created with `docker exec -e YC_BOOTSTRAP_ADMIN_PASSWO
 **Port conflicts.** If port 5432 (or any other) is in use, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` (gitignored) and remap the port there; the example shows how.
 
 **`database "yc_gateway" does not exist`.** `postgres-init.sh` only runs on an empty volume, so a volume created before a service's database was added lacks it. Run `task devstack:reset`, or create just that database with the statements from `deploy/compose/postgres-init.sh`.
+
+**yc-payment exits with `cipher key is not base64`.** A `.env` created before Phase 4 has the old raw `YC_PAYMENT_CIPHER_KEY`. Copy the current value from `.env.example`.
 
 **Dev stack won't start.**
 

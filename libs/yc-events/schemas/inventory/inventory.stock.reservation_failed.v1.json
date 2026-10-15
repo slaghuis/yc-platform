@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/inventory/inventory.stock.reservation_failed.v1.json",
+  "title": "inventory.stock.reservation_failed.v1",
+  "description": "A reservation was declined because at least one tracked SKU is short (ADR-012: no partial reservations).",
+  "type": "object",
+  "required": [
+    "session_id",
+    "shortages",
+    "failed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "shortages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "sku_id",
+          "requested",
+          "available"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requested": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "available": {
+            "type": "integer"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

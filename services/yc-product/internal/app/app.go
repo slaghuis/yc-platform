@@ -94,7 +94,8 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		DB:          db,
 		Validator:   validator,
 		Streams: []eventbus.StreamConfig{
-			eventbus.ProductStream(), eventbus.CartStream(), eventbus.PricingStream(), eventbus.DLQStream(),
+			eventbus.ProductStream(), eventbus.CartStream(), eventbus.PricingStream(), eventbus.InventoryStream(),
+			eventbus.DLQStream(),
 		},
 	})
 	if err != nil {

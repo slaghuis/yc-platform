@@ -23,6 +23,48 @@ type Problem struct {
 	Code          Code         `json:"code"`
 	CorrelationID string       `json:"correlation_id"`
 	Errors        []FieldError `json:"errors,omitempty"`
+	// Extensions are written as top-level members.
+	Extensions map[string]any `json:"-"`
+}
+
+// MarshalJSON writes the extension members beside the standard ones.
+func (p Problem) MarshalJSON() ([]byte, error) {
+	type plain Problem
+	b, err := json.Marshal(plain(p))
+	if err != nil || len(p.Extensions) == 0 {
+		return b, err
+	}
+	ext, err := json.Marshal(p.Extensions)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(b[:len(b)-1], ','), ext[1:]...), nil
+}
+
+// UnmarshalJSON reads the members it does not know into Extensions.
+func (p *Problem) UnmarshalJSON(b []byte) error {
+	type plain Problem
+	if err := json.Unmarshal(b, (*plain)(p)); err != nil {
+		return err
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return err
+	}
+	for k, v := range all {
+		if reservedMembers[k] {
+			continue
+		}
+		if p.Extensions == nil {
+			p.Extensions = map[string]any{}
+		}
+		var x any
+		if err := json.Unmarshal(v, &x); err != nil {
+			return err
+		}
+		p.Extensions[k] = x
+	}
+	return nil
 }
 
 // WriteError is the only place an error becomes an HTTP response. It
@@ -42,6 +84,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 		Code:          e.Code,
 		CorrelationID: telemetry.AuthAttrsFromContext(ctx).CorrelationID,
 		Errors:        e.Fields,
+		Extensions:    e.Extensions,
 	}
 	w.Header().Set("Content-Type", ContentType)
 	w.WriteHeader(e.Status)

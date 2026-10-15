@@ -357,6 +357,8 @@ type ProductSummary struct {
 	// MinBasePrice is the lowest base price of the active SKUs in minor
 	// units of the store currency, or nil when none is priced.
 	MinBasePrice *int64
+	// InStock: an active SKU has stock, or is not tracked by yc-inventory.
+	InStock bool
 }
 
 // Sort orders a browse result.
@@ -385,8 +387,23 @@ type BrowseFilter struct {
 	Query      string
 	CategoryID string
 	SupplierID string
-	Sort       Sort
+	// InStock keeps only products with an active SKU in stock.
+	InStock bool
+	Sort    Sort
 }
+
+// SKUDetail is a SKU with the product facts yc-checkout snapshots.
+type SKUDetail struct {
+	SKU
+	ProductName string
+	IsDigital   bool
+	// Active: both the SKU and its product are active. Status is the SKU's,
+	// or deleted when the product is.
+	Active bool
+}
+
+// MaxSKUBatch bounds GET /internal/skus/batch.
+const MaxSKUBatch = 100
 
 // Validate normalises f. An empty Sort is left for the caller's default.
 func (f *BrowseFilter) Validate() error {

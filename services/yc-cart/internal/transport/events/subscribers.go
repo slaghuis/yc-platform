@@ -17,6 +17,7 @@ type Handlers interface {
 	MergeVisitor(ctx context.Context, tenantID, userID, visitorID string) error
 	SetDisplayCurrency(ctx context.Context, tenantID, userID, currency string, at time.Time) error
 	RemoveSKUs(ctx context.Context, tenantID string, skuIDs []string) error
+	ConvertCart(ctx context.Context, tenantID, userID, cartType, sessionID, orderID string, checkedOut map[string]int) error
 }
 
 // Subscription pairs a durable consumer with its handler.
@@ -84,6 +85,23 @@ func Subscriptions(h Handlers) []Subscription {
 					return nil
 				}
 				return poisonInvalid(h.RemoveSKUs(ctx, evt.Envelope.TenantID, p.SKUIds))
+			},
+		},
+		{
+			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeCheckoutCompletedV1,
+				DurableName: "yc-cart-checkout-completed",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.CheckoutCompletedV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				checkedOut := make(map[string]int, len(p.Items))
+				for _, it := range p.Items {
+					checkedOut[it.SKUID] += int(it.Quantity)
+				}
+				return poisonInvalid(h.ConvertCart(ctx, evt.Envelope.TenantID, p.UserID, p.CartType, p.SessionID, p.OrderID, checkedOut))
 			},
 		},
 	}
