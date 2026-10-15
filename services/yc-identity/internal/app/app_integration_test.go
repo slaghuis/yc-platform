@@ -502,10 +502,10 @@ func TestIdentity(t *testing.T) {
 		require.NoError(t, err)
 		q := u.Query()
 		if provider == "google" {
-			assert.Equal(t, "https://shop-c.test/auth/callback/google", u.Scheme+"://"+u.Host+u.Path, "fake redirects straight back")
+			assert.Equal(t, "https://shop-c.test/oauth/google/callback", u.Scheme+"://"+u.Host+u.Path, "fake redirects straight back")
 			return q.Get("code"), q.Get("state")
 		}
-		assert.Equal(t, "https://shop-c.test/auth/callback/facebook", q.Get("redirect_uri"))
+		assert.Equal(t, "https://shop-c.test/oauth/facebook/callback", q.Get("redirect_uri"))
 		assert.NotEmpty(t, q.Get("code_challenge"))
 		return "good-code", q.Get("state")
 	}

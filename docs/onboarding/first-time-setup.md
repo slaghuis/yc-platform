@@ -36,6 +36,7 @@ Once the dev stack is up:
 | Service | URL |
 |---|---|
 | yc-gateway | http://localhost:8090 — send `Host: demo-shop.localhost` after a demo provisions `demo-shop`, or `Host: admin.localhost` (the platform host: system admins only) |
+| Dev edge (frontends) | http://admin.localhost:8070 and http://yc-demo.localhost:8070 after `task devstack:seed` and `task devstack:edge` — see `frontend-development.md` |
 | yc-identity | http://localhost:8081 |
 | yc-monitor | http://localhost:8082 — `/sysadmin/*` needs `X-YC-Tenant-ID: _platform` and `X-YC-Actor-Type: system_admin` headers; health checks, alerts (emailed to `YC_MESSAGE_SYSTEM_ADMIN_EMAILS` by yc-message) and dead letters (`yc-dlq-cli`, see `docs/runbooks/dlq-replay.md`) |
 | yc-product | http://localhost:8083 |

@@ -1,6 +1,6 @@
 # ADR-027: Frontend Applications and Edge Topology
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-15
 **Context:** v1 ships APIs only. The next step is two browser applications in their own repositories: `yc-platform-admin` (marketing site and system admin console on `yellowcommerce.co.za`) and `yc-platform-shop` (a demonstration shop with storefront and shop admin on `yellowcommercedemo.co.za`). How a browser reaches the platform is not decided, and v1 has several properties that rule out the obvious answer of "the browser calls yc-gateway":
 

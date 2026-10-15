@@ -1,0 +1,20 @@
+# Dev edge (ADR-027). Plain HTTP on YC_EDGE_PORT; Host is passed through
+# unchanged and X-Forwarded-For / X-Forwarded-Proto are set, as the public
+# edge does.
+{
+	auto_https off
+	admin 127.0.0.1:2019
+}
+
+http://admin.localhost:{$YC_EDGE_PORT} {
+	reverse_proxy {$YC_EDGE_ADMIN_UPSTREAM}
+}
+
+http://*.localhost:{$YC_EDGE_PORT} {
+	handle /webhooks/* {
+		reverse_proxy yc-gateway:8080
+	}
+	handle {
+		reverse_proxy {$YC_EDGE_SHOP_UPSTREAM}
+	}
+}

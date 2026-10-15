@@ -1,6 +1,6 @@
 # ADR-029: Tenant Registry
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-15
 **Context:** In v1 a shop exists only as the side effects of one event. `yc-tenant-cli provision` publishes `platform.tenant.provisioned.v1` straight to NATS (no outbox, no record), and each service keeps its own fragment: yc-gateway the hostnames (`tenant_hosts`, ADR-020), yc-pricing the pricing config, yc-analytics `dim_tenant`, and so on. Nothing can list shops, show one, rename one, change its hostnames, suspend it or delete it. The service docs list subscriptions to `platform.tenant.suspended.v1` and `platform.tenant.deleted.v1`, but neither schema exists and no service implements them. The system admin console (yc-platform-admin) needs shop management as an API, and yc-message needs each shop's real hostname for links (ADR-027 rule 14).
 

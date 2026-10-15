@@ -419,6 +419,20 @@ func TestRateLimit(t *testing.T) {
 		}
 	})
 
+	t.Run("through the edge and a frontend by the browser's address", func(t *testing.T) {
+		edge := netip.MustParsePrefix("172.18.0.0/16")
+		frontend := netip.MustParsePrefix("192.168.65.0/24")
+		l := &recordingLimiter{}
+		h, _, seen := setupLimited(t, l, edge, frontend)
+
+		require.Equal(t, http.StatusTeapot, do(h, "GET", "shop-a.test", "/me", func(r *http.Request) {
+			r.RemoteAddr = "192.168.65.1:50123"
+			r.Header.Set("X-Forwarded-For", "203.0.113.9, 172.18.0.5")
+		}).Code)
+		<-seen
+		assert.Equal(t, []string{"shop-a/visitor/addr:203.0.113.9"}, l.calls)
+	})
+
 	t.Run("platform hosts by address", func(t *testing.T) {
 		l := &recordingLimiter{}
 		h, _, seen := setupLimited(t, l)

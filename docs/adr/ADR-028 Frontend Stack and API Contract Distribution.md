@@ -1,6 +1,6 @@
 # ADR-028: Frontend Stack and API Contract Distribution
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-15
 **Context:** Two frontend repositories start at once (`yc-platform-admin`, `yc-platform-shop`), both built mostly by the AI code factory against the same gateway. ADR-027 requires each to be a server-rendered application with a backend-for-frontend that holds tokens in a sealed cookie, relays the visitor cookie and forwards the browser's host. If the two repos choose different stacks, that security-sensitive layer is written twice in two idioms. The frontends also need the platform's API types: the source of truth is each service's `api/openapi.yaml` (api-conventions §2), which lives in this repository. yc-platform is a Go workspace with a Go-only pipeline (ADR-018); `pipeline-lib` has no Node support.
 

@@ -28,11 +28,11 @@
 | 024 | Product Reviews | Accepted |
 | 025 | Operational Maturity | Accepted |
 | 026 | Hardening and Deployment Contract | Accepted |
-| 027 | Frontend Applications and Edge Topology | Proposed |
-| 028 | Frontend Stack and API Contract Distribution | Proposed |
-| 029 | Tenant Registry | Proposed |
-| 030 | Admin Invitations and Platform Team | Proposed |
-| 031 | Demo Environment Hosting | Proposed |
+| 027 | Frontend Applications and Edge Topology | Accepted |
+| 028 | Frontend Stack and API Contract Distribution | Accepted |
+| 029 | Tenant Registry | Accepted |
+| 030 | Admin Invitations and Platform Team | Accepted |
+| 031 | Demo Environment Hosting | Accepted |
 
 Each ADR is in its own file named `ADR-NNN <Title>.md` (for example `ADR-001 Topic-Based Tenant Isolation.md`).
 
