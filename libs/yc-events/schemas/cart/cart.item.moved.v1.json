@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.item.moved.v1.json",
+  "title": "cart.item.moved.v1",
+  "description": "A user moved a line to another of their carts, e.g. wishlist to shopping. Quantities are summed when the target already holds the SKU.",
+  "type": "object",
+  "required": ["user_id", "sku_id", "from_cart_id", "from_cart_type", "to_cart_id", "to_cart_type", "quantity", "moved_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "from_cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "from_cart_type": {
+      "type": "string"
+    },
+    "to_cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "to_cart_type": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The quantity moved."
+    },
+    "moved_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

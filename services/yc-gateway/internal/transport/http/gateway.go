@@ -5,9 +5,13 @@ package http
 import (
 	"context"
 	"errors"
+	"math"
+	"net"
 	"net/http"
 	"net/http/httputil"
+	"strconv"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -36,6 +40,16 @@ type RouteMatcher interface {
 	Match(method, path string) (domain.Route, bool)
 }
 
+// Limiter enforces rate limits. actorKey is the actor ID, or the client
+// address for callers without credentials.
+type Limiter interface {
+	Allow(tenantID string, actorType authctx.ActorType, actorKey string) (bool, time.Duration)
+}
+
+type unlimited struct{}
+
+func (unlimited) Allow(string, authctx.ActorType, string) (bool, time.Duration) { return true, 0 }
+
 // CookieConfig is the visitor cookie.
 type CookieConfig struct {
 	Name   string `koanf:"name"`
@@ -44,16 +58,20 @@ type CookieConfig struct {
 
 // Gateway authenticates requests and proxies them to backends.
 type Gateway struct {
-	hosts  TenantResolver
-	auth   Authenticator
-	routes RouteMatcher
-	cookie CookieConfig
-	proxy  *httputil.ReverseProxy
+	hosts   TenantResolver
+	auth    Authenticator
+	routes  RouteMatcher
+	limiter Limiter
+	cookie  CookieConfig
+	proxy   *httputil.ReverseProxy
 }
 
-// New returns a Gateway.
-func New(hosts TenantResolver, auth Authenticator, routes RouteMatcher, cookie CookieConfig) *Gateway {
-	g := &Gateway{hosts: hosts, auth: auth, routes: routes, cookie: cookie}
+// New returns a Gateway. A nil limiter admits everything.
+func New(hosts TenantResolver, auth Authenticator, routes RouteMatcher, limiter Limiter, cookie CookieConfig) *Gateway {
+	if limiter == nil {
+		limiter = unlimited{}
+	}
+	g := &Gateway{hosts: hosts, auth: auth, routes: routes, limiter: limiter, cookie: cookie}
 	g.proxy = &httputil.ReverseProxy{
 		Rewrite:      g.rewrite,
 		Transport:    otelhttp.NewTransport(http.DefaultTransport),
@@ -97,9 +115,20 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 			return
 		}
 
+		// Callers without credentials are limited by address before a
+		// visitor is issued for them.
+		bearer := authctx.BearerToken(r.Header)
+		anonymous := bearer == "" && !hasCookie(r, g.cookie.Name)
+		if anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+			return
+		}
+
 		// Platform hosts never issue visitors (ADR-020 rule 5): without a
 		// token only anonymous routes are reachable, with no actor.
-		if tenantID == eventbus.PlatformTenantID && authctx.BearerToken(r.Header) == "" {
+		if tenantID == eventbus.PlatformTenantID && bearer == "" {
+			if !anonymous && !g.allow(w, r, tenantID, authctx.ActorVisitor, "addr:"+clientAddr(r)) {
+				return
+			}
 			if !route.Anonymous {
 				ycerrors.WriteError(w, r, ycerrors.Unauthorized("Sign in required"))
 				return
@@ -116,6 +145,9 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 		id, err := g.identify(w, r, tenantID)
 		if err != nil {
 			ycerrors.WriteError(w, r, err)
+			return
+		}
+		if !anonymous && !g.allow(w, r, tenantID, id.ActorType, id.ActorID) {
 			return
 		}
 		if !route.Admits(id.ActorType) {
@@ -141,6 +173,34 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// allow applies the rate limits, writing a 429 with Retry-After when the
+// request is refused.
+func (g *Gateway) allow(w http.ResponseWriter, r *http.Request, tenantID string, actorType authctx.ActorType, actorKey string) bool {
+	ok, wait := g.limiter.Allow(tenantID, actorType, actorKey)
+	if ok {
+		return true
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+	ycerrors.WriteError(w, r, ycerrors.RateLimited("Too many requests; try again later").
+		WithInternal("tenant %s, %s %s, wait %s", tenantID, actorType, actorKey, wait))
+	return false
+}
+
+func hasCookie(r *http.Request, name string) bool {
+	c, err := r.Cookie(name)
+	return err == nil && c.Value != ""
+}
+
+// clientAddr is the connection's remote IP. Behind a load balancer every
+// request shares its address until trusted proxy headers are configured.
+func clientAddr(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // identify returns the caller for tenantID. A bearer token must be valid
 // for the tenant. The visitor cookie is the gateway's own state, so a
 // stale or foreign one is replaced with a fresh visitor rather than
@@ -154,6 +214,10 @@ func (g *Gateway) identify(w http.ResponseWriter, r *http.Request, tenantID stri
 		}
 		if err != nil {
 			return domain.Identity{}, err
+		}
+		if id.ActorType == authctx.ActorService {
+			return domain.Identity{}, ycerrors.Unauthorized("Invalid or expired token").
+				WithInternal("service token %s on the public listener", id.ActorID)
 		}
 		if id.TenantID != tenantID {
 			return domain.Identity{}, ycerrors.Forbidden("Token is not valid for this shop").

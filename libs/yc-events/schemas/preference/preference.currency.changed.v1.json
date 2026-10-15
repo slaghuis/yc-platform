@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.currency.changed.v1.json",
+  "title": "preference.currency.changed.v1",
+  "description": "A user's display currency changed, including when it was first seeded. yc-cart keeps a copy to render cart totals (ADR-014: display only).",
+  "type": "object",
+  "required": ["user_id", "display_currency", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "display_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "previous_display_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "Absent when the preference was first seeded."
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

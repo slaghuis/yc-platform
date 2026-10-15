@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	"github.com/slaghuis/yc-platform/services/yc-product/internal/domain"
@@ -251,26 +252,57 @@ func (s *Service) GetSKU(ctx context.Context, id string) (domain.SKU, error) {
 }
 
 // Browse returns a page of active products matching f.
-func (s *Service) Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) ([]domain.ProductSummary, *repository.Cursor, error) {
+func (s *Service) Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) (domain.Browse, *repository.Cursor, error) {
 	if err := f.Validate(); err != nil {
-		return nil, nil, err
+		return domain.Browse{}, nil, err
 	}
-	var out []domain.ProductSummary
+	a, _ := authctx.FromContext(ctx)
+	if f.Sort == "" {
+		f.Sort = defaultSort(a.ActorType)
+	}
+	if after != nil && after.Sort != cursorSort(f.Sort) {
+		return domain.Browse{}, nil, ycerrors.Validation().Field("cursor", "invalid", "Cursor is for another sort").Build()
+	}
+	res := domain.Browse{Sort: f.Sort}
+	if a.ActorType == authctx.ActorCustomer {
+		res.Favourites = &domain.FavouritesFacet{}
+	}
 	err := s.read(ctx, func(tx pgx.Tx) error {
 		var err error
-		out, err = s.cat.Browse(ctx, tx, f, after, limit+1)
+		res.Items, err = s.cat.Browse(ctx, tx, f, after, limit+1)
 		return err
 	})
 	if err != nil {
-		return nil, nil, err
+		return domain.Browse{}, nil, err
 	}
 	var next *repository.Cursor
-	if len(out) > limit {
-		out = out[:limit]
-		last := out[limit-1]
-		next = &repository.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	if len(res.Items) > limit {
+		res.Items = res.Items[:limit]
+		last := res.Items[limit-1]
+		next = &repository.Cursor{
+			CreatedAt: last.CreatedAt, ID: last.ID, Sort: cursorSort(f.Sort), Key: repository.SortKey(f.Sort, last),
+		}
 	}
-	return out, next, nil
+	return res, next, nil
+}
+
+// defaultSort shows shoppers what is popular and shop admins what is new.
+func defaultSort(actor authctx.ActorType) domain.Sort {
+	switch actor {
+	case authctx.ActorVisitor, authctx.ActorCustomer:
+		return domain.SortPopular
+	case authctx.ActorShopAdmin, authctx.ActorSystemAdmin, authctx.ActorService:
+	}
+	return domain.SortNewest
+}
+
+// cursorSort is the sort recorded in a cursor; newest is left out so that
+// cursors issued before sorting existed stay valid.
+func cursorSort(s domain.Sort) string {
+	if s == domain.SortNewest {
+		return ""
+	}
+	return string(s)
 }
 
 func (s *Service) checkVariants(ctx context.Context, tx pgx.Tx, productID string, values map[string]string, exceptSKU string) error {

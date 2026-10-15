@@ -95,6 +95,7 @@ Access tokens are **JWTs** signed by yc-identity. Claims include:
 | Method | Path | Description | Auth |
 |---|---|---|---|
 | POST | `/internal/validate-token` | Validate an access token (called by yc-gateway) | service |
+| POST | `/internal/service-token` | Issue a service token to a service client (ADR-021) | client secret |
 | GET | `/internal/users/{id}` | Fetch minimal user info | service |
 
 OpenAPI spec stub lives at `/services/yc-identity/api/openapi.yaml`.
@@ -109,6 +110,18 @@ The contract is `services/yc-identity/api/openapi.yaml`. Implemented: `/visitor`
 - **The first system admin** is created by `yc-identity bootstrap-admin --email <email>`, with the password from `YC_BOOTSTRAP_ADMIN_PASSWORD` or stdin. It is idempotent: an existing email is left unchanged.
 - **Shop admins** register as customers on their shop, and a system admin promotes them (`{"role": "shop_admin"}`). Only customers can be promoted, and only to shop_admin of their own tenant. Promotion publishes `identity.user.promoted.v1`, and tokens issued before it stop validating because `/internal/validate-token` checks the user's current role.
 - **Listing users**: shop admins see their own tenant; system admins see every tenant or filter with `tenant_id`. Results are newest first, cursor-paginated.
+
+### Phase 3 Implementation Notes
+
+Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confirm`, `/oauth/{provider}/start`, `/oauth/{provider}/callback` and `/internal/service-token` (migration `004_sessions_oauth_reset`). Demote, suspend, delete and `/internal/users/{id}` come later.
+
+- **Refresh tokens** are opaque random strings stored by SHA-256 hash, one row per token in a *family* (one login). `/refresh` rotates: the presented token is marked replaced and a new one issued in the same family. Presenting a replaced or revoked token revokes the whole family (theft detection). Visitors get no refresh token.
+- **Logout** revokes the caller's access token (its `jti`, checked by `/internal/validate-token`) and, when given, the refresh token's family. yc-gateway may accept the access token for up to its validation cache TTL.
+- **Password reset** stores a single-use token by hash with `password.reset_ttl` (1h) and publishes `identity.user.password_reset_requested.v1` *without* the token (event-conventions §18): yc-message will send the link in Phase 7. Until then `password.log_reset_links` (`YC_IDENTITY_LOG_RESET_LINKS`, refused in production) logs it. The endpoint answers 202 whether or not the email exists. Confirming sets the password, revokes every refresh token and outstanding reset token of the user, and publishes `identity.user.password_changed.v1`.
+- **OAuth** (Google, Facebook) is the authorisation-code flow with PKCE. `start` stores the state (by hash), code verifier, callback URL and the calling visitor, and returns the provider URL; `redirect_url` may contain `{host}` for the shop host. `callback` consumes the state once, exchanges the code and then: logs in an existing link; else links to a user with the same email **only if the provider reports it verified** (409 otherwise, publishing `identity.oauth_linked.v1`); else turns the starting visitor into a customer in place, or creates one (`identity.user.registered.v1` with method `google`/`facebook`).
+- **Fake provider** (`oauth.<provider>.fake`, `YC_IDENTITY_OAUTH_FAKE`, development only): signs in the `login_hint` email as verified; its authorisation URL is the callback URL with `code` and `state`.
+- **`identity.user.logged_in.v1`** carries `previous_visitor_id` when the login (password or OAuth) came from a visitor — the cart merge source for yc-cart.
+- **Service tokens** (ADR-021): `service_clients` maps client IDs to secrets of at least 32 characters (`yc-cart: ${YC_CART_SERVICE_SECRET}`); `/internal/service-token` issues a 15-minute token with role `service` in `_platform`, and `/internal/validate-token` accepts it while the client is still configured.
 
 ## Database Schema
 

@@ -28,13 +28,35 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/app"
 )
 
-// fakeIdentity issues "tok-<tenant>" visitors, validates them and echoes
-// the identity headers on /me.
+// fakeIdentity issues "tok-<tenant>" visitors and "svc-<name>" service
+// tokens, validates them and echoes the identity headers on /me. Its
+// internal endpoints insist on the gateway's caller header, as
+// authctx.Audience does.
 func fakeIdentity(t *testing.T) string {
 	t.Helper()
 	expires := time.Now().Add(time.Hour).UTC()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/internal/") && r.Header.Get(authctx.HeaderCallerService) != "yc-gateway" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/internal/service-token":
+			var req struct {
+				ClientID     string `json:"client_id"`
+				ClientSecret string `json:"client_secret"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if req.ClientSecret != "secret" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "svc-" + req.ClientID, "token_type": "Bearer", "expires_at": expires,
+			})
+			return
+		}
 		switch r.URL.Path {
 		case "/visitor":
 			tenant := r.Header.Get(authctx.HeaderTenantID)
@@ -46,6 +68,13 @@ func fakeIdentity(t *testing.T) string {
 		case "/internal/validate-token":
 			var req struct{ Token string }
 			_ = json.NewDecoder(r.Body).Decode(&req)
+			if name, ok := strings.CutPrefix(req.Token, "svc-"); ok {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"tenant_id": "_platform", "actor_id": name, "actor_type": "service",
+					"jti": "jti-svc", "expires_at": expires,
+				})
+				return
+			}
 			tenant, ok := strings.CutPrefix(req.Token, "tok-")
 			if !ok {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -277,6 +306,54 @@ func TestGateway(t *testing.T) {
 
 	t.Run("internal paths are not served publicly", func(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, get(t, srv, "shop-a.test", "/internal/routes", nil).StatusCode)
+	})
+
+	t.Run("service calls reach registered internal routes", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"path":       r.URL.Path,
+				"tenant":     r.Header.Get(authctx.HeaderTenantID),
+				"actor":      r.Header.Get(authctx.HeaderActorID),
+				"actor_type": r.Header.Get(authctx.HeaderActorType),
+				"caller":     r.Header.Get(authctx.HeaderCallerService),
+				"auth":       r.Header.Get("Authorization"),
+			})
+		}))
+		defer backend.Close()
+		internal := httptest.NewServer(a.InternalHandler)
+		defer internal.Close()
+
+		reg := httpkit.Registration{
+			ServiceName: "yc-pricing", InstanceID: "pricing-1", BaseURL: backend.URL, HealthURL: "/healthz",
+			Routes: []httpkit.RegisteredRoute{
+				{Prefix: "/prices", Methods: []string{"GET"}},
+				{Prefix: "/internal/evaluate", Methods: []string{"POST"}},
+			},
+		}
+		require.Equal(t, http.StatusNoContent, post(t, internal, "/internal/register", reg))
+		bad := reg
+		bad.ServiceName, bad.Routes = "yc-other", []httpkit.RegisteredRoute{{Prefix: "/internal/routes"}}
+		assert.Equal(t, http.StatusBadRequest, post(t, internal, "/internal/register", bad), "gateway's own path")
+
+		client := httpkit.NewInternalClient("yc-cart", httpkit.InternalConfig{GatewayURL: internal.URL, ClientSecret: "secret"})
+		callCtx := authctx.WithAuth(ctx, authctx.AuthContext{
+			TenantID: "shop-a", ActorID: "u1", ActorType: authctx.ActorCustomer, Token: "tok-shop-a",
+		})
+		var got map[string]string
+		require.NoError(t, client.Do(callCtx, http.MethodPost, "/internal/evaluate", map[string]int{"x": 1}, &got))
+		assert.Equal(t, map[string]string{
+			"path": "/internal/evaluate", "tenant": "shop-a", "actor": "u1", "actor_type": "customer",
+			"caller": "yc-cart", "auth": "",
+		}, got)
+
+		assert.Equal(t, http.StatusNotFound, get(t, srv, "shop-a.test", "/internal/evaluate", nil).StatusCode,
+			"internal routes are not public")
+		assert.Equal(t, http.StatusUnauthorized, post(t, internal, "/internal/evaluate", map[string]int{"x": 1}),
+			"no service token")
+
+		wrong := httpkit.NewInternalClient("yc-cart", httpkit.InternalConfig{GatewayURL: internal.URL, ClientSecret: "nope"})
+		err := wrong.Do(callCtx, http.MethodPost, "/internal/evaluate", nil, nil)
+		assert.Equal(t, http.StatusUnauthorized, httpkit.UpstreamStatus(err))
 	})
 
 	t.Run("health and readiness need no tenant", func(t *testing.T) {

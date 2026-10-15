@@ -19,14 +19,27 @@ paths:
     get:
       summary: Browse active products
       description: |
-        Products with at least one active SKU, newest first. q is a web-style
-        full-text query over product name, description, SKU code and variant
-        values; category includes its subcategories.
+        Products with at least one active SKU. q is a web-style full-text
+        query over product name, description, SKU code and variant values;
+        category includes its subcategories.
+
+        The view depends on the caller (role-contextualised search): visitors
+        and customers get popular products first, shop admins the newest;
+        customers also get a "My favourites" facet. A cursor is valid only
+        with the sort it was issued for.
       operationId: browseProducts
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - { name: category, in: query, schema: { type: string, format: uuid } }
         - { name: supplier_id, in: query, schema: { type: string, format: uuid } }
+        - name: sort
+          in: query
+          description: |
+            popular (adds to cart, shop-wide), newest, or price_asc and
+            price_desc by the lowest base price of the active SKUs, unpriced
+            products last. Base prices are net or gross per the shop's tax
+            setting (ADR-016).
+          schema: { $ref: '#/components/schemas/Sort' }
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -528,12 +541,31 @@ components:
         variant_values: { $ref: '#/components/schemas/VariantValues' }
     ProductList:
       type: object
-      required: [items, page]
+      required: [items, sort, facets, page]
       properties:
         items:
           type: array
           items: { $ref: '#/components/schemas/ProductSummary' }
+        sort: { $ref: '#/components/schemas/Sort' }
+        facets: { $ref: '#/components/schemas/Facets' }
         page: { $ref: '#/components/schemas/PageInfo' }
+
+    Sort:
+      type: string
+      enum: [popular, newest, price_asc, price_desc]
+
+    Facets:
+      type: object
+      description: Facets beyond the filters; which appear depends on the caller.
+      properties:
+        favourites:
+          type: object
+          description: |
+            Customers only: the products they buy most. Empty until order
+            history arrives (yc-orders).
+          required: [product_count]
+          properties:
+            product_count: { type: integer }
 
     VariantInput:
       type: object

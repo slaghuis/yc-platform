@@ -110,11 +110,12 @@ Hostnames in `platform_hosts` resolve to `_platform` (ADR-020 rule 5). They neve
 
 ### Service-to-Service Calls
 
-When service A needs to call service B:
-- Service A calls back through the gateway using the same `Authorization` header it received
-- Gateway re-validates and forwards to service B
-- This preserves the auth chain and keeps gateway as the single routing authority
-- Alternative (direct service-to-service) is rejected for v1 to maintain consistent auth and observability
+ADR-021. When service A needs to call service B:
+- Service A gets a short-lived service token from `POST /internal/service-token` on the gateway's internal listener (proxied to yc-identity) with its client ID and secret
+- It calls B's `/internal/` route on the internal listener with that token, plus the tenant, actor and correlation headers of the request it is serving (only the tenant for its own work; the actor then becomes the service)
+- The gateway validates the token (actor type `service`), requires `X-YC-Tenant-ID`, removes `Authorization`, sets `X-YC-Caller-Service` and forwards to the service that registered the route
+- `httpkit.InternalClient` does all of this; the caller's own access token is never forwarded
+- Direct service-to-service calls are rejected for v1 to keep auth and observability consistent
 
 ## API
 
@@ -137,6 +138,8 @@ Served only on the internal listener (`:8091`); the public listener never routes
 | POST | `/internal/register` | Register a service and its routes | network placement (service token in Phase 4) |
 | POST | `/internal/deregister` | Deregister a service instance | network placement (service token in Phase 4) |
 | GET | `/internal/routes` | List static and registered routes | network placement |
+| POST | `/internal/service-token` | Proxied to yc-identity: client credentials → service token (ADR-021) | client secret |
+| any | `/internal/*` (other) | Proxied to the service that registered the prefix (ADR-021) | service token |
 
 ## Database
 
@@ -183,6 +186,14 @@ CREATE TABLE processed_events ( ... );
 - Stricter default limits for visitor tokens (DoS protection)
 - Enforcement via in-memory token bucket (per gateway instance); for multi-instance gateways, replace with Redis-backed limiter — deferred to future scope but noted
 
+Implemented in Phase 3 on the public listener (`service.RateLimiter`, `golang.org/x/time/rate`):
+
+- A request must fit its actor's bucket and then its tenant's; a denial cancels both reservations, so a throttled actor does not use up the tenant's quota.
+- Requests without credentials are limited by client address *before* a visitor is issued, so floods cannot mint visitors. Platform-host (`_platform`) requests are limited by address. Everything else is limited by actor ID after the token is validated; visitors use the `visitor` quota.
+- Over quota: `429` with `RATE_LIMITED` and `Retry-After` in whole seconds.
+- Buckets idle for `idle_ttl` are swept. The internal listener is not limited.
+- Defaults: tenant 200/s burst 400, actor 600/min burst 60, visitor 120/min burst 30; `tenant_overrides` per tenant. `YC_GATEWAY_RATE_LIMIT=false` turns limiting off.
+
 ## Observability
 
 - OpenTelemetry middleware wraps every request
@@ -227,11 +238,24 @@ identity_timeout: 3s
 visitor_cookie:
   name: yc_visitor
   secure: ${YC_GATEWAY_COOKIE_SECURE:-true}   # false only for plain-HTTP local dev
+rate_limit:
+  enabled: ${YC_GATEWAY_RATE_LIMIT:-true}
+  tenant:  { requests: 200, per: 1s, burst: 400 }
+  actor:   { requests: 600, per: 1m, burst: 60 }
+  visitor: { requests: 120, per: 1m, burst: 30 }
+  tenant_overrides: {}          # tenant ID → quota
+  idle_ttl: 10m
 nats:
   url: ${NATS_URL}
 ```
 
-Tenant resolution is by hostname only. Rate limits are not yet implemented (see Rate Limiting).
+Tenant resolution is by hostname only.
+
+### Phase 3 Implementation Notes
+
+- **Internal routing (ADR-021).** Registered prefixes under `/internal/` go to a separate table that only the internal listener consults; they must name a service, carry no roles and not overlap the gateway's own internal paths. The public listener rejects service tokens with 401.
+- **Login routing.** Static identity routes now include `/refresh`, `/password` (both anonymous) and `/logout`, `/oauth` alongside `/login`, `/register` and `/visitor`. OAuth starts and callbacks carry the visitor cookie, so yc-identity can name the visitor as the cart merge source.
+- **Rate limiting** as described under Rate Limiting.
 
 ## Dependencies on Other Services
 

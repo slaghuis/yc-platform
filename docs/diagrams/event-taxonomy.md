@@ -29,7 +29,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
 | `identity.visitor.created.v1` | yc-identity | yc-analytics | Visitor token issued |
-| `identity.user.registered.v1` | yc-identity | yc-cart, yc-message, yc-orders, yc-preference | New customer registration |
+| `identity.user.registered.v1` | yc-identity | yc-message, yc-orders, yc-preference | New customer registration |
 | `identity.user.promoted.v1` | yc-identity | yc-audit | Role changed upward |
 | `identity.user.demoted.v1` | yc-identity | yc-audit | Role changed downward |
 | `identity.user.logged_in.v1` | yc-identity | yc-cart | Successful login |
@@ -50,7 +50,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `product.supplier.deleted.v1` | yc-product | — | Supplier deleted |
 | `product.created.v1` | yc-product | yc-analytics | Product created |
 | `product.updated.v1` | yc-product | yc-analytics | Product updated |
-| `product.deleted.v1` | yc-product | yc-image, yc-pricing, yc-review | Product soft-deleted |
+| `product.deleted.v1` | yc-product | yc-cart, yc-image, yc-pricing, yc-review | Product soft-deleted |
 | `product.sku.created.v1` | yc-product | yc-analytics, yc-inventory, yc-pricing | SKU created (carries `inventory.tracked`, `tax_class`) |
 | `product.sku.updated.v1` | yc-product | yc-analytics, yc-cart, yc-inventory, yc-pricing | SKU updated |
 | `product.sku.deleted.v1` | yc-product | yc-cart, yc-image, yc-inventory, yc-pricing | SKU soft-deleted |
@@ -67,7 +67,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
 | `pricing.base_price.set.v1` | yc-pricing | yc-cart, yc-product | Base price created or changed |
-| `pricing.base_price.removed.v1` | yc-pricing | — | Base price removed |
+| `pricing.base_price.removed.v1` | yc-pricing | yc-product | Base price removed |
 | `pricing.tax_class.created.v1` | yc-pricing | — | New tax class defined |
 | `pricing.tax_class.updated.v1` | yc-pricing | — | Tax class rules changed |
 | `pricing.tax_class.deleted.v1` | yc-pricing | — | Tax class removed |
@@ -102,7 +102,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | Event Type | Producer | Consumers | Trigger |
 |---|---|---|---|
 | `cart.created.v1` | yc-cart | yc-analytics | New cart (first add) |
-| `cart.item.added.v1` | yc-cart | yc-analytics | Item added |
+| `cart.item.added.v1` | yc-cart | yc-analytics, yc-product | Item added |
 | `cart.item.removed.v1` | yc-cart | — | Item removed |
 | `cart.item.quantity_changed.v1` | yc-cart | — | Quantity updated |
 | `cart.item.moved.v1` | yc-cart | — | Item moved between carts |

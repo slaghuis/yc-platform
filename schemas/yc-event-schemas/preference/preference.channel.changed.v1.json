@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.channel.changed.v1.json",
+  "title": "preference.channel.changed.v1",
+  "description": "A user's primary messaging channel changed.",
+  "type": "object",
+  "required": ["user_id", "primary_channel", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "primary_channel": {
+      "type": "string",
+      "enum": ["email", "sms", "whatsapp", "telegram"]
+    },
+    "previous_primary_channel": {
+      "type": "string",
+      "enum": ["email", "sms", "whatsapp", "telegram"]
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

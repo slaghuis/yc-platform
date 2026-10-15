@@ -1,11 +1,23 @@
 service: yc-preference
+environment: ${YC_ENVIRONMENT:-dev}
 http:
   listen: ":8080"
 log:
-  level: info
+  level: ${LOG_LEVEL:-info}
 database:
   url: ${YC_PREFERENCE_DB_URL}
+  migrate_on_start: true
 nats:
   url: ${NATS_URL}
 telemetry:
   otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_PREFERENCE_ADVERTISE_URL:-http://yc-preference:8080}
+  interval: 30s
+# For shops without defaults of their own. A provisioned shop's default
+# display currency is its store currency.
+defaults:
+  display_currency: ZAR
+  locale: en-ZA

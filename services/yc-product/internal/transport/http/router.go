@@ -36,7 +36,7 @@ type Catalog interface {
 	DetachImage(ctx context.Context, productID, imageID string) error
 	GetProduct(ctx context.Context, id string) (domain.Product, error)
 	GetSKU(ctx context.Context, id string) (domain.SKU, error)
-	Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) ([]domain.ProductSummary, *repository.Cursor, error)
+	Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) (domain.Browse, *repository.Cursor, error)
 
 	CreateCategory(ctx context.Context, in domain.CategoryInput) (domain.Category, error)
 	UpdateCategory(ctx context.Context, id string, in domain.CategoryInput) (domain.Category, error)
@@ -243,13 +243,23 @@ func (h handlers) BrowseProducts(ctx context.Context, req api.BrowseProductsRequ
 	if p.SupplierID != nil {
 		f.SupplierID = p.SupplierID.String()
 	}
-	items, next, err := h.svc.Browse(ctx, f, after, page.Size)
+	if p.Sort != nil {
+		f.Sort = domain.Sort(*p.Sort)
+	}
+	res, next, err := h.svc.Browse(ctx, f, after, page.Size)
 	if err != nil {
 		return nil, err
 	}
-	out := api.BrowseProducts200JSONResponse{Items: make([]api.ProductSummary, len(items)), Page: pageInfo(page, next)}
-	for i, it := range items {
+	out := api.BrowseProducts200JSONResponse{
+		Items: make([]api.ProductSummary, len(res.Items)), Sort: api.Sort(res.Sort), Page: pageInfo(page, next),
+	}
+	for i, it := range res.Items {
 		out.Items[i] = summary(it)
+	}
+	if fav := res.Favourites; fav != nil {
+		out.Facets.Favourites = &struct {
+			ProductCount int `json:"product_count"`
+		}{ProductCount: fav.ProductCount}
 	}
 	return out, nil
 }

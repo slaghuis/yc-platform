@@ -1,17 +1,19 @@
 openapi: 3.1.0
 info:
   title: yc-identity
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Authentication and user identity (docs/services/yc-identity.md).
-    Phase 2 subset: visitor tokens, email + password registration and login,
-    the caller's own user, user administration and token validation.
+    Phase 3 subset: visitor tokens, email + password registration and login,
+    Google and Facebook sign-in, refresh tokens, logout, password reset, the
+    caller's own user, user administration, token validation and service
+    tokens.
 
     Public routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
     (api-conventions.md §9). /admin/ requires shop_admin or system_admin;
-    /internal/ routes are reachable only inside the platform network.
-    Errors are application/problem+json (error-handling.md).
+    /internal/ routes are reached through yc-gateway's internal listener
+    (ADR-021). Errors are application/problem+json (error-handling.md).
 
 paths:
   /visitor:
@@ -69,6 +71,135 @@ paths:
               schema: { $ref: '#/components/schemas/Session' }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
+
+  /refresh:
+    post:
+      summary: Exchange a refresh token for a new session
+      description: |
+        Rotates the refresh token: the one presented stops working and the
+        response carries its replacement. Presenting a refresh token that was
+        already replaced or revoked revokes every token of that login.
+      operationId: refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: A new session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /logout:
+    post:
+      summary: Log out
+      description: |
+        Revokes the caller's access token and, when given, the refresh token
+        and every token rotated from the same login. yc-gateway may accept the
+        access token for up to its validation cache TTL afterwards.
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogoutRequest' }
+      responses:
+        '204':
+          description: Logged out.
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /password/reset-request:
+    post:
+      summary: Start a password reset
+      description: |
+        Always 202, whether or not the email is registered. For an active user
+        it stores a single-use reset token and publishes
+        identity.user.password_reset_requested.v1, which carries no token.
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+      responses:
+        '202':
+          description: Accepted.
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /password/reset-confirm:
+    post:
+      summary: Set a new password with a reset token
+      description: |
+        Revokes every refresh token of the user and publishes
+        identity.user.password_changed.v1.
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetConfirm' }
+      responses:
+        '204':
+          description: Password changed.
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /oauth/{provider}/start:
+    post:
+      summary: Start signing in with an OAuth provider
+      description: |
+        Returns the provider's authorisation URL (authorisation code flow with
+        PKCE). The client sends the browser there; the provider redirects back
+        to the shop's callback page with code and state, which the client
+        posts to /oauth/{provider}/callback. The calling visitor is
+        remembered as the cart merge source.
+      operationId: startOAuth
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OAuthStartRequest' }
+      responses:
+        '200':
+          description: Where to send the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthStart' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /oauth/{provider}/callback:
+    post:
+      summary: Complete signing in with an OAuth provider
+      description: |
+        Exchanges the code. A provider account already linked logs its user
+        in. Otherwise a user with the same email is linked only when the
+        provider reports the email verified (409 if not); with no such user,
+        the visitor that started the flow becomes a customer in place, or a
+        new customer is created. Publishes identity.user.registered.v1,
+        identity.oauth_linked.v1 and identity.user.logged_in.v1 as
+        applicable.
+      operationId: completeOAuth
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OAuthCallback' }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
 
   /me:
     get:
@@ -159,15 +290,50 @@ paths:
                 token: { type: string }
       responses:
         '200':
-          description: The token is valid, its user is active and still has the token's role.
+          description: |
+            The token is valid: a user token whose user is active, still has
+            the token's role and has not logged it out, or a service token
+            whose client is still configured.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TokenIdentity' }
         '400': { $ref: '#/components/responses/Problem' }
         '401': { $ref: '#/components/responses/Problem' }
 
+  /internal/service-token:
+    post:
+      summary: Issue a service token (ADR-021)
+      description: |
+        Client credentials from yc-identity's service_clients config. Reached
+        through yc-gateway's internal listener without a token.
+      operationId: issueServiceToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, client_secret]
+              additionalProperties: false
+              properties:
+                client_id: { type: string }
+                client_secret: { type: string }
+      responses:
+        '200':
+          description: A service token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceToken' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema: { type: string, enum: [google, facebook] }
     UserID:
       name: id
       in: path
@@ -199,6 +365,60 @@ components:
         user_id: { type: string, format: uuid }
         tenant_id: { type: string }
         role: { $ref: '#/components/schemas/Role' }
+        refresh_token:
+          type: string
+          description: Opaque, single use; absent for visitors.
+        refresh_expires_at: { type: string, format: date-time }
+    ServiceToken:
+      type: object
+      required: [access_token, token_type, expires_at]
+      properties:
+        access_token: { type: string, description: RS256 JWT with actor_type service }
+        token_type: { type: string, const: Bearer }
+        expires_at: { type: string, format: date-time }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      additionalProperties: false
+      properties:
+        refresh_token: { type: string }
+    LogoutRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        refresh_token: { type: string }
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: string }
+    PasswordResetConfirm:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: { type: string }
+        password: { type: string, minLength: 10, maxLength: 128 }
+    OAuthStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        login_hint:
+          type: string
+          description: Email to suggest to the provider.
+    OAuthStart:
+      type: object
+      required: [authorization_url]
+      properties:
+        authorization_url: { type: string }
+    OAuthCallback:
+      type: object
+      required: [code, state]
+      additionalProperties: false
+      properties:
+        code: { type: string }
+        state: { type: string }
     RegisterRequest:
       type: object
       required: [email, password]
@@ -225,7 +445,7 @@ components:
       required: [tenant_id, actor_id, actor_type, jti, expires_at]
       properties:
         tenant_id: { type: string }
-        actor_id: { type: string, format: uuid }
+        actor_id: { type: string, description: User ID, or the service name for service tokens }
         actor_type: { $ref: '#/components/schemas/ActorType' }
         jti: { type: string, format: uuid }
         expires_at: { type: string, format: date-time }

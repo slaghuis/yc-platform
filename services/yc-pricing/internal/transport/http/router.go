@@ -59,6 +59,7 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/admin/prices", Roles: admin},
 		{Prefix: "/admin/pricing-config", Roles: admin},
 		{Prefix: "/admin/tax-classes", Roles: admin},
+		{Prefix: "/internal/prices", Methods: []string{http.MethodPost}},
 	}
 }
 
@@ -69,19 +70,37 @@ type handlers struct {
 var _ api.StrictServerInterface = handlers{}
 
 func (h handlers) EvaluatePrices(ctx context.Context, req api.EvaluatePricesRequestObject) (api.EvaluatePricesResponseObject, error) {
-	r := domain.Request{
-		Lines:           make([]domain.LineRequest, len(req.Body.Lines)),
-		Jurisdiction:    deref(req.Body.Jurisdiction),
-		DisplayCurrency: cmp.Or(deref(req.Body.DisplayCurrency), deref(req.Params.DisplayCurrency), deref(req.Params.XYCDisplayCurrency)),
+	res, err := h.evaluate(ctx, *req.Body, deref(req.Params.DisplayCurrency), deref(req.Params.XYCDisplayCurrency))
+	if err != nil {
+		return nil, err
 	}
-	for i, l := range req.Body.Lines {
+	return api.EvaluatePrices200JSONResponse(res), nil
+}
+
+func (h handlers) EvaluatePricesInternal(ctx context.Context, req api.EvaluatePricesInternalRequestObject) (api.EvaluatePricesInternalResponseObject, error) {
+	res, err := h.evaluate(ctx, *req.Body, deref(req.Params.XYCDisplayCurrency))
+	if err != nil {
+		return nil, err
+	}
+	return api.EvaluatePricesInternal200JSONResponse(res), nil
+}
+
+// evaluate prices body; the display currency is the body's, else the first
+// non-empty fallback.
+func (h handlers) evaluate(ctx context.Context, body api.EvaluateRequest, fallbacks ...string) (api.PricingResult, error) {
+	r := domain.Request{
+		Lines:           make([]domain.LineRequest, len(body.Lines)),
+		Jurisdiction:    deref(body.Jurisdiction),
+		DisplayCurrency: cmp.Or(append([]string{deref(body.DisplayCurrency)}, fallbacks...)...),
+	}
+	for i, l := range body.Lines {
 		r.Lines[i] = domain.LineRequest{SKUID: l.SkuID.String(), Quantity: l.Quantity}
 	}
 	res, err := h.svc.Evaluate(ctx, r)
 	if err != nil {
-		return nil, err
+		return api.PricingResult{}, err
 	}
-	return api.EvaluatePrices200JSONResponse(result(res)), nil
+	return result(res), nil
 }
 
 func (h handlers) GetSKUPrice(ctx context.Context, req api.GetSKUPriceRequestObject) (api.GetSKUPriceResponseObject, error) {

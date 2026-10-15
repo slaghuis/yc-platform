@@ -10,12 +10,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
+	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	testkit "github.com/slaghuis/yc-platform/libs/yc-testkit"
@@ -70,7 +74,8 @@ func TestProduct(t *testing.T) {
 
 	dbURL := testkit.Postgres(t)
 	t.Setenv("YC_PRODUCT_DB_URL", dbURL)
-	t.Setenv("NATS_URL", testkit.NATS(t))
+	natsURL := testkit.NATS(t)
+	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
@@ -278,6 +283,103 @@ func TestProduct(t *testing.T) {
 		var sku api.SKU
 		require.Equal(t, http.StatusOK, visitor.do("GET", "/skus/"+red.SkuID.String(), nil, &sku))
 		assert.Equal(t, "TS-RED", sku.SkuCode)
+	})
+
+	t.Run("search ranks by cart adds and base prices per role", func(t *testing.T) {
+		validator, err := events.NewValidator()
+		require.NoError(t, err)
+		upstream, err := eventbus.NewClient(ctx, eventbus.Config{
+			NATSURL: natsURL, ServiceName: "yc-upstream", Validator: validator,
+			Streams: []eventbus.StreamConfig{eventbus.CartStream(), eventbus.PricingStream()},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = upstream.Close(context.Background()) })
+		publish := func(eventType string, payload any) {
+			t.Helper()
+			require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+				EventType: eventType, TenantID: "shop-a",
+				Actor: eventbus.Actor{Type: "service", ID: "yc-upstream"}, Payload: payload,
+			}))
+		}
+		names := func(c client, query string) (api.ProductList, []string) {
+			t.Helper()
+			var list api.ProductList
+			require.Equal(t, http.StatusOK, c.do("GET", "/products"+query, nil, &list))
+			out := make([]string, len(list.Items))
+			for i, it := range list.Items {
+				out[i] = it.Name
+			}
+			return list, out
+		}
+
+		list, byNewest := names(admin, "")
+		assert.Equal(t, api.Sort("newest"), list.Sort, "shop admins see the newest first")
+		require.Equal(t, []string{"Cap", "Mug", "Acme Organic T-Shirt"}, byNewest)
+		sku := map[string]string{}
+		for _, it := range list.Items {
+			sku[it.Name] = it.Skus[0].SkuID.String()
+		}
+
+		added := func(name string) {
+			publish(events.TypeCartItemAddedV1, events.CartItemAddedV1{
+				CartID: uuid.NewString(), UserID: uuid.NewString(), CartType: "shopping", SKUID: sku[name],
+				QuantityAdded: 5, Quantity: 5, UnitPrice: events.Money{AmountMinor: 100, Currency: "ZAR"},
+				AddedAt: time.Now().UTC(),
+			})
+		}
+		added("Mug")
+		added("Mug")
+		added("Acme Organic T-Shirt")
+		require.Eventually(t, func() bool {
+			_, got := names(visitor, "")
+			return assert.ObjectsAreEqual([]string{"Mug", "Acme Organic T-Shirt", "Cap"}, got)
+		}, 10*time.Second, 50*time.Millisecond, "visitors see popular products first")
+		list, _ = names(visitor, "")
+		assert.Equal(t, api.Sort("popular"), list.Sort)
+		assert.Nil(t, list.Facets.Favourites)
+		list, _ = names(as(t, srv, "shop-a", "customer"), "")
+		require.NotNil(t, list.Facets.Favourites, "customers get the favourites facet")
+		assert.Equal(t, 0, list.Facets.Favourites.ProductCount)
+
+		var page1, page2 api.ProductList
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?page_size=2", nil, &page1))
+		require.NotEmpty(t, page1.Page.NextCursor)
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?page_size=2&cursor="+page1.Page.NextCursor, nil, &page2))
+		require.Len(t, page2.Items, 1)
+		assert.Equal(t, "Cap", page2.Items[0].Name)
+		assert.Equal(t, http.StatusBadRequest,
+			visitor.do("GET", "/products?sort=newest&cursor="+page1.Page.NextCursor, nil, nil), "cursor of another sort")
+		assert.Equal(t, http.StatusBadRequest, visitor.do("GET", "/products?sort=cheapest", nil, nil))
+
+		price := func(name string, minor int64, at time.Time) {
+			publish(events.TypePricingBasePriceSetV1, events.PricingBasePriceSetV1{
+				SKUID: sku[name], Price: events.Money{AmountMinor: minor, Currency: "ZAR"}, ValidFrom: at.UTC(),
+			})
+		}
+		now := time.Now()
+		price("Acme Organic T-Shirt", 15000, now)
+		price("Cap", 5000, now)
+		price("Mug", 9000, now)
+		publish(events.TypePricingBasePriceRemovedV1, events.PricingBasePriceRemovedV1{
+			SKUID: sku["Mug"], RemovedAt: now.Add(time.Second).UTC(),
+		})
+		require.Eventually(t, func() bool {
+			_, got := names(visitor, "?sort=price_asc")
+			return assert.ObjectsAreEqual([]string{"Cap", "Acme Organic T-Shirt", "Mug"}, got)
+		}, 10*time.Second, 50*time.Millisecond, "unpriced products come last")
+		_, got := names(visitor, "?sort=price_desc")
+		assert.Equal(t, []string{"Acme Organic T-Shirt", "Cap", "Mug"}, got)
+
+		price("Cap", 99999, now.Add(-time.Hour))
+		price("Mug", 1, now.Add(-time.Hour))
+		time.Sleep(500 * time.Millisecond)
+		_, got = names(visitor, "?sort=price_asc")
+		assert.Equal(t, []string{"Cap", "Acme Organic T-Shirt", "Mug"}, got, "older price events are ignored")
+
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products?sort=price_asc&page_size=1", nil, &page1))
+		require.Equal(t, http.StatusOK,
+			visitor.do("GET", "/products?sort=price_asc&page_size=1&cursor="+page1.Page.NextCursor, nil, &page2))
+		assert.Equal(t, "Acme Organic T-Shirt", page2.Items[0].Name)
 	})
 
 	t.Run("roles are enforced", func(t *testing.T) {

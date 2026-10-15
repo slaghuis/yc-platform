@@ -61,8 +61,10 @@ func TestStripHeaders(t *testing.T) {
 	t.Parallel()
 	h := http.Header{}
 	authctx.SetHeaders(h, authctx.AuthContext{TenantID: "x", ActorID: "y", ActorType: authctx.ActorSystemAdmin, CorrelationID: "c"})
+	h.Set(authctx.HeaderCallerService, "yc-cart")
 	authctx.StripHeaders(h)
 	assert.Empty(t, h.Get(authctx.HeaderTenantID))
+	assert.Empty(t, h.Get(authctx.HeaderCallerService))
 	assert.Empty(t, h.Get(authctx.HeaderActorType))
 	assert.Equal(t, "c", h.Get(authctx.HeaderCorrelationID), "correlation ID is not an identity header")
 }
@@ -135,6 +137,8 @@ func TestAudience(t *testing.T) {
 		{"sysadmin shop_admin", "/sysadmin/suppliers", "shop_admin", http.StatusForbidden},
 		{"sysadmin system_admin", "/sysadmin/suppliers", "system_admin", http.StatusNoContent},
 		{"prefix lookalike", "/administrators", "visitor", http.StatusNoContent},
+		{"internal without caller", "/internal/evaluate", "system_admin", http.StatusUnauthorized},
+		{"internal with caller", "/internal/evaluate", "customer", http.StatusNoContent},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,6 +147,9 @@ func TestAudience(t *testing.T) {
 				req.Header.Set(authctx.HeaderActorID, "a1")
 				req.Header.Set(authctx.HeaderActorType, tt.actorType)
 				req.Header.Set(authctx.HeaderTenantID, "_platform")
+			}
+			if tt.name == "internal with caller" {
+				req.Header.Set(authctx.HeaderCallerService, "yc-cart")
 			}
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)

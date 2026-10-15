@@ -20,6 +20,10 @@ const (
 	RoleCustomer    Role = "customer"
 	RoleShopAdmin   Role = "shop_admin"
 	RoleSystemAdmin Role = "system_admin"
+
+	// RoleService is carried only by service tokens (ADR-021); no user
+	// has it, and Valid reports false for it.
+	RoleService Role = "service"
 )
 
 // ActorType is the actor type for tokens and events.
@@ -44,6 +48,8 @@ func (r Role) rank() int {
 		return 3
 	case RoleSystemAdmin:
 		return 4
+	case RoleService:
+		return 0
 	default:
 		return 0
 	}
@@ -72,7 +78,8 @@ type User struct {
 	CreatedAt    time.Time
 }
 
-// Session is an issued access token and the identity it carries.
+// Session is an issued access token and the identity it carries, with a
+// refresh token for users who are not visitors.
 type Session struct {
 	Token     string
 	TokenID   string // jti
@@ -80,6 +87,18 @@ type Session struct {
 	TenantID  string
 	Role      Role
 	ExpiresAt time.Time
+
+	RefreshToken     string // "" for visitors and service tokens
+	RefreshExpiresAt time.Time
+}
+
+// OAuthProfile is what a provider returned about the account that signed
+// in.
+type OAuthProfile struct {
+	Subject       string
+	Email         string // normalised; "" if the provider gave none
+	EmailVerified bool
+	Name          string
 }
 
 // Password length limits. The upper bound keeps hashing cost bounded.
@@ -103,17 +122,37 @@ func NewRegistration(email, password, displayName string) (Registration, error) 
 	if !ok {
 		v.Field("email", "invalid", "Email is not valid")
 	}
-	if n := utf8.RuneCountInString(password); n < MinPasswordLen || n > MaxPasswordLen {
+	if !validPasswordLen(password) {
 		v.Field("password", "invalid_length", "Password must be 10 to 128 characters")
 	}
-	displayName = strings.TrimSpace(displayName)
-	if utf8.RuneCountInString(displayName) > 100 {
+	displayName, ok = NormaliseDisplayName(displayName)
+	if !ok {
 		v.Field("display_name", "too_long", "Display name must be at most 100 characters")
 	}
 	if v.HasErrors() {
 		return Registration{}, v.Build()
 	}
 	return Registration{Email: norm, Password: password, DisplayName: displayName}, nil
+}
+
+// ValidatePassword checks a new password's length.
+func ValidatePassword(password string) error {
+	if !validPasswordLen(password) {
+		return ycerrors.Validation().Field("password", "invalid_length", "Password must be 10 to 128 characters").Build()
+	}
+	return nil
+}
+
+func validPasswordLen(password string) bool {
+	n := utf8.RuneCountInString(password)
+	return n >= MinPasswordLen && n <= MaxPasswordLen
+}
+
+// NormaliseDisplayName trims a display name and reports whether it is at
+// most 100 characters.
+func NormaliseDisplayName(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	return name, utf8.RuneCountInString(name) <= 100
 }
 
 // NormaliseEmail trims and lowercases a bare address ("a@b.c", no display

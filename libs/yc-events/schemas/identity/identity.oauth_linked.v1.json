@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.oauth_linked.v1.json",
+  "title": "identity.oauth_linked.v1",
+  "description": "An OAuth provider account was linked to a user: on first sign-in with the provider, or to an existing account with the same verified email.",
+  "type": "object",
+  "required": ["user_id", "provider", "linked_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["google", "facebook"]
+    },
+    "linked_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

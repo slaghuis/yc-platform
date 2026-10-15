@@ -19,23 +19,24 @@ import (
 
 // Config is the service configuration (config/config.default.yaml).
 type Config struct {
-	Service            string                 `koanf:"service"`
-	Environment        string                 `koanf:"environment"`
-	HTTP               httpkit.ServerConfig   `koanf:"http"`
-	InternalHTTP       httpkit.ServerConfig   `koanf:"internal_http"`
-	Log                LogConfig              `koanf:"log"`
-	Database           dbkit.Config           `koanf:"database"`
-	NATS               NATSConfig             `koanf:"nats"`
-	Telemetry          TelemetryConfig        `koanf:"telemetry"`
-	Upstreams          map[string]string      `koanf:"upstreams"`
-	Routes             []RouteConfig          `koanf:"routes"`
-	Registry           service.RegistryConfig `koanf:"registry"`
-	PlatformHosts      []string               `koanf:"platform_hosts"`
-	TenantHosts        []TenantHostConfig     `koanf:"tenant_hosts"`
-	TenantHostsRefresh time.Duration          `koanf:"tenant_hosts_refresh"`
-	TokenCacheTTL      time.Duration          `koanf:"token_cache_ttl"`
-	IdentityTimeout    time.Duration          `koanf:"identity_timeout"`
-	VisitorCookie      transport.CookieConfig `koanf:"visitor_cookie"`
+	Service            string                  `koanf:"service"`
+	Environment        string                  `koanf:"environment"`
+	HTTP               httpkit.ServerConfig    `koanf:"http"`
+	InternalHTTP       httpkit.ServerConfig    `koanf:"internal_http"`
+	Log                LogConfig               `koanf:"log"`
+	Database           dbkit.Config            `koanf:"database"`
+	NATS               NATSConfig              `koanf:"nats"`
+	Telemetry          TelemetryConfig         `koanf:"telemetry"`
+	Upstreams          map[string]string       `koanf:"upstreams"`
+	Routes             []RouteConfig           `koanf:"routes"`
+	Registry           service.RegistryConfig  `koanf:"registry"`
+	PlatformHosts      []string                `koanf:"platform_hosts"`
+	TenantHosts        []TenantHostConfig      `koanf:"tenant_hosts"`
+	TenantHostsRefresh time.Duration           `koanf:"tenant_hosts_refresh"`
+	TokenCacheTTL      time.Duration           `koanf:"token_cache_ttl"`
+	IdentityTimeout    time.Duration           `koanf:"identity_timeout"`
+	VisitorCookie      transport.CookieConfig  `koanf:"visitor_cookie"`
+	RateLimit          service.RateLimitConfig `koanf:"rate_limit"`
 }
 
 // LogConfig is the `log:` block.
@@ -111,6 +112,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Registry.HealthInterval <= 0 || c.Registry.HealthTimeout <= 0 || c.Registry.FailureThreshold < 1 {
 		errs = append(errs, errors.New("registry.health_interval, health_timeout and failure_threshold must be positive"))
+	}
+	if c.RateLimit.Enabled {
+		errs = append(errs, c.RateLimit.Validate())
 	}
 	if routes, err := c.routes(); err != nil {
 		errs = append(errs, err)

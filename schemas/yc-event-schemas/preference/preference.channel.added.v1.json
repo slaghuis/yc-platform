@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.channel.added.v1.json",
+  "title": "preference.channel.added.v1",
+  "description": "A user added a messaging channel, or replaced its address. The channel is unverified; yc-message sends the verification message.",
+  "type": "object",
+  "required": ["user_id", "channel", "address", "added_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["email", "sms", "whatsapp", "telegram"]
+    },
+    "address": {
+      "type": "string",
+      "description": "Email address, E.164 number or handle. PII (event-conventions §18)."
+    },
+    "added_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

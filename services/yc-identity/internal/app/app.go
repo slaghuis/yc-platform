@@ -13,6 +13,7 @@ import (
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
+	"github.com/slaghuis/yc-platform/services/yc-identity/internal/oauth"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/password"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/service"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/token"
@@ -107,9 +108,24 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		return nil, err
 	}
 
+	providers := map[string]service.OAuthProvider{}
+	for name, pc := range cfg.OAuth.Providers() {
+		p, err := oauth.New(name, pc, cfg.OAuth.Timeout)
+		if err != nil {
+			return nil, err
+		}
+		providers[name] = service.OAuthProvider{Provider: p, RedirectURL: pc.RedirectURL}
+	}
 	svc := service.New(db, bus, signer, hasher, service.Config{
 		AccessTokenTTL:  cfg.JWT.AccessTokenTTL,
 		VisitorTokenTTL: cfg.JWT.VisitorTokenTTL,
+		RefreshTokenTTL: cfg.JWT.RefreshTokenTTL,
+		ServiceTokenTTL: cfg.JWT.ServiceTokenTTL,
+		ResetTokenTTL:   cfg.Password.ResetTTL,
+		OAuthStateTTL:   cfg.OAuth.StateTTL,
+		ServiceClients:  cfg.serviceClients(),
+		OAuth:           providers,
+		LogResetLinks:   cfg.Password.LogResetLinks,
 	})
 	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.item.removed.v1.json",
+  "title": "cart.item.removed.v1",
+  "description": "A line was removed from a cart.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "cart_type", "sku_id", "quantity", "reason", "removed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The quantity the line held."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["customer", "sku_deleted"]
+    },
+    "removed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

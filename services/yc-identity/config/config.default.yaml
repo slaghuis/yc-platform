@@ -16,6 +16,8 @@ jwt:
   private_key_file: ${YC_IDENTITY_JWT_PRIVATE_KEY_FILE}
   access_token_ttl: 15m
   visitor_token_ttl: 24h
+  refresh_token_ttl: 720h
+  service_token_ttl: 15m
 # Argon2id cost (docs/services/yc-identity.md, Password Storage). Existing
 # hashes keep verifying with the parameters they were made with.
 password:
@@ -23,3 +25,31 @@ password:
     time: 2
     memory_kb: 65536
     threads: 2
+  reset_ttl: 1h
+  # Logs reset tokens until yc-message delivers reset links (Phase 7).
+  # Refused in production.
+  log_reset_links: ${YC_IDENTITY_LOG_RESET_LINKS:-false}
+
+# Service clients for internal calls (ADR-021): name → secret of at least
+# 32 characters. A client with no secret is disabled.
+service_clients:
+  yc-cart: ${YC_CART_SERVICE_SECRET}
+
+# OAuth providers. A provider is enabled by a client ID and secret, or by
+# fake (development only: signs in whatever email the client passes as
+# login_hint). "{host}" in redirect_url is the shop host the request came
+# in on; register each shop's callback URL with the provider. Override with
+# YC_IDENTITY__OAUTH__GOOGLE__REDIRECT_URL and so on.
+oauth:
+  state_ttl: 10m
+  timeout: 10s
+  google:
+    client_id: ${YC_IDENTITY_GOOGLE_CLIENT_ID}
+    client_secret: ${YC_IDENTITY_GOOGLE_CLIENT_SECRET}
+    redirect_url: "https://{host}/auth/callback/google"
+    fake: ${YC_IDENTITY_OAUTH_FAKE:-false}
+  facebook:
+    client_id: ${YC_IDENTITY_FACEBOOK_CLIENT_ID}
+    client_secret: ${YC_IDENTITY_FACEBOOK_CLIENT_SECRET}
+    redirect_url: "https://{host}/auth/callback/facebook"
+    fake: ${YC_IDENTITY_OAUTH_FAKE:-false}

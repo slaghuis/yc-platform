@@ -91,6 +91,15 @@ Future keys can be added additively.
 | GET | `/internal/preferences/{user_id}/channel` | Get resolved messaging channel | service |
 | POST | `/internal/preferences/{user_id}/channels/{channel}/verify` | Mark channel verified (called by yc-message) | service |
 
+### Phase 3 Implementation Notes
+
+The contract is `services/yc-preference/api/openapi.yaml`. Implemented: `GET`/`PATCH /preferences/me`, the channel endpoints and the admin defaults, for customers and shop admins of a shop (system admins on `_platform` have no shop preferences). Internal endpoints, verification, preferred facets, notification settings and the GDPR cascade come later.
+
+- **Model:** display currency, locale (BCP 47), messaging channels (email, sms, whatsapp, telegram) and a primary channel that must be one of the user's channels. Addresses are normalised: emails lowercased, sms and whatsapp in E.164, Telegram as `@handle`. A new or changed address is unverified; the primary channel cannot be removed (409).
+- **Defaults.** A provisioned shop's defaults are its store currency and `defaults.locale` (`platform.tenant.provisioned.v1`); shops without defaults use `defaults` from configuration. `GET /preferences/me` returns the defaults with `stored: false` until the user changes something.
+- **Seeding.** `identity.user.registered.v1` stores the shop defaults for the new customer, with their email as the email channel and primary channel, and publishes `preference.currency.changed.v1` without a previous value so consumers (yc-cart) learn the display currency. Seeding is idempotent.
+- **Events:** `preference.currency.changed.v1`, `preference.locale.changed.v1`, `preference.channel.changed.v1` (primary), `preference.channel.added.v1` and `preference.channel.removed.v1`, each carrying the previous value where there is one. Verification and facet events come with yc-message and search personalisation.
+
 ## Database Schema
 
 Database: **`yc_preference`**

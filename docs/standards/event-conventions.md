@@ -314,7 +314,7 @@ Common reusable payload fragments live in `schemas/yc-event-schemas/common/` and
 - **Minimize PII in payloads.** Prefer IDs; let consumers fetch PII from the owning service when they truly need it.
 - **PII is unavoidable for some events**: `identity.user.registered.v1` must carry an email so yc-message can send a welcome message without calling yc-identity.
 - **PII-bearing events are subject to retention policy** (ADR-004) and GDPR cascade (ADR-005).
-- **Never put secrets in events**: no passwords, no gateway tokens, no API keys. Reset flows carry one-time tokens; those are acceptable in the event (short-lived, single-use).
+- **Never put secrets in events**: no passwords, no gateway tokens, no API keys, and no one-time tokens (password reset, email verification). Events are retained and replayable, so a token in an event outlives its purpose. `identity.user.password_reset_requested.v1` carries the user, email, request ID and expiry but not the token; how yc-message obtains the link is settled when it is built (Phase 7).
 
 ## 19. Testing Events
 

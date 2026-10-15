@@ -144,10 +144,17 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **Variant axes** can be added only before the product has SKUs (409 afterwards): an existing SKU would have no value on the new axis. A SKU names exactly one allowed value on every axis, and no two live SKUs of a product share a combination. `product.variant.removed.v1` is not implemented.
 - **Soft deletes** set `status = 'deleted'`; a deleted SKU releases its `sku_code`. Deleting a product deletes its SKUs and lists them in `product.deleted.v1`.
 - **Browse** (`GET /products`) returns active products with at least one active SKU, newest first, with cursor pagination. `q` is a web-style query over the projection's `tsv` (English stemming on name and description, plain tokens for SKU code and variant values); `category` includes subcategories. Products carry SKU IDs but no prices: clients call yc-pricing's `POST /prices/evaluate`.
-- **`sku_search_projection`** is rewritten in the same transaction as every product, SKU and category change. Its event-fed columns (price, stock, popularity, rating) stay empty until Phase 3.
+- **`sku_search_projection`** is rewritten in the same transaction as every product, SKU and category change. Its event-fed columns (price, stock, popularity, rating) stayed empty in Phase 2; see Phase 3 for price and popularity.
 - **Images** hold yc-image IDs only; clients resolve URLs with yc-image `GET /images/{id}`. SKU images and `image.deleted.v1` handling are deferred.
-- **Internal SKU endpoints** are deferred to Phase 3 (cart); yc-pricing learns each SKU's tax class from `product.sku.*` events (ADR-016).
+- **Internal SKU endpoints** are deferred; yc-pricing learns each SKU's tax class from `product.sku.*` events (ADR-016).
 - The service registers its routes with yc-gateway at startup (`gateway.internal_url`).
+
+### Phase 3 Implementation Notes
+
+- **Event-fed projection.** `cart.item.added.v1` adds 1 to the SKU's `popularity_score` (consumer dedup makes redelivery safe); `order.placed.v1` takes over as the popularity source in Phase 4. `pricing.base_price.set.v1` sets `base_price` (minor units, store currency) and `pricing.base_price.removed.v1` clears it; `base_price_at` records the event's time so an older event never overwrites a newer one. Stock and rating columns stay empty until yc-inventory and yc-review.
+- **Sort.** `GET /products` takes `sort`: `popular` (sum of the product's active SKUs' popularity), `newest`, `price_asc` or `price_desc` (lowest active SKU base price; unpriced products sort last). Ties fall back to newest. Visitors and customers default to `popular`; admins default to `newest`. The cursor carries its sort, so reusing a cursor with another sort is a 400. The response states the `sort` used.
+- **Facets.** Customers get a `facets.favourites` entry with `product_count` 0: the favourites projection is fed by `order.placed.v1` in Phase 4. Other roles get no favourites facet.
+- **Internal SKU endpoints** are still deferred: yc-cart validates SKUs through yc-pricing's internal evaluate (an unknown SKU is reported as `unknown_sku`) and removes lines on `product.sku.deleted.v1` and `product.deleted.v1`.
 
 ## Database Schema
 
@@ -305,6 +312,8 @@ CREATE POLICY tenant_isolation ON products
 | Event | Action |
 |---|---|
 | `pricing.base_price.set.v1` | Update `sku_search_projection.base_price` |
+| `pricing.base_price.removed.v1` | Clear `sku_search_projection.base_price` |
+| `cart.item.added.v1` | Increment `popularity_score` for the SKU (Phase 3 signal until orders exist) |
 | `pricing.promotion.started.v1` | Flag affected SKUs in projection (on sale) |
 | `pricing.promotion.ended.v1` | Unflag |
 | `inventory.stock.received.v1` | `in_stock = true` for affected SKU |

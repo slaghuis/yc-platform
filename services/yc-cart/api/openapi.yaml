@@ -1,0 +1,308 @@
+openapi: 3.1.0
+info:
+  title: yc-cart
+  version: 0.1.0
+  description: |
+    Carts for visitors and customers (docs/services/yc-cart.md). Phase 3
+    subset: one cart per configured type (shopping, wishlist), lines with a
+    price snapshot, change detection on read, moves between carts and the
+    visitor cart merge on login.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). Carts belong to the calling visitor or
+    customer. Prices are gross unit prices in the store currency from
+    yc-pricing; a line's unit_price is the price when it was added and
+    price_changed flags a difference from the current price. The display
+    currency is the display_currency query parameter, then the
+    X-YC-Display-Currency header, then the customer's preference. Amounts
+    are integer minor units. Errors are application/problem+json
+    (error-handling.md).
+
+paths:
+  /carts:
+    get:
+      summary: List my carts
+      description: One summary per configured cart type, whether or not the cart exists yet.
+      operationId: listCarts
+      responses:
+        '200':
+          description: The carts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CartList' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /carts/{cart_type}:
+    parameters:
+      - $ref: '#/components/parameters/CartType'
+    get:
+      summary: Get a cart priced now
+      description: A cart that does not exist yet is returned empty.
+      operationId: getCart
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      responses:
+        '200':
+          description: The cart.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Clear a cart
+      operationId: clearCart
+      responses:
+        '204': { description: Cleared. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /carts/{cart_type}/items:
+    parameters:
+      - $ref: '#/components/parameters/CartType'
+    post:
+      summary: Add an item
+      description: |
+        Adds the quantity to the SKU's line, creating the cart and the line
+        as needed. A new line snapshots the SKU's current price.
+      operationId: addItem
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddItemInput' }
+      responses:
+        '200':
+          description: The cart.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /carts/{cart_type}/items/{sku_id}:
+    parameters:
+      - $ref: '#/components/parameters/CartType'
+      - $ref: '#/components/parameters/SKUID'
+    put:
+      summary: Set an item's quantity
+      operationId: setItemQuantity
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuantityInput' }
+      responses:
+        '200':
+          description: The cart.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Remove an item
+      operationId: removeItem
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /carts/{cart_type}/items/{sku_id}/move:
+    parameters:
+      - $ref: '#/components/parameters/CartType'
+      - $ref: '#/components/parameters/SKUID'
+    post:
+      summary: Move an item to another cart
+      description: Moves the quantity (the whole line when absent), keeping the price snapshot on a new line.
+      operationId: moveItem
+      parameters:
+        - $ref: '#/components/parameters/DisplayCurrencyQuery'
+        - $ref: '#/components/parameters/DisplayCurrencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveInput' }
+      responses:
+        '200':
+          description: The destination cart.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    CartType:
+      name: cart_type
+      in: path
+      required: true
+      schema: { type: string, maxLength: 32 }
+    SKUID:
+      name: sku_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DisplayCurrencyQuery:
+      name: display_currency
+      in: query
+      schema: { type: string }
+    DisplayCurrencyHeader:
+      name: X-YC-Display-Currency
+      in: header
+      schema: { type: string }
+
+  schemas:
+    Money:
+      type: object
+      description: An amount in integer minor units of an ISO 4217 currency.
+      x-go-type: money.Money
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-money
+        name: money
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+
+    CartList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartSummary' }
+
+    CartSummary:
+      type: object
+      required: [cart_type, convertible, line_count, quantity]
+      properties:
+        cart_type: { type: string }
+        convertible: { type: boolean, description: Whether the cart can be checked out. }
+        cart_id: { type: string, format: uuid, description: Absent until the cart is first used. }
+        line_count: { type: integer }
+        quantity: { type: integer, description: Sum of the lines' quantities. }
+
+    Cart:
+      type: object
+      required: [cart_type, convertible, items, line_count, quantity, price_changed]
+      properties:
+        cart_id: { type: string, format: uuid, description: Absent until the cart is first used. }
+        cart_type: { type: string }
+        convertible: { type: boolean }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartItem' }
+        line_count: { type: integer }
+        quantity: { type: integer }
+        currency: { type: string, description: The store currency; absent for an empty cart. }
+        subtotal:
+          $ref: '#/components/schemas/Money'
+          description: Gross total of the available lines at current prices; absent for an empty cart.
+        price_changed:
+          type: boolean
+          description: Whether any line's current price differs from its snapshot.
+        display: { $ref: '#/components/schemas/CartDisplay' }
+        updated_at: { type: string, format: date-time }
+
+    CartDisplay:
+      type: object
+      description: The cart converted to the display currency; absent when it is the store currency or no rate is available.
+      required: [currency, rate, rate_fetched_at, subtotal]
+      properties:
+        currency: { type: string }
+        rate: { type: string, description: Store-to-display exchange rate as a decimal string. }
+        rate_fetched_at: { type: string, format: date-time }
+        subtotal: { $ref: '#/components/schemas/Money' }
+
+    CartItem:
+      type: object
+      required: [sku_id, quantity, unit_price, available, price_changed, added_at]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        unit_price:
+          $ref: '#/components/schemas/Money'
+          description: Gross unit price when the line was added.
+        available:
+          type: boolean
+          description: Whether the SKU has a current price.
+        unavailable_reason:
+          type: string
+          description: Why the SKU is unavailable, e.g. no_base_price or unknown_sku.
+        current_unit_price: { $ref: '#/components/schemas/Money' }
+        line_total: { $ref: '#/components/schemas/Money' }
+        price_changed: { type: boolean }
+        display:
+          type: object
+          required: [unit_price, line_total]
+          properties:
+            unit_price: { $ref: '#/components/schemas/Money' }
+            line_total: { $ref: '#/components/schemas/Money' }
+        added_at: { type: string, format: date-time }
+
+    AddItemInput:
+      type: object
+      required: [sku_id]
+      additionalProperties: false
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, description: Defaults to 1. }
+
+    QuantityInput:
+      type: object
+      required: [quantity]
+      additionalProperties: false
+      properties:
+        quantity: { type: integer, minimum: 1 }
+
+    MoveInput:
+      type: object
+      required: [to_cart_type]
+      additionalProperties: false
+      properties:
+        to_cart_type: { type: string, maxLength: 32 }
+        quantity: { type: integer, minimum: 1, description: Defaults to the whole line. }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: Error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

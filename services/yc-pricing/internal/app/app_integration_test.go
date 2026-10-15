@@ -269,6 +269,17 @@ func TestPricing(t *testing.T) {
 			map[string]any{"lines": []map[string]any{{"sku_id": shirt, "quantity": 0}}}, nil))
 	})
 
+	t.Run("other services evaluate through the internal route", func(t *testing.T) {
+		body := map[string]any{"lines": []map[string]any{{"sku_id": shirt, "quantity": 1}}}
+		var res api.PricingResult
+		require.Equal(t, http.StatusOK, visitor.with(authctx.HeaderCallerService, "yc-cart").
+			do("POST", "/internal/prices/evaluate", body, &res))
+		require.Len(t, res.Lines, 1)
+		assert.Equal(t, zar(25000), res.Lines[0].Gross)
+		assert.Equal(t, http.StatusUnauthorized, visitor.do("POST", "/internal/prices/evaluate", body, nil),
+			"only through the gateway's internal listener")
+	})
+
 	t.Run("display currency converts with fetched rates", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return eventsOf(eventbus.PlatformTenantID, events.TypePricingExchangeRatesUpdatedV1) == 1

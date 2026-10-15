@@ -18,7 +18,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 )
 
-require github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+require (
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

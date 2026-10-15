@@ -25,6 +25,11 @@ type ClientOptions struct {
 	// from the context. Only for calls to yc-platform services; never set
 	// it on clients for third parties (OAuth, payment gateways).
 	PropagateAuth bool
+
+	// CallerService sets X-YC-Caller-Service on every request. Only
+	// yc-gateway calls services directly and sets it; everything else goes
+	// through InternalClient (ADR-021).
+	CallerService string
 }
 
 // NewClient returns an HTTP client that creates a span per call, injects
@@ -38,6 +43,7 @@ func NewClient(opts ClientOptions) *http.Client {
 		Transport: otelhttp.NewTransport(&propagatingTransport{
 			next:          http.DefaultTransport,
 			propagateAuth: opts.PropagateAuth,
+			callerService: opts.CallerService,
 		}),
 	}
 }
@@ -45,14 +51,21 @@ func NewClient(opts ClientOptions) *http.Client {
 type propagatingTransport struct {
 	next          http.RoundTripper
 	propagateAuth bool
+	callerService string
 }
 
 func (t *propagatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	a, ok := authctx.FromContext(req.Context())
-	if !ok {
+	if !ok && t.callerService == "" {
 		return t.next.RoundTrip(req)
 	}
 	req = req.Clone(req.Context())
+	if t.callerService != "" {
+		req.Header.Set(authctx.HeaderCallerService, t.callerService)
+	}
+	if !ok {
+		return t.next.RoundTrip(req)
+	}
 	if a.CorrelationID != "" && req.Header.Get(authctx.HeaderCorrelationID) == "" {
 		req.Header.Set(authctx.HeaderCorrelationID, a.CorrelationID)
 	}
@@ -90,6 +103,10 @@ const maxErrorBody = 4 << 10
 // as upstream_timeout, everything else, including non-2xx responses, as
 // upstream_failure wrapping a *StatusError where applicable.
 func DoJSON(ctx context.Context, c *http.Client, method, url string, in, out any) error {
+	return doJSON(ctx, c, method, url, nil, in, out)
+}
+
+func doJSON(ctx context.Context, c *http.Client, method, url string, header http.Header, in, out any) error {
 	var body io.Reader = http.NoBody
 	if in != nil {
 		b, err := json.Marshal(in)
@@ -101,6 +118,9 @@ func DoJSON(ctx context.Context, c *http.Client, method, url string, in, out any
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return fmt.Errorf("httpkit: new request: %w", err)
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")

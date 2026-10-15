@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.merged.v1.json",
+  "title": "cart.merged.v1",
+  "description": "A visitor's cart was merged into the cart of the same type of the user who logged in. Quantities of duplicate SKUs are summed, capped at the per-SKU maximum; the visitor cart is deleted.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "visitor_id", "cart_type", "merged_item_count", "merged_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The user's cart after the merge."
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "visitor_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "merged_item_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of visitor lines merged."
+    },
+    "merged_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

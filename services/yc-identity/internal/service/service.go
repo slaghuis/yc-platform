@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/domain"
+	"github.com/slaghuis/yc-platform/services/yc-identity/internal/oauth"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/password"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/repository"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/token"
@@ -25,27 +27,55 @@ type Publisher interface {
 	Publish(ctx context.Context, tx pgx.Tx, evt eventbus.Event) error
 }
 
-// Config holds the token lifetimes.
+// Config holds token lifetimes, service clients and OAuth providers.
 type Config struct {
 	AccessTokenTTL  time.Duration
 	VisitorTokenTTL time.Duration
+	RefreshTokenTTL time.Duration
+	ServiceTokenTTL time.Duration
+	ResetTokenTTL   time.Duration
+	OAuthStateTTL   time.Duration
+
+	// ServiceClients maps service name to client secret (ADR-021).
+	ServiceClients map[string]string
+	// OAuth holds the enabled providers by name.
+	OAuth map[string]OAuthProvider
+	// LogResetLinks logs reset tokens until yc-message can deliver them.
+	// Development only.
+	LogResetLinks bool
 }
 
-// Service implements visitor issuance, registration, login, token
-// validation and user administration.
+// OAuthProvider is an enabled provider and the callback page it redirects
+// to; "{host}" in RedirectURL is the shop's host.
+type OAuthProvider struct {
+	Provider    oauth.Provider
+	RedirectURL string
+}
+
+// Service implements visitor issuance, registration, login, sessions,
+// OAuth sign-in, password reset, token validation, service tokens and user
+// administration.
 type Service struct {
-	db     *pgxpool.Pool
-	bus    Publisher
-	signer *token.Signer
-	hasher *password.Hasher
-	users  repository.Users
-	cfg    Config
-	now    func() time.Time
+	db       *pgxpool.Pool
+	bus      Publisher
+	signer   *token.Signer
+	hasher   *password.Hasher
+	users    repository.Users
+	sessions repository.Sessions
+	oauth    repository.OAuth
+	resets   repository.PasswordResets
+	clients  map[string][sha256.Size]byte
+	cfg      Config
+	now      func() time.Time
 }
 
 // New returns a Service.
 func New(db *pgxpool.Pool, bus Publisher, signer *token.Signer, hasher *password.Hasher, cfg Config) *Service {
-	return &Service{db: db, bus: bus, signer: signer, hasher: hasher, cfg: cfg, now: time.Now}
+	clients := make(map[string][sha256.Size]byte, len(cfg.ServiceClients))
+	for name, secret := range cfg.ServiceClients {
+		clients[name] = sha256.Sum256([]byte(secret))
+	}
+	return &Service{db: db, bus: bus, signer: signer, hasher: hasher, clients: clients, cfg: cfg, now: time.Now}
 }
 
 // CreateVisitor creates an anonymous visitor in tenantID, issues its token
@@ -106,7 +136,7 @@ func (s *Service) Register(ctx context.Context, reg domain.Registration) (domain
 		if err != nil {
 			return err
 		}
-		if sess, err = s.signer.Issue(user, s.cfg.AccessTokenTTL); err != nil {
+		if sess, _, err = s.issueSession(ctx, tx, user, ""); err != nil {
 			return err
 		}
 		var displayName *string
@@ -191,27 +221,17 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 		return domain.Session{}, errBadCredentials("user %s is %s", user.ID, user.Status)
 	}
 
-	sess, err := s.signer.Issue(user, s.cfg.AccessTokenTTL)
-	if err != nil {
-		return domain.Session{}, err
+	var previousVisitor string
+	if a.ActorType == authctx.ActorVisitor {
+		previousVisitor = a.ActorID
 	}
-	var previousVisitor *string
-	if a.ActorType == authctx.ActorVisitor && a.ActorID != "" && a.ActorID != user.ID {
-		previousVisitor = &a.ActorID
-	}
+	var sess domain.Session
 	err = s.inTenant(ctx, a.TenantID, func(tx pgx.Tx) error {
-		return s.bus.Publish(ctx, tx, eventbus.Event{
-			EventType: events.TypeIdentityUserLoggedInV1,
-			TenantID:  user.TenantID,
-			Actor:     eventbus.Actor{Type: string(user.Role.ActorType()), ID: user.ID, AccessTokenJTI: sess.TokenID},
-			Payload: events.IdentityUserLoggedInV1{
-				UserID:            user.ID,
-				Role:              string(user.Role),
-				Method:            events.IdentityUserLoggedInV1MethodPassword,
-				PreviousVisitorID: previousVisitor,
-				LoggedInAt:        s.now().UTC(),
-			},
-		})
+		var err error
+		if sess, _, err = s.issueSession(ctx, tx, user, ""); err != nil {
+			return err
+		}
+		return s.publishLoggedIn(ctx, tx, user, sess, events.IdentityUserLoggedInV1MethodPassword, previousVisitor)
 	})
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("login: %w", err)
@@ -219,15 +239,55 @@ func (s *Service) Login(ctx context.Context, email, pw string) (domain.Session, 
 	return sess, nil
 }
 
-// ValidateToken verifies raw and checks that its user is still active and
-// still has the token's role. Every rejection is an unauthorized error with
-// no detail for the client.
+// publishLoggedIn publishes identity.user.logged_in.v1 with previousVisitor,
+// if it is another user, as the cart merge source.
+func (s *Service) publishLoggedIn(ctx context.Context, tx pgx.Tx, user domain.User, sess domain.Session, method, previousVisitor string) error {
+	var prev *string
+	if previousVisitor != "" && previousVisitor != user.ID {
+		prev = &previousVisitor
+	}
+	return s.bus.Publish(ctx, tx, eventbus.Event{
+		EventType: events.TypeIdentityUserLoggedInV1,
+		TenantID:  user.TenantID,
+		Actor:     eventbus.Actor{Type: string(user.Role.ActorType()), ID: user.ID, AccessTokenJTI: sess.TokenID},
+		Payload: events.IdentityUserLoggedInV1{
+			UserID:            user.ID,
+			Role:              string(user.Role),
+			Method:            method,
+			PreviousVisitorID: prev,
+			LoggedInAt:        s.now().UTC(),
+		},
+	})
+}
+
+// ValidateToken verifies raw and checks that its user is still active,
+// still has the token's role and has not logged the token out; for a
+// service token, that its client is still configured. Every rejection is an
+// unauthorized error with no detail for the client.
 func (s *Service) ValidateToken(ctx context.Context, raw string) (domain.Session, error) {
 	sess, err := s.signer.Verify(raw)
 	if err != nil {
 		return domain.Session{}, ycerrors.Unauthorized("Invalid or expired token").Wrap(err)
 	}
-	user, err := s.getUser(ctx, sess.TenantID, sess.UserID)
+	if sess.Role == domain.RoleService {
+		return s.validateServiceToken(sess)
+	}
+	var (
+		user    domain.User
+		revoked bool
+	)
+	err = s.inTenant(ctx, sess.TenantID, func(tx pgx.Tx) error {
+		var err error
+		if user, err = s.users.Get(ctx, tx, sess.UserID); err != nil {
+			return err
+		}
+		revoked, err = s.sessions.AccessRevoked(ctx, tx, sess.TokenID)
+		return err
+	})
+	if err == nil && revoked {
+		return domain.Session{}, ycerrors.Unauthorized("Invalid or expired token").
+			WithInternal("token %s was logged out", sess.TokenID)
+	}
 	if ycerrors.HasCode(err, ycerrors.CodeNotFound) {
 		return domain.Session{}, ycerrors.Unauthorized("Invalid or expired token").
 			WithInternal("user %s no longer exists", sess.UserID)

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/cart/cart.item.quantity_changed.v1.json",
+  "title": "cart.item.quantity_changed.v1",
+  "description": "A user set a cart line's quantity.",
+  "type": "object",
+  "required": ["cart_id", "user_id", "cart_type", "sku_id", "previous_quantity", "quantity", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "cart_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cart_type": {
+      "type": "string"
+    },
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "previous_quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
