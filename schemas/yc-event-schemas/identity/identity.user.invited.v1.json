@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.invited.v1.json",
+  "title": "identity.user.invited.v1",
+  "description": "A system admin invited an email to a role in a tenant (ADR-030). Published on create and on resend; the previous token is void. yc-message sends the admin_invite link. The envelope actor is the inviting system admin (or the actor from platform.tenant.provisioned.v1 when the first shop admin is auto-invited).",
+  "type": "object",
+  "required": ["invitation_id", "tenant_id", "email", "role", "expires_at", "invited_at"],
+  "additionalProperties": false,
+  "properties": {
+    "invitation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "_platform for system_admin; an active shop slug for shop_admin (ADR-001)."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Lowercased invitee email. PII (event-conventions §18)."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["shop_admin", "system_admin"]
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Optional name suggested at invite time. PII (event-conventions §18)."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "invited_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

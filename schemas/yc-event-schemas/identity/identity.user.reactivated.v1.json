@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.reactivated.v1.json",
+  "title": "identity.user.reactivated.v1",
+  "description": "A system admin reactivated a suspended user (ADR-030). The user may log in again. yc-message restores admin alert audiences for shop_admin and system_admin roles.",
+  "type": "object",
+  "required": ["user_id", "tenant_id", "role", "reactivated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["customer", "shop_admin", "system_admin"]
+    },
+    "reactivated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

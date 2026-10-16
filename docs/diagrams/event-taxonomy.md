@@ -32,12 +32,16 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `identity.visitor.created.v1` | yc-identity | yc-analytics, yc-monitor | Visitor token issued |
 | `identity.user.registered.v1` | yc-identity | yc-message, yc-orders, yc-preference | New customer registration |
 | `identity.user.promoted.v1` | yc-identity | yc-audit, yc-message | Role changed upward (yc-message keeps its shop admins) |
-| `identity.user.demoted.v1` | yc-identity | yc-audit | Role changed downward |
+| `identity.user.demoted.v1` | yc-identity | yc-audit, yc-message | Shop admin demoted to customer (ADR-030) |
+| `identity.user.invited.v1` | yc-identity | yc-audit, yc-message | System admin invited an email to a role; yc-message sends `admin_invite` (ADR-030) |
+| `identity.user.invitation_accepted.v1` | yc-identity | yc-audit, yc-message, yc-preference | Invitation accepted; admin audience and preference defaults (ADR-030) |
+| `identity.user.invitation_revoked.v1` | yc-identity | yc-audit | Pending invitation revoked (ADR-030) |
 | `identity.user.logged_in.v1` | yc-identity | yc-cart | Successful login |
 | `identity.user.login_failed.v1` | yc-identity | yc-audit | Failed login (for brute-force detection) |
 | `identity.user.password_reset_requested.v1` | yc-identity | — | Reset flow started (no token; yc-identity sends the link through yc-message `POST /internal/send`, ADR-023) |
 | `identity.user.password_changed.v1` | yc-identity | — | Password successfully changed |
-| `identity.user.suspended.v1` | yc-identity | yc-audit | Admin-suspended |
+| `identity.user.suspended.v1` | yc-identity | yc-audit, yc-message | Admin-suspended; leaves alert audiences (ADR-030) |
+| `identity.user.reactivated.v1` | yc-identity | yc-audit, yc-message | Suspended user reactivated (ADR-030) |
 | `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping | `DELETE /me` or `DELETE /admin/users/{id}`; carries the pseudonym and kicks off the GDPR cascade (yc-inventory joins with back-in-stock subscriptions) |
 | `identity.oauth_linked.v1` | yc-identity | — | OAuth provider linked to user |
 | `identity.oauth_unlinked.v1` | yc-identity | — | OAuth provider unlinked |

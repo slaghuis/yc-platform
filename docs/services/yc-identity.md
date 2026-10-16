@@ -218,12 +218,16 @@ Migrations managed via `golang-migrate`, in `/services/yc-identity/migrations/`.
 | `identity.visitor.created.v1` | Visitor token issued |
 | `identity.user.registered.v1` | New customer registration |
 | `identity.user.promoted.v1` | Role changed upward |
-| `identity.user.demoted.v1` | Role changed downward |
+| `identity.user.demoted.v1` | Shop admin demoted to customer (ADR-030) |
+| `identity.user.invited.v1` | Invitation created or resent (ADR-030) |
+| `identity.user.invitation_accepted.v1` | Invitation accepted (ADR-030) |
+| `identity.user.invitation_revoked.v1` | Pending invitation revoked (ADR-030) |
 | `identity.user.logged_in.v1` | Successful login |
 | `identity.user.login_failed.v1` | Failed login (for brute-force detection) |
 | `identity.user.password_reset_requested.v1` | Reset flow started |
 | `identity.user.password_changed.v1` | Password successfully changed |
-| `identity.user.suspended.v1` | Admin-suspended |
+| `identity.user.suspended.v1` | Admin-suspended (ADR-030) |
+| `identity.user.reactivated.v1` | Suspended user reactivated (ADR-030) |
 | `identity.user.deleted.v1` | Deletion triggered — kicks off GDPR cascade |
 | `identity.oauth_linked.v1` | OAuth provider linked to user |
 | `identity.oauth_unlinked.v1` | OAuth provider unlinked |
@@ -233,7 +237,7 @@ Migrations managed via `golang-migrate`, in `/services/yc-identity/migrations/`.
 | Event | Action |
 |---|---|
 | `platform.gdpr.cascade_completed.v1` | Track cascade completion per deleted user |
-| `platform.tenant.provisioned.v1` | Prepare tenant-scoped state (if needed) |
+| `platform.tenant.provisioned.v1` | When `primary_admin_email` is set, create the first shop-admin invitation (ADR-030) |
 | `platform.tenant.deleted.v1` | Mark all tenant users as deleted; initiate per-user cascade |
 
 ## Configuration

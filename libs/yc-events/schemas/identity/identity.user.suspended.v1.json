@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.suspended.v1.json",
+  "title": "identity.user.suspended.v1",
+  "description": "A system admin suspended a user (ADR-030). Refresh families are revoked; access tokens stop validating within the gateway cache TTL (≤ 60 s). yc-message removes the user from admin alert audiences.",
+  "type": "object",
+  "required": ["user_id", "tenant_id", "role", "suspended_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "The user's tenant (_platform for system_admin)."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["customer", "shop_admin", "system_admin"]
+    },
+    "reason": {
+      "type": "string",
+      "description": "Optional operator note; not shown to the user."
+    },
+    "suspended_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

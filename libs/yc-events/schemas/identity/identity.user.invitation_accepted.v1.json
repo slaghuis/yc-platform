@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.invitation_accepted.v1.json",
+  "title": "identity.user.invitation_accepted.v1",
+  "description": "An invitation was accepted: the user is active in the invited role (ADR-030). If upgraded_customer is true, an existing customer kept their user_id, orders and cart. yc-message updates admin audiences; yc-preference seeds defaults for new users.",
+  "type": "object",
+  "required": [
+    "invitation_id",
+    "user_id",
+    "tenant_id",
+    "role",
+    "upgraded_customer",
+    "accepted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "invitation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "_platform for system_admin; shop slug for shop_admin."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["shop_admin", "system_admin"]
+    },
+    "upgraded_customer": {
+      "type": "boolean",
+      "description": "True when an existing customer of the shop was upgraded in place."
+    },
+    "accepted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
