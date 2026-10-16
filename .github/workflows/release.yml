@@ -30,6 +30,7 @@ jobs:
           - yc-audit
           - yc-monitor
           - yc-analytics
+          - yc-tenant
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4

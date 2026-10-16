@@ -678,7 +678,7 @@ set -e
 SERVICES=(
   yc_identity yc_image yc_preference yc_product yc_pricing
   yc_inventory yc_cart yc_review yc_checkout yc_payment
-  yc_shipping yc_orders yc_message yc_audit yc_monitor yc_analytics
+  yc_shipping yc_orders yc_message yc_audit yc_monitor yc_analytics yc_tenant yc_gateway
 )
 
 for svc in "${SERVICES[@]}"; do

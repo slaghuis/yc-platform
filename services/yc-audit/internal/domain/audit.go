@@ -76,6 +76,18 @@ var Rules = map[string]Rule{
 	events.TypePlatformTenantProvisionedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
 		return "tenant:" + str(p, "tenant_id"), fmt.Sprintf("Shop %q provisioned", str(p, "name"))
 	}},
+	events.TypePlatformTenantUpdatedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
+		return "tenant:" + str(p, "tenant_id"), fmt.Sprintf("Shop %q updated (primary %s)", str(p, "name"), str(p, "primary_hostname"))
+	}},
+	events.TypePlatformTenantSuspendedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
+		return "tenant:" + str(p, "tenant_id"), fmt.Sprintf("Shop suspended: %s", str(p, "reason"))
+	}},
+	events.TypePlatformTenantReinstatedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
+		return "tenant:" + str(p, "tenant_id"), "Shop reinstated"
+	}},
+	events.TypePlatformTenantDeletedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
+		return "tenant:" + str(p, "tenant_id"), "Shop deleted"
+	}},
 	events.TypePricingConfigChangedV1: {CategoryConfigChange, func(p map[string]any) (string, string) {
 		return "pricing-config", fmt.Sprintf("Pricing settings changed: store currency %s, tax inclusive %v, jurisdiction %s",
 			str(p, "store_currency"), p["is_tax_inclusive"], str(p, "default_jurisdiction"))

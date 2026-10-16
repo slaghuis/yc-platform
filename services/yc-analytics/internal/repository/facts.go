@@ -29,6 +29,17 @@ func (Facts) PutTenant(ctx context.Context, tx pgx.Tx, t domain.Tenant, now time
 	return nil
 }
 
+// UpdateTenantName sets a shop's display name when it changes (ADR-029).
+func (Facts) UpdateTenantName(ctx context.Context, tx pgx.Tx, tenantID, name string, now time.Time) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE dim_tenant SET name = $2, updated_at = $3 WHERE tenant_id = $1`,
+		tenantID, name, now)
+	if err != nil {
+		return fmt.Errorf("update tenant name: %w", err)
+	}
+	return nil
+}
+
 // StoreCurrency returns a shop's store currency, if it is known.
 func (Facts) StoreCurrency(ctx context.Context, tx pgx.Tx, tenantID string) (string, bool, error) {
 	var c string

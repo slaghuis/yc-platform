@@ -1,0 +1,378 @@
+openapi: 3.1.0
+info:
+  title: yc-tenant
+  version: 0.1.0
+  description: |
+    The tenant registry: every shop's record, hostnames and lifecycle
+    (docs/services/yc-tenant.md, ADR-029).
+
+    Routes are reached through yc-gateway on platform hosts, which sets
+    X-YC-Tenant-ID, X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). Every route is for system admins. POSTs require
+    an Idempotency-Key (api-conventions.md §10). Errors are
+    application/problem+json (error-handling.md).
+
+paths:
+  /sysadmin/tenants:
+    get:
+      summary: List tenants
+      description: |
+        Ordered by tenant_id. Filter by status; q matches the name or a
+        hostname, case-insensitively.
+      operationId: listTenants
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/Status' }
+        - name: q
+          in: query
+          description: Search the name and hostnames.
+          schema: { type: string, maxLength: 100 }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of tenants.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a tenant
+      description: |
+        Registers a shop and publishes platform.tenant.provisioned.v1;
+        hostnames[0] is the primary. The tenant ID and the hostnames must be
+        free: a taken tenant ID, a hostname used by another tenant or a
+        platform host is 409.
+      operationId: createTenant
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInput' }
+      responses:
+        '201':
+          description: The new tenant, active.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/tenants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      summary: Get a tenant
+      operationId: getTenant
+      responses:
+        '200':
+          description: The tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Change name or contact email
+      description: |
+        A changed name publishes platform.tenant.updated.v1. The contact
+        email is not part of any event. A deleted tenant is 409.
+      operationId: patchTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchInput' }
+      responses:
+        '200':
+          description: The tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a tenant
+      description: |
+        Only a suspended tenant can be deleted (409 otherwise), and
+        confirm_tenant_id must repeat the ID (400). Publishes
+        platform.tenant.deleted.v1; the tenant's hostnames are freed. The
+        tenant ID is never reused. Data stays in the services until the
+        deletion cascade exists (data_purged_at stays null).
+      operationId: deleteTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteInput' }
+      responses:
+        '200':
+          description: The tenant, deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/tenants/{id}/hostnames:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    put:
+      summary: Replace the hostnames and the primary
+      description: |
+        The primary defaults to hostnames[0]. A hostname used by another
+        tenant or a platform host is 409. Publishes
+        platform.tenant.updated.v1 when the set or the primary changed. A
+        deleted tenant is 409.
+      operationId: replaceTenantHostnames
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HostnamesInput' }
+      responses:
+        '200':
+          description: The tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/tenants/{id}/suspend:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    post:
+      summary: Suspend a tenant
+      description: |
+        Only an active tenant (409 otherwise). yc-gateway answers 503
+        tenant_suspended on its hosts. Publishes
+        platform.tenant.suspended.v1.
+      operationId: suspendTenant
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendInput' }
+      responses:
+        '200':
+          description: The tenant, suspended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/tenants/{id}/reinstate:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    post:
+      summary: Reinstate a suspended tenant
+      description: |
+        Only a suspended tenant (409 otherwise). Publishes
+        platform.tenant.reinstated.v1.
+      operationId: reinstateTenant
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The tenant, active.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    TenantID:
+      name: id
+      in: path
+      required: true
+      description: The tenant ID (ADR-001 slug).
+      schema: { type: string, maxLength: 63, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Status:
+      type: string
+      enum: [active, suspended, deleted]
+
+    Hostname:
+      type: string
+      maxLength: 253
+      pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$'
+
+    Tenant:
+      type: object
+      required: [tenant_id, name, status, store_currency, default_jurisdiction, is_tax_inclusive, contact_email,
+                 hostnames, created_at, updated_at]
+      properties:
+        tenant_id: { type: string }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/Status' }
+        store_currency: { type: string }
+        default_jurisdiction: { type: string }
+        is_tax_inclusive: { type: boolean }
+        contact_email: { type: string }
+        hostnames:
+          type: array
+          description: The primary first. Empty once the tenant is deleted (its hostnames are freed).
+          items: { $ref: '#/components/schemas/Hostname' }
+        primary_hostname: { type: string, description: Left out once the tenant is deleted. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        suspended_at: { type: string, format: date-time }
+        suspended_reason: { type: string }
+        deleted_at: { type: string, format: date-time }
+        data_purged_at:
+          type: string
+          format: date-time
+          description: Null until the deletion cascade exists (backlog-v2).
+    TenantList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Tenant' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    CreateInput:
+      type: object
+      description: The body of platform.tenant.provisioned.v1 plus contact_email.
+      required: [tenant_id, name, hostnames, store_currency, default_jurisdiction, is_tax_inclusive, contact_email]
+      properties:
+        tenant_id:
+          type: string
+          maxLength: 63
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: Immutable. Never _platform; never reused.
+        name: { type: string, minLength: 1, maxLength: 200 }
+        hostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          description: Lowercase; hostnames[0] is the primary.
+          items: { $ref: '#/components/schemas/Hostname' }
+        store_currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217. Immutable.
+        default_jurisdiction:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: ISO 3166-1 alpha-2.
+        is_tax_inclusive: { type: boolean }
+        contact_email: { type: string, format: email }
+        primary_admin_email:
+          type: string
+          format: email
+          description: The first shop admin, invited by yc-message and yc-identity. Not stored.
+
+    PatchInput:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        contact_email: { type: string, format: email }
+
+    HostnamesInput:
+      type: object
+      required: [hostnames]
+      properties:
+        hostnames:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Hostname' }
+        primary_hostname:
+          type: string
+          description: One of hostnames; hostnames[0] when left out.
+
+    SuspendInput:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+
+    DeleteInput:
+      type: object
+      required: [confirm_tenant_id]
+      properties:
+        confirm_tenant_id: { type: string, description: Must repeat the tenant ID. }
+
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

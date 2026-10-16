@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -113,7 +112,7 @@ func (s *Service) queue(ctx context.Context, tx pgx.Tx, tenantID string, r reque
 	if err != nil {
 		return domain.Message{}, err
 	}
-	msgCtx := map[string]any{"shop_url": s.links(tenantID).Home()}
+	msgCtx := map[string]any{"shop_url": s.links(ctx, tenantID).Home()}
 	for k, v := range r.Context {
 		msgCtx[k] = v
 	}
@@ -151,10 +150,6 @@ func (s *Service) template(ctx context.Context, tx pgx.Tx, tenantID string, t do
 		}
 	}
 	return domain.Template{}, ycerrors.NotFound("template", string(t)+"/"+string(ch))
-}
-
-func (s *Service) links(tenantID string) domain.ShopLinks {
-	return domain.NewShopLinks(strings.ReplaceAll(s.cfg.ShopURL, "{tenant}", tenantID))
 }
 
 // customer resolves a customer's channel from yc-preference. ok is false

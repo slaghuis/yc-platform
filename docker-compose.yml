@@ -521,6 +521,29 @@ services:
       - "8098:8080"
     depends_on: *infra
 
+  # Canonical shop registry and lifecycle (ADR-029). System admins create,
+  # rename, suspend, reinstate and delete shops through /sysadmin/tenants.
+  yc-tenant:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-tenant }
+    image: yc-platform/yc-tenant:dev
+    container_name: yc-tenant
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      YC_TENANT_DB_URL: postgres://yc_tenant_app:devpass@postgres:5432/yc_tenant?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_TENANT_ADVERTISE_URL: http://yc-tenant:8080
+      YC_TENANT_PLATFORM_HOSTS: ${YC_GATEWAY_PLATFORM_HOSTS:-admin.localhost}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8099:8080"
+    depends_on: *infra
+
   # The dev edge (ADR-027 rules 1-2): admin.localhost to the console, every
   # other *.localhost to the shop, and /webhooks/ on shop hosts to the
   # gateway, on YC_EDGE_PORT (default 8070; the reset, OAuth and message

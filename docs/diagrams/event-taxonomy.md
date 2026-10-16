@@ -3,7 +3,7 @@
 Registry of every event in yc-platform: who produces it, who consumes it, and what triggers it.
 
 Producers and consumers are taken from the **Published Events** and **Subscribed Events** tables in
-`docs/services/*.md`; the specs are authoritative. Platform tenant events come from `yc-tenant-cli`, which
+`docs/services/*.md`; the specs are authoritative. Platform tenant events come from `yc-tenant`, which
 has no spec. When you add or change an event, update the producing and consuming specs and this registry
 in the same PR (`docs/onboarding/adding-an-event.md`).
 
@@ -18,10 +18,11 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 |---|---|---|---|
 | `platform.service.registered.v1` | yc-gateway | yc-monitor | A backend service registers |
 | `platform.service.deregistered.v1` | yc-gateway | yc-monitor | A backend service deregisters or fails health |
-| `platform.tenant.provisioned.v1` | yc-tenant-cli | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-inventory, yc-orders, yc-payment, yc-preference, yc-pricing, yc-review, yc-shipping | Admin provisions tenant |
-| `platform.tenant.suspended.v1` | yc-tenant-cli | yc-gateway | Admin suspends tenant |
-| `platform.tenant.deleted.v1` | yc-tenant-cli | yc-analytics, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-image, yc-inventory, yc-orders, yc-payment, yc-preference, yc-pricing, yc-product, yc-review, yc-shipping | Admin deletes tenant |
-| `platform.tenant.configuration_changed.v1` | yc-tenant-cli | yc-analytics, yc-audit, yc-inventory | Admin updates tenant config |
+| `platform.tenant.provisioned.v1` | yc-tenant | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-gateway, yc-identity, yc-inventory, yc-message, yc-orders, yc-payment, yc-preference, yc-pricing, yc-review, yc-shipping | System admin creates a shop (ADR-029) |
+| `platform.tenant.updated.v1` | yc-tenant | yc-analytics, yc-gateway, yc-message | System admin renames a shop or replaces its hostnames |
+| `platform.tenant.suspended.v1` | yc-tenant | yc-gateway | System admin suspends a shop |
+| `platform.tenant.reinstated.v1` | yc-tenant | yc-gateway | System admin reinstates a suspended shop |
+| `platform.tenant.deleted.v1` | yc-tenant | yc-gateway | System admin deletes a suspended shop (data purge is backlog-v2) |
 | `platform.gdpr.cascade_completed.v1` | Every GDPR cascade participant (ADR-005, ADR-025) | yc-audit | Service completes its part of a GDPR deletion (`deleted`, `anonymized` or `pseudonymized`, with a count) |
 
 ## Identity Domain

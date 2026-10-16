@@ -22,11 +22,12 @@ import (
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/domain"
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/integration"
+	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/service"
 )
 
-// TenantResolver maps a Host header to a tenant.
+// TenantResolver maps a Host header to a tenant and its lifecycle state.
 type TenantResolver interface {
-	Resolve(host string) (string, bool)
+	Lookup(host string) (tenantID string, state service.HostState)
 }
 
 // Authenticator validates tokens and issues visitor tokens.
@@ -119,11 +120,22 @@ func (g *Gateway) Authenticate(next http.Handler) http.Handler {
 		// Only the gateway may assert identity downstream.
 		authctx.StripHeaders(r.Header)
 
-		tenantID, ok := g.hosts.Resolve(r.Host)
-		if !ok {
+		tenantID, hostState := g.hosts.Lookup(r.Host)
+		switch hostState {
+		case service.HostUnknown:
 			ycerrors.WriteError(w, r, ycerrors.New(ycerrors.CodeNotFound, "Unknown shop").
 				WithInternal("no tenant for host %q", r.Host))
 			return
+		case service.HostDeleted:
+			ycerrors.WriteError(w, r, ycerrors.Gone("This shop is no longer available").
+				WithInternal("deleted tenant %s host %q", tenantID, r.Host))
+			return
+		case service.HostSuspended:
+			ycerrors.WriteError(w, r, ycerrors.New(ycerrors.CodeTenantSuspended, "This shop is temporarily unavailable").
+				WithInternal("suspended tenant %s host %q", tenantID, r.Host))
+			return
+		case service.HostActive:
+			// continue
 		}
 		route, ok := g.routes.Match(r.Method, r.URL.Path)
 		if !ok {

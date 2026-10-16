@@ -20,14 +20,38 @@ import (
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/domain"
 	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/integration"
+	"github.com/slaghuis/yc-platform/services/yc-gateway/internal/service"
 	transport "github.com/slaghuis/yc-platform/services/yc-gateway/internal/transport/http"
 )
 
 type hosts map[string]string
 
-func (h hosts) Resolve(host string) (string, bool) {
+func (h hosts) Lookup(host string) (string, service.HostState) {
 	t, ok := h[host]
-	return t, ok
+	if !ok {
+		return "", service.HostUnknown
+	}
+	return t, service.HostActive
+}
+
+// lifecycleHosts returns suspended or deleted states for lifecycle tests.
+type lifecycleHosts struct {
+	active    map[string]string
+	suspended map[string]string // host → tenant
+	deleted   map[string]string // host → former tenant
+}
+
+func (h lifecycleHosts) Lookup(host string) (string, service.HostState) {
+	if t, ok := h.deleted[host]; ok {
+		return t, service.HostDeleted
+	}
+	if t, ok := h.suspended[host]; ok {
+		return t, service.HostSuspended
+	}
+	if t, ok := h.active[host]; ok {
+		return t, service.HostActive
+	}
+	return "", service.HostUnknown
 }
 
 // fakeIdentity knows tokens "<tenant>:<actor_type>"; it issues visitors as
@@ -472,4 +496,42 @@ func TestUpstreamDown(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadGateway, w.Code)
 	assert.Equal(t, ycerrors.CodeUpstreamFailure, problemCode(t, w))
+}
+
+func TestSuspendedTenantReturns503(t *testing.T) {
+	telemetry.InitForTest(t, "yc-gateway")
+	routes, err := domain.NewRoutes([]domain.Route{
+		{Prefix: "/me", Upstream: &url.URL{Scheme: "http", Host: "127.0.0.1:1"}},
+		{Prefix: "/webhooks/stripe", Methods: []string{"POST"}, Upstream: &url.URL{Scheme: "http", Host: "127.0.0.1:1"}, Callback: true},
+	})
+	require.NoError(t, err)
+	gw := transport.New(lifecycleHosts{
+		suspended: map[string]string{"shop-a.test": "shop-a"},
+	}, &fakeIdentity{}, routes, nil, transport.CookieConfig{Name: "yc_visitor"})
+	h := transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil)
+
+	// Suspension is checked before routing, so every path including webhooks is 503.
+	for _, path := range []string{"/me", "/webhooks/stripe"} {
+		method := "GET"
+		if path == "/webhooks/stripe" {
+			method = "POST"
+		}
+		w := do(h, method, "shop-a.test", path)
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code, path)
+		assert.Equal(t, ycerrors.CodeTenantSuspended, problemCode(t, w), path)
+	}
+}
+
+func TestDeletedTenantReturns410(t *testing.T) {
+	telemetry.InitForTest(t, "yc-gateway")
+	routes, err := domain.NewRoutes([]domain.Route{{Prefix: "/me", Upstream: &url.URL{Scheme: "http", Host: "127.0.0.1:1"}}})
+	require.NoError(t, err)
+	gw := transport.New(lifecycleHosts{
+		deleted: map[string]string{"shop-a.test": "shop-a"},
+	}, &fakeIdentity{}, routes, nil, transport.CookieConfig{Name: "yc_visitor"})
+	h := transport.NewRouter(gw, httpkit.BuildInfo{Service: "yc-gateway"}, nil)
+
+	w := do(h, "GET", "shop-a.test", "/me")
+	assert.Equal(t, http.StatusGone, w.Code)
+	assert.Equal(t, ycerrors.CodeGone, problemCode(t, w))
 }

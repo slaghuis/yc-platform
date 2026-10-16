@@ -17,6 +17,7 @@ import (
 // Handlers are the use cases the subscribers drive.
 type Handlers interface {
 	TenantProvisioned(ctx context.Context, p ycevents.PlatformTenantProvisionedV1) error
+	TenantUpdated(ctx context.Context, p ycevents.PlatformTenantUpdatedV1) error
 	VisitorCreated(ctx context.Context, env eventbus.Envelope, p ycevents.IdentityVisitorCreatedV1) error
 	CartEvent(ctx context.Context, env eventbus.Envelope, cartID, event, cartType, userType string, at time.Time) error
 	CheckoutStep(ctx context.Context, env eventbus.Envelope, sessionID, state string, at time.Time) error
@@ -43,6 +44,9 @@ func Subscriptions(h Handlers) []Subscription {
 	subs := []Subscription{
 		sub(ycevents.TypePlatformTenantProvisionedV1, typed(func(ctx context.Context, _ eventbus.Envelope, p ycevents.PlatformTenantProvisionedV1) error {
 			return h.TenantProvisioned(ctx, p)
+		})),
+		sub(ycevents.TypePlatformTenantUpdatedV1, typed(func(ctx context.Context, _ eventbus.Envelope, p ycevents.PlatformTenantUpdatedV1) error {
+			return h.TenantUpdated(ctx, p)
 		})),
 		concurrent(sub(ycevents.TypeIdentityVisitorCreatedV1, typed(h.VisitorCreated))),
 		sub(ycevents.TypeCartCreatedV1, typed(func(ctx context.Context, env eventbus.Envelope, p ycevents.CartCreatedV1) error {

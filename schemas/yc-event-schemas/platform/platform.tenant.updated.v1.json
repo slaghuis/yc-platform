@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.tenant.updated.v1.json",
+  "title": "platform.tenant.updated.v1",
+  "description": "A shop's name or hostnames changed (ADR-029). Published on _platform; yc-gateway replaces the tenant's hostnames, yc-message updates its projection.",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "name",
+    "hostnames",
+    "primary_hostname",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The shop (ADR-001). Never _platform."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name after the change."
+    },
+    "hostnames": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$"
+      },
+      "description": "Full hostname set after the change; hostnames[0] is the primary."
+    },
+    "primary_hostname": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$",
+      "description": "The primary hostname; must be one of hostnames."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

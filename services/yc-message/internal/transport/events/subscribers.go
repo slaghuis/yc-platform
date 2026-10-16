@@ -27,6 +27,9 @@ type Handlers interface {
 	ShopAdminPromoted(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserPromotedV1) error
 	AdminAlert(ctx context.Context, tenantID, eventID string, p ycevents.MonitorAlertOpenedV1) error
 	Milestone(ctx context.Context, tenantID, eventID string, p ycevents.AnalyticsMilestoneReachedV1) error
+	TenantProvisioned(ctx context.Context, tenantID string, p ycevents.PlatformTenantProvisionedV1) error
+	TenantUpdated(ctx context.Context, tenantID string, p ycevents.PlatformTenantUpdatedV1) error
+	TenantDeleted(ctx context.Context, tenantID string, p ycevents.PlatformTenantDeletedV1) error
 	ForgetUser(ctx context.Context, tenantID string, e ycevents.IdentityUserDeletedV1) error
 }
 
@@ -46,6 +49,9 @@ func Subscriptions(h Handlers) []Subscription {
 		subscribe(ycevents.TypeIdentityUserPromotedV1, "user-promoted", h.ShopAdminPromoted),
 		subscribe(ycevents.TypeMonitorAlertOpenedV1, "monitor-alert-opened", h.AdminAlert),
 		subscribe(ycevents.TypeAnalyticsMilestoneReachedV1, "analytics-milestone-reached", h.Milestone),
+		subscribeTenant(ycevents.TypePlatformTenantProvisionedV1, "tenant-provisioned", h.TenantProvisioned),
+		subscribeTenant(ycevents.TypePlatformTenantUpdatedV1, "tenant-updated", h.TenantUpdated),
+		subscribeTenant(ycevents.TypePlatformTenantDeletedV1, "tenant-deleted", h.TenantDeleted),
 		subscribe(ycevents.TypeIdentityUserRegisteredV1, "user-registered", h.Welcome),
 		subscribe(ycevents.TypeOrderPlacedV1, "order-placed", h.OrderPlaced),
 		subscribe(ycevents.TypeOrderShippedV1, "order-shipped", h.OrderShipped),
@@ -67,6 +73,21 @@ func subscribe[T any](eventType, name string, fn func(ctx context.Context, tenan
 				return fmt.Errorf("%w: decode payload: %w", eventbus.ErrPoison, err)
 			}
 			return poisonInvalid(fn(ctx, evt.Envelope.TenantID, evt.Envelope.EventID, p))
+		},
+	}
+}
+
+// subscribeTenant handles platform tenant lifecycle events published on
+// _platform; the shop ID is in the payload, not the envelope.
+func subscribeTenant[T any](eventType, name string, fn func(ctx context.Context, tenantID string, p T) error) Subscription {
+	return Subscription{
+		Opts: eventbus.SubscribeOpts{Subject: "yc.*." + eventType, DurableName: "yc-message-" + name},
+		Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+			var p T
+			if err := json.Unmarshal(evt.Payload, &p); err != nil {
+				return fmt.Errorf("%w: decode payload: %w", eventbus.ErrPoison, err)
+			}
+			return poisonInvalid(fn(ctx, evt.Envelope.TenantID, p))
 		},
 	}
 }

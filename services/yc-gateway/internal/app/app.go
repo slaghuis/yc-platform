@@ -118,9 +118,19 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		return nil, err
 	}
 	a.closers = append(a.closers, bus.Close)
-	if err := bus.Subscribe(ctx, subscribers.TenantProvisionedSubscription,
-		subscribers.TenantProvisioned(a.Hosts)); err != nil {
-		return nil, err
+	for _, sub := range []struct {
+		opts    eventbus.SubscribeOpts
+		handler eventbus.Handler
+	}{
+		{subscribers.TenantProvisionedSubscription, subscribers.TenantProvisioned(a.Hosts)},
+		{subscribers.TenantUpdatedSubscription, subscribers.TenantUpdated(a.Hosts)},
+		{subscribers.TenantSuspendedSubscription, subscribers.TenantSuspended(a.Hosts)},
+		{subscribers.TenantReinstatedSubscription, subscribers.TenantReinstated(a.Hosts)},
+		{subscribers.TenantDeletedSubscription, subscribers.TenantDeleted(a.Hosts)},
+	} {
+		if err := bus.Subscribe(ctx, sub.opts, sub.handler); err != nil {
+			return nil, err
+		}
 	}
 
 	if a.Registry, err = service.NewRegistry(routes, db, bus, cfg.Registry); err != nil {

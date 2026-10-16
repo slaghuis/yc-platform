@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.tenant.deleted.v1.json",
+  "title": "platform.tenant.deleted.v1",
+  "description": "A suspended shop was deleted (ADR-029). yc-gateway answers 410 on its former hosts and frees the hostnames. Data purge across services is backlog-v2.",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "deleted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The shop (ADR-001). Never reused. Never _platform."
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

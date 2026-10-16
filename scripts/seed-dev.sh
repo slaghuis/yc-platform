@@ -75,8 +75,10 @@ shop_mapped() { [ "$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $SHOP_HOST
 if shop_mapped; then
     ok "already provisioned"
 else
-    go run ./tools/yc-tenant-cli provision --tenant-id "$SHOP_TENANT" --name "Yellow Commerce Demo" \
-        --hostname "$SHOP_HOST" --store-currency ZAR --default-jurisdiction ZA --tax-inclusive=true >/dev/null
+    # shellcheck source=lib/provision-tenant.sh
+    source scripts/lib/provision-tenant.sh
+    provision_tenant "$SHOP_TENANT" "Yellow Commerce Demo" "$SHOP_HOST" \
+        --store-currency ZAR --default-jurisdiction ZA --tax-inclusive=true >/dev/null
     poll 30 shop_mapped || fail "yc-gateway did not map $SHOP_HOST"
     ok "provisioned; the gateway answers on $SHOP_HOST"
 fi

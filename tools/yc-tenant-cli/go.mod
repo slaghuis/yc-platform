@@ -3,9 +3,8 @@ module github.com/slaghuis/yc-platform/tools/yc-tenant-cli
 go 1.26.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/slaghuis/yc-platform/libs/yc-eventbus v0.0.0
-	github.com/slaghuis/yc-platform/libs/yc-events v0.0.0
-	github.com/slaghuis/yc-platform/libs/yc-telemetry v0.0.0
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -14,7 +13,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -24,9 +22,9 @@ require (
 	github.com/nats-io/nats.go v1.54.0 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/slaghuis/yc-platform/libs/yc-authctx v0.0.0 // indirect
 	github.com/slaghuis/yc-platform/libs/yc-errors v0.0.0 // indirect
+	github.com/slaghuis/yc-platform/libs/yc-telemetry v0.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.47.0 // indirect

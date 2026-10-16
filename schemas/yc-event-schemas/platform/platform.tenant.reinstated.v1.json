@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.tenant.reinstated.v1.json",
+  "title": "platform.tenant.reinstated.v1",
+  "description": "A suspended shop was reinstated (ADR-029). yc-gateway clears the 503 and serves its hosts again.",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "reinstated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The shop (ADR-001). Never _platform."
+    },
+    "reinstated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

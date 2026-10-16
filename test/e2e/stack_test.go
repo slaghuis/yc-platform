@@ -39,6 +39,7 @@ func newStack(t *testing.T) *stack {
 	admin.login(t, email, password)
 	s.sys = admin
 	s.awaitRoute(t, admin, "/sysadmin/gdpr/register")
+	s.awaitRoute(t, admin, "/sysadmin/tenants")
 	return s
 }
 
@@ -47,8 +48,15 @@ func newStack(t *testing.T) *stack {
 func (s *stack) provision(t *testing.T, tenant string) *client {
 	t.Helper()
 	host := tenant + ".localhost"
-	s.run(t, "go", "run", "./tools/yc-tenant-cli", "provision", "--tenant-id", tenant, "--name", "E2E "+tenant,
-		"--hostname", host, "--store-currency", "ZAR", "--default-jurisdiction", "ZA")
+	adminHost := envOr("YC_E2E_ADMIN_HOST", "admin.localhost")
+	gwURL := envOr("YC_GATEWAY_URL", "http://"+adminHost+":8090")
+	s.run(t, "go", "run", "./tools/yc-tenant-cli", "provision",
+		"--token", s.sys.token,
+		"--gateway-url", gwURL,
+		"--tenant-id", tenant, "--name", "E2E "+tenant,
+		"--hostname", host,
+		"--contact-email", "ops@"+tenant+".test",
+		"--store-currency", "ZAR", "--default-jurisdiction", "ZA")
 	shop := s.client(host)
 	deadline := time.Now().Add(30 * time.Second)
 	for {

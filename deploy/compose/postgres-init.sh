@@ -20,6 +20,7 @@ SERVICES=(
     yc_monitor
     yc_analytics
     yc_gateway
+    yc_tenant
 )
 
 for svc in "${SERVICES[@]}"; do

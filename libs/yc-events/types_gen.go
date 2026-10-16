@@ -90,7 +90,11 @@ const (
 	TypePlatformGdprCascadeCompletedV1       = "platform.gdpr.cascade_completed.v1"
 	TypePlatformServiceDeregisteredV1        = "platform.service.deregistered.v1"
 	TypePlatformServiceRegisteredV1          = "platform.service.registered.v1"
+	TypePlatformTenantDeletedV1              = "platform.tenant.deleted.v1"
 	TypePlatformTenantProvisionedV1          = "platform.tenant.provisioned.v1"
+	TypePlatformTenantReinstatedV1           = "platform.tenant.reinstated.v1"
+	TypePlatformTenantSuspendedV1            = "platform.tenant.suspended.v1"
+	TypePlatformTenantUpdatedV1              = "platform.tenant.updated.v1"
 	TypePreferenceChannelAddedV1             = "preference.channel.added.v1"
 	TypePreferenceChannelChangedV1           = "preference.channel.changed.v1"
 	TypePreferenceChannelRemovedV1           = "preference.channel.removed.v1"
@@ -220,7 +224,11 @@ var EventTypes = []string{
 	TypePlatformGdprCascadeCompletedV1,
 	TypePlatformServiceDeregisteredV1,
 	TypePlatformServiceRegisteredV1,
+	TypePlatformTenantDeletedV1,
 	TypePlatformTenantProvisionedV1,
+	TypePlatformTenantReinstatedV1,
+	TypePlatformTenantSuspendedV1,
+	TypePlatformTenantUpdatedV1,
 	TypePreferenceChannelAddedV1,
 	TypePreferenceChannelChangedV1,
 	TypePreferenceChannelRemovedV1,
@@ -1926,6 +1934,18 @@ type PlatformServiceRegisteredV1 struct {
 // EventType returns platform.service.registered.v1.
 func (PlatformServiceRegisteredV1) EventType() string { return TypePlatformServiceRegisteredV1 }
 
+// PlatformTenantDeletedV1 is the payload of platform.tenant.deleted.v1.
+//
+// A suspended shop was deleted (ADR-029). yc-gateway answers 410 on its former hosts and frees the hostnames. Data purge across services is backlog-v2.
+type PlatformTenantDeletedV1 struct {
+	// The shop (ADR-001). Never reused. Never _platform.
+	TenantID  string    `json:"tenant_id"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns platform.tenant.deleted.v1.
+func (PlatformTenantDeletedV1) EventType() string { return TypePlatformTenantDeletedV1 }
+
 // PlatformTenantProvisionedV1 is the payload of platform.tenant.provisioned.v1.
 //
 // A new tenant was provisioned by yc-tenant-cli. Published on the _platform tenant; services create their per-tenant defaults and yc-gateway maps the hostnames.
@@ -1949,6 +1969,50 @@ type PlatformTenantProvisionedV1 struct {
 
 // EventType returns platform.tenant.provisioned.v1.
 func (PlatformTenantProvisionedV1) EventType() string { return TypePlatformTenantProvisionedV1 }
+
+// PlatformTenantReinstatedV1 is the payload of platform.tenant.reinstated.v1.
+//
+// A suspended shop was reinstated (ADR-029). yc-gateway clears the 503 and serves its hosts again.
+type PlatformTenantReinstatedV1 struct {
+	// The shop (ADR-001). Never _platform.
+	TenantID     string    `json:"tenant_id"`
+	ReinstatedAt time.Time `json:"reinstated_at"`
+}
+
+// EventType returns platform.tenant.reinstated.v1.
+func (PlatformTenantReinstatedV1) EventType() string { return TypePlatformTenantReinstatedV1 }
+
+// PlatformTenantSuspendedV1 is the payload of platform.tenant.suspended.v1.
+//
+// A shop was suspended (ADR-029). yc-gateway answers 503 tenant_suspended on its hosts, including webhooks.
+type PlatformTenantSuspendedV1 struct {
+	// The shop (ADR-001). Never _platform.
+	TenantID string `json:"tenant_id"`
+	// Why the shop was suspended; required by the API.
+	Reason      string    `json:"reason"`
+	SuspendedAt time.Time `json:"suspended_at"`
+}
+
+// EventType returns platform.tenant.suspended.v1.
+func (PlatformTenantSuspendedV1) EventType() string { return TypePlatformTenantSuspendedV1 }
+
+// PlatformTenantUpdatedV1 is the payload of platform.tenant.updated.v1.
+//
+// A shop's name or hostnames changed (ADR-029). Published on _platform; yc-gateway replaces the tenant's hostnames, yc-message updates its projection.
+type PlatformTenantUpdatedV1 struct {
+	// The shop (ADR-001). Never _platform.
+	TenantID string `json:"tenant_id"`
+	// Display name after the change.
+	Name string `json:"name"`
+	// Full hostname set after the change; hostnames[0] is the primary.
+	Hostnames []string `json:"hostnames"`
+	// The primary hostname; must be one of hostnames.
+	PrimaryHostname string    `json:"primary_hostname"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// EventType returns platform.tenant.updated.v1.
+func (PlatformTenantUpdatedV1) EventType() string { return TypePlatformTenantUpdatedV1 }
 
 // PreferenceChannelAddedV1 is the payload of preference.channel.added.v1.
 //

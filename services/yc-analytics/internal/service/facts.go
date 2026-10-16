@@ -22,6 +22,13 @@ func (s *Service) TenantProvisioned(ctx context.Context, p ycevents.PlatformTena
 	})
 }
 
+// TenantUpdated refreshes a shop's display name in dim_tenant (ADR-029).
+func (s *Service) TenantUpdated(ctx context.Context, p ycevents.PlatformTenantUpdatedV1) error {
+	return s.shopTx(ctx, p.TenantID, func(tx pgx.Tx) error {
+		return s.facts.UpdateTenantName(ctx, tx, p.TenantID, p.Name, s.now().UTC())
+	})
+}
+
 // VisitorCreated records a visitor session, the top of the funnel.
 func (s *Service) VisitorCreated(ctx context.Context, env eventbus.Envelope, p ycevents.IdentityVisitorCreatedV1) error {
 	return s.fact(ctx, env.TenantID, p.CreatedAt, func(tx pgx.Tx) error {
