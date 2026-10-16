@@ -10,6 +10,8 @@ GATEWAY=${GATEWAY_URL:-http://localhost:8090}
 ADMIN_HOST=${ADMIN_HOST:-admin.localhost}
 SYSADMIN_EMAIL=${SYSADMIN_EMAIL:-sysadmin@yc.test}
 SYSADMIN_PASSWORD=${SYSADMIN_PASSWORD:-correct-horse-battery}
+# shellcheck source=provision-tenant.sh
+source "$(dirname "${BASH_SOURCE[0]}")/provision-tenant.sh"
 FAKE_STRIPE_PORT=${FAKE_STRIPE_PORT:-12111}
 K6_IMAGE=${K6_IMAGE:-grafana/k6:2.3.0}
 PRODUCTS=${PRODUCTS:-12}
@@ -129,7 +131,7 @@ WORDS=(kettle mug lamp chair shirt book)
 shop() {
     local tenant=$PREFIX-$RUN-$1 host=$PREFIX-$RUN-$1.localhost
     step "Shop $tenant"
-    go run ./tools/yc-tenant-cli provision --tenant-id "$tenant" --name "Load Shop $1" --hostname "$host" \
+    provision_tenant "$tenant" "Load Shop $1" "$host" \
         --store-currency ZAR --default-jurisdiction ZA --tax-inclusive=true >/dev/null
     poll 30 sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $host' $GATEWAY/me)\" = 200 ]" ||
         fail "gateway did not map $host"

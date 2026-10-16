@@ -80,7 +80,9 @@ routed() { ! curl -s -H "Host: $SHOP_HOST" "$GATEWAY$1" | grep -q 'Route not fou
 
 provision() {
     step "Provision tenant $TENANT ($SHOP_HOST, ZAR, VAT-inclusive)"
-    go run ./tools/yc-tenant-cli provision --tenant-id "$TENANT" --name "Demo Shop" --hostname "$SHOP_HOST" \
+    # shellcheck source=lib/provision-tenant.sh
+    source scripts/lib/provision-tenant.sh
+    provision_tenant "$TENANT" "Demo Shop" "$SHOP_HOST" \
         --store-currency ZAR --default-jurisdiction ZA --tax-inclusive=true | sed 's/^/    /'
     poll 15 sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $SHOP_HOST' $GATEWAY/me)\" = 200 ]" ||
         fail "gateway did not map $SHOP_HOST"

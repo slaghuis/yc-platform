@@ -47,8 +47,9 @@ identity_db() { docker exec yc-postgres psql -U postgres -d yc_identity -Atc "$1
 
 provision() {
     step "Provision tenant $TENANT ($SHOP_HOST) with yc-tenant-cli"
-    go run ./tools/yc-tenant-cli provision --tenant-id "$TENANT" --name "Demo Shop" --hostname "$SHOP_HOST" |
-        sed 's/^/    /'
+    # shellcheck source=lib/provision-tenant.sh
+    source scripts/lib/provision-tenant.sh
+    provision_tenant "$TENANT" "Demo Shop" "$SHOP_HOST" | sed 's/^/    /'
     poll 15 sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $SHOP_HOST' $GATEWAY/me)\" = 200 ]" ||
         fail "gateway did not map $SHOP_HOST"
     ok "yc-gateway resolves $SHOP_HOST → $TENANT"

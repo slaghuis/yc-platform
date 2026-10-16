@@ -20,7 +20,7 @@ commands:
   provision   create a shop via POST /sysadmin/tenants
 
 Requires a system admin bearer token (YC_TENANT_CLI_TOKEN) and a platform
-host gateway URL (YC_GATEWAY_URL, default http://admin.localhost:8070).
+host gateway URL (YC_GATEWAY_URL, default http://admin.localhost:8090).
 
 Run 'yc-tenant-cli <command> -h' for the command's flags.
 `

@@ -26,7 +26,7 @@ func TestParseProvision(t *testing.T) {
 	assert.Equal(t, "admin@shop-abc.test", o.body.ContactEmail)
 	require.NotNil(t, o.body.PrimaryAdminEmail)
 	assert.Equal(t, "admin@shop-abc.test", *o.body.PrimaryAdminEmail)
-	assert.Equal(t, "http://admin.localhost:8070", o.gatewayURL)
+	assert.Equal(t, "http://admin.localhost:8090", o.gatewayURL)
 }
 
 func TestParseProvisionRejects(t *testing.T) {

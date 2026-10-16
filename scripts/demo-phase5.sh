@@ -167,7 +167,9 @@ payments() {
 }
 
 provision() { # provision <tenant> <host> <currency>
-    go run ./tools/yc-tenant-cli provision --tenant-id "$1" --name "Demo $3" --hostname "$2" \
+    # shellcheck source=lib/provision-tenant.sh
+    source scripts/lib/provision-tenant.sh
+    provision_tenant "$1" "Demo $3" "$2" \
         --store-currency "$3" --default-jurisdiction ZA --tax-inclusive=true | sed 's/^/    /'
     poll 15 sh -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $2' $GATEWAY/me)\" = 200 ]" ||
         fail "gateway did not map $2"

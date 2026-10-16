@@ -56,7 +56,7 @@ func parseProvision(args []string, stderr io.Writer) (provisionOpts, error) {
 		hosts hostnames
 		email string
 	)
-	fs.StringVar(&o.gatewayURL, "gateway-url", envOr("YC_GATEWAY_URL", "http://admin.localhost:8070"),
+	fs.StringVar(&o.gatewayURL, "gateway-url", envOr("YC_GATEWAY_URL", "http://admin.localhost:8090"),
 		"yc-gateway base URL on a platform host (or YC_GATEWAY_URL)")
 	fs.StringVar(&o.token, "token", os.Getenv("YC_TENANT_CLI_TOKEN"),
 		"system admin bearer token (or YC_TENANT_CLI_TOKEN)")
