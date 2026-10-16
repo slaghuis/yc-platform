@@ -138,7 +138,7 @@ func (s *Service) ResendInvitation(ctx context.Context, id string) (domain.Invit
 	now := s.now()
 	expires := now.Add(s.cfg.InviteTTL)
 	var inv domain.Invitation
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err = s.inTenant(ctx, found.TenantID, func(tx pgx.Tx) error {
 		var err error
 		if inv, err = s.invitations.Resend(ctx, tx, id, hash, expires, now); err != nil {
 			return err
@@ -163,7 +163,7 @@ func (s *Service) RevokeInvitation(ctx context.Context, id string) error {
 		return err
 	}
 	now := s.now()
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err = s.inTenant(ctx, found.TenantID, func(tx pgx.Tx) error {
 		inv, err := s.invitations.Revoke(ctx, tx, id, now)
 		if err != nil {
 			return err

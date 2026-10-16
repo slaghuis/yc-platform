@@ -42,7 +42,7 @@ func (s *Service) Suspend(ctx context.Context, id string, reason string) (domain
 	}
 
 	var out domain.User
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err = s.inTenant(ctx, found.TenantID, func(tx pgx.Tx) error {
 		user, err := s.users.GetForUpdate(ctx, tx, id)
 		if err != nil {
 			return err
@@ -111,7 +111,7 @@ func (s *Service) Reactivate(ctx context.Context, id string) (domain.User, error
 	}
 
 	var out domain.User
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err = s.inTenant(ctx, found.TenantID, func(tx pgx.Tx) error {
 		user, err := s.users.GetForUpdate(ctx, tx, id)
 		if err != nil {
 			return err
@@ -165,7 +165,7 @@ func (s *Service) Demote(ctx context.Context, id string) (domain.User, error) {
 	}
 
 	var out domain.User
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err = s.inTenant(ctx, found.TenantID, func(tx pgx.Tx) error {
 		user, err := s.users.GetForUpdate(ctx, tx, id)
 		if err != nil {
 			return err
