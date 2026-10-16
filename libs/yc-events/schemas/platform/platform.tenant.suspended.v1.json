@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/platform/platform.tenant.suspended.v1.json",
+  "title": "platform.tenant.suspended.v1",
+  "description": "A shop was suspended (ADR-029). yc-gateway answers 503 tenant_suspended on its hosts, including webhooks.",
+  "type": "object",
+  "required": [
+    "tenant_id",
+    "reason",
+    "suspended_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "The shop (ADR-001). Never _platform."
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "Why the shop was suspended; required by the API."
+    },
+    "suspended_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

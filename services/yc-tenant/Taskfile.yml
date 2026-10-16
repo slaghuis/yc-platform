@@ -1,0 +1,55 @@
+version: '3'
+
+dotenv: ['../../.env']
+
+vars:
+  SERVICE: yc-tenant
+
+tasks:
+  build:
+    desc: Build the service binary into bin/
+    sources:
+      - '**/*.go'
+      - go.mod
+    generates:
+      - 'bin/{{.SERVICE}}'
+    cmds:
+      - go build -o bin/{{.SERVICE}} ./cmd/{{.SERVICE}}
+
+  run:
+    desc: Build and run locally (stops cleanly on Ctrl-C or SIGTERM)
+    deps: [build]
+    dir: ../..  # paths in .env are relative to the repo root
+    cmds:
+      - services/{{.SERVICE}}/bin/{{.SERVICE}}
+
+  gen:openapi:
+    desc: Generate server code from api/openapi.yaml
+    sources:
+      - api/openapi.yaml
+      - api/oapi-codegen.yaml
+    generates:
+      - api/generated/server.gen.go
+    cmds:
+      - ../../scripts/oapi-codegen.sh
+
+  test:
+    desc: Unit tests
+    cmds:
+      - go test ./...
+
+  test:integration:
+    desc: Integration tests (requires the dev stack)
+    cmds:
+      - go test -tags=integration ./...
+
+  lint:
+    desc: Lint this module
+    cmds:
+      - golangci-lint run
+
+  docker:build:
+    desc: Build the Docker image
+    dir: ../..
+    cmds:
+      - docker build -t yc-platform/{{.SERVICE}}:dev -f deploy/docker/Dockerfile.service --build-arg SERVICE={{.SERVICE}} .

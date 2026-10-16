@@ -1,7 +1,8 @@
-// yc-tenant-cli provisions tenants by publishing platform tenant events
-// (docs/runbooks/onboarding-tenant.md).
+// yc-tenant-cli provisions tenants through POST /sysadmin/tenants
+// (ADR-029, docs/runbooks/onboarding-tenant.md).
 //
-// Phase 1 implements `provision`; suspend, delete and verify follow.
+// Phase 11 implements `provision` as an API client; suspend, delete and
+// verify follow.
 package main
 
 import (
@@ -16,7 +17,10 @@ import (
 const usage = `usage: yc-tenant-cli <command> [flags]
 
 commands:
-  provision   publish platform.tenant.provisioned.v1
+  provision   create a shop via POST /sysadmin/tenants
+
+Requires a system admin bearer token (YC_TENANT_CLI_TOKEN) and a platform
+host gateway URL (YC_GATEWAY_URL, default http://admin.localhost:8070).
 
 Run 'yc-tenant-cli <command> -h' for the command's flags.
 `

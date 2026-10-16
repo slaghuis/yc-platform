@@ -1,0 +1,28 @@
+service: yc-tenant
+environment: ${YC_ENVIRONMENT:-dev}
+http:
+  listen: ":8080"
+log:
+  level: ${LOG_LEVEL:-info}
+database:
+  url: ${YC_TENANT_DB_URL}
+  migrate_on_start: true
+nats:
+  url: ${NATS_URL}
+telemetry:
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_TENANT_ADVERTISE_URL:-http://yc-tenant:8080}
+  interval: 5s
+# Hostnames that resolve to _platform at yc-gateway (its platform_hosts).
+# No tenant may use one (ADR-029 rule 3). Keep this equal to the gateway's
+# list: a comma-separated YC_TENANT_PLATFORM_HOSTS, or override with
+# YC_TENANT__PLATFORM_HOSTS.
+platform_hosts:
+  - ${YC_TENANT_PLATFORM_HOSTS:-admin.localhost}
+# Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
+idempotency:
+  retention: 24h
+  purge_interval: 1h

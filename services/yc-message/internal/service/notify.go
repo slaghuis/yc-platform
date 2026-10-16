@@ -40,7 +40,7 @@ func (s *Service) OrderPlaced(ctx context.Context, tenantID, eventID string, p e
 		items[i] = map[string]any{"name": it.NameSnapshot, "quantity": it.Quantity, "line_total": eventMoney(it.LineTotal)}
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeOrderConfirmation, to, map[string]any{
-		"order_number": p.OrderNumber, "order_url": s.orderURL(tenantID, p.OrderID), "items": items,
+		"order_number": p.OrderNumber, "order_url": s.orderURL(ctx, tenantID, p.OrderID), "items": items,
 		"items_total": eventMoney(p.ItemsTotal), "shipping": eventMoney(p.Shipping),
 		"tax_total": eventMoney(p.TaxTotal), "total": eventMoney(p.Total), "requires_shipping": p.RequiresShipping,
 	})
@@ -54,7 +54,7 @@ func (s *Service) OrderShipped(ctx context.Context, tenantID, eventID string, p 
 	}
 	return s.orderMessage(ctx, tenantID, eventID, domain.TypeOrderShipped, p.OrderID, map[string]any{
 		"tracking_number": p.TrackingNumber, "carrier": carrier,
-		"tracking_url": s.links(tenantID).Tracking(p.TrackingNumber),
+		"tracking_url": s.links(ctx, tenantID).Tracking(p.TrackingNumber),
 	})
 }
 
@@ -90,7 +90,7 @@ func (s *Service) CartAbandoned(ctx context.Context, tenantID, eventID string, p
 		return s.skipped(ctx, err, domain.TypeCartAbandoned, p.CartID)
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeCartAbandoned, to, map[string]any{
-		"item_count": p.ItemCount, "quantity": p.Quantity, "cart_url": s.links(tenantID).Cart(),
+		"item_count": p.ItemCount, "quantity": p.Quantity, "cart_url": s.links(ctx, tenantID).Cart(),
 	})
 }
 
@@ -104,7 +104,7 @@ func (s *Service) ReviewPrompt(ctx context.Context, tenantID, eventID string, p 
 	products := make([]map[string]any, len(p.Products))
 	for i, pr := range p.Products {
 		products[i] = map[string]any{
-			"name": pr.Name, "review_url": s.links(tenantID).Review(pr.ProductID),
+			"name": pr.Name, "review_url": s.links(ctx, tenantID).Review(pr.ProductID),
 		}
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeReviewPrompt, to, map[string]any{
@@ -127,7 +127,7 @@ func (s *Service) orderMessage(ctx context.Context, tenantID, eventID string, t 
 	if err != nil || !ok {
 		return s.skipped(ctx, err, t, orderID)
 	}
-	msgCtx := map[string]any{"order_number": o.OrderNumber, "order_url": s.orderURL(tenantID, orderID)}
+	msgCtx := map[string]any{"order_number": o.OrderNumber, "order_url": s.orderURL(ctx, tenantID, orderID)}
 	for k, v := range extra {
 		msgCtx[k] = v
 	}
@@ -168,8 +168,8 @@ func (s *Service) skipped(ctx context.Context, err error, t domain.Type, subject
 	return nil
 }
 
-func (s *Service) orderURL(tenantID, orderID string) string {
-	return s.links(tenantID).Order(orderID)
+func (s *Service) orderURL(ctx context.Context, tenantID, orderID string) string {
+	return s.links(ctx, tenantID).Order(orderID)
 }
 
 func eventMoney(m events.Money) string {
