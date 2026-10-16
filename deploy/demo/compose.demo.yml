@@ -1,0 +1,315 @@
+# Demo override for the HostAfrica VM (ADR-031).
+# Usage (from the repository root on the VM):
+#   export VERSION=v1.1.0-beta.1
+#   docker compose --env-file deploy/demo/.env.demo \
+#     -f docker-compose.yml -f deploy/demo/compose.demo.yml \
+#     --profile app --profile frontends up -d
+#
+# Images come from GHCR; no host ports except Caddy 80/443.
+
+x-service-image: &service-image
+  pull_policy: always
+
+services:
+  postgres:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/demo/postgres-init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+
+  nats:
+    ports: !reset []
+
+  seaweedfs:
+    ports: !reset []
+    volumes:
+      - s3data:/data
+      - ${YC_DEMO_SEAWEEDFS_S3_JSON:-./deploy/demo/seaweedfs-s3.json}:/etc/seaweedfs/s3.json:ro
+
+  jaeger:
+    ports: !reset []
+
+  mailhog:
+    # SMTP only on the Compose network; UI via SSH tunnel to :8025.
+    ports: !reset []
+
+  yc-identity:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-identity:${VERSION}
+    ports: !reset []
+    volumes:
+      - ${YC_DEMO_KEYS_DIR:-./deploy/demo/keys}:/keys:ro
+    environment:
+      YC_IDENTITY_DB_URL: postgres://yc_identity_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_identity?sslmode=disable
+      YC_IDENTITY_JWT_PRIVATE_KEY_FILE: /keys/jwt-private.pem
+      YC_IDENTITY_OAUTH_FAKE: "false"
+      YC_IDENTITY_LOG_RESET_LINKS: "false"
+      YC_IDENTITY_LOG_INVITE_LINKS: ${YC_IDENTITY_LOG_INVITE_LINKS:-false}
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_IDENTITY__PASSWORD__RESET_URL: https://{host}/account/reset-password?token={token}
+      YC_IDENTITY__INVITATIONS__ACCEPT_URL: https://{host}/account/accept-invite?token={token}
+      YC_IDENTITY__OAUTH__GOOGLE__REDIRECT_URL: https://{host}/oauth/google/callback
+      YC_IDENTITY__OAUTH__FACEBOOK__REDIRECT_URL: https://{host}/oauth/facebook/callback
+      YC_IDENTITY_PLATFORM_HOSTS: ${YC_GATEWAY__PLATFORM_HOSTS}
+      YC_IDENTITY__HTTP__SHUTDOWN_DELAY: "0s"
+      YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET}
+      YC_ORDERS_SERVICE_SECRET: ${YC_ORDERS_SERVICE_SECRET}
+      YC_CHECKOUT_SERVICE_SECRET: ${YC_CHECKOUT_SERVICE_SECRET}
+      YC_IDENTITY_SERVICE_SECRET: ${YC_IDENTITY_SERVICE_SECRET}
+      YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET}
+      YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET}
+      YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET}
+      YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET}
+
+  yc-gateway:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-gateway:${VERSION}
+    ports: !reset []
+    environment:
+      YC_GATEWAY_DB_URL: postgres://yc_gateway_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_gateway?sslmode=disable
+      YC_GATEWAY__UPSTREAMS__IDENTITY: http://yc-identity:8080
+      YC_GATEWAY_COOKIE_SECURE: "true"
+      YC_GATEWAY__PLATFORM_HOSTS: ${YC_GATEWAY__PLATFORM_HOSTS}
+      YC_GATEWAY__TRUSTED_PROXIES: ${YC_GATEWAY__TRUSTED_PROXIES}
+      YC_GATEWAY_RATE_LIMIT: "true"
+      YC_GATEWAY__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-monitor:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-monitor:${VERSION}
+    ports: !reset []
+    environment:
+      YC_MONITOR_DB_URL: postgres://yc_monitor_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_monitor?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_MONITOR_CRITICAL_WEBHOOK: ${YC_MONITOR_CRITICAL_WEBHOOK:-}
+      YC_MONITOR__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-product:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-product:${VERSION}
+    ports: !reset []
+    environment:
+      YC_PRODUCT_DB_URL: postgres://yc_product_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_product?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_PRODUCT__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-pricing:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-pricing:${VERSION}
+    ports: !reset []
+    environment:
+      YC_PRICING_DB_URL: postgres://yc_pricing_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_pricing?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_PRICING__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-image:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-image:${VERSION}
+    ports: !reset []
+    environment:
+      YC_IMAGE_DB_URL: postgres://yc_image_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_image?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET_IMAGES: ${S3_BUCKET_IMAGES:-yc-images}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL}
+      YC_IMAGE__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-preference:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-preference:${VERSION}
+    ports: !reset []
+    environment:
+      YC_PREFERENCE_DB_URL: postgres://yc_preference_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_preference?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET}
+      YC_PREFERENCE__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-cart:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-cart:${VERSION}
+    ports: !reset []
+    environment:
+      YC_CART_DB_URL: postgres://yc_cart_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_cart?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_CART_SERVICE_SECRET: ${YC_CART_SERVICE_SECRET}
+      YC_CART__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-inventory:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-inventory:${VERSION}
+    ports: !reset []
+    environment:
+      YC_INVENTORY_DB_URL: postgres://yc_inventory_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_inventory?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_INVENTORY__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-payment:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-payment:${VERSION}
+    ports: !reset []
+    environment:
+      YC_PAYMENT_DB_URL: postgres://yc_payment_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_payment?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_PAYMENT_CIPHER_KEY: ${YC_PAYMENT_CIPHER_KEY}
+      YC_PAYMENT__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-shipping:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-shipping:${VERSION}
+    ports: !reset []
+    environment:
+      YC_SHIPPING_DB_URL: postgres://yc_shipping_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_shipping?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET}
+      YC_SHIPPING_CIPHER_KEY: ${YC_SHIPPING_CIPHER_KEY}
+      YC_SHIPPING__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-orders:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-orders:${VERSION}
+    ports: !reset []
+    environment:
+      YC_ORDERS_DB_URL: postgres://yc_orders_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_orders?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_ORDERS_SERVICE_SECRET: ${YC_ORDERS_SERVICE_SECRET}
+      YC_ORDERS__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-checkout:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-checkout:${VERSION}
+    ports: !reset []
+    environment:
+      YC_CHECKOUT_DB_URL: postgres://yc_checkout_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_checkout?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_CHECKOUT_SERVICE_SECRET: ${YC_CHECKOUT_SERVICE_SECRET}
+      YC_CHECKOUT__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-message:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-message:${VERSION}
+    ports: !reset []
+    environment:
+      YC_MESSAGE_DB_URL: postgres://yc_message_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_message?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET}
+      SMTP_ADDR: mailhog:1025
+      YC_MESSAGE_SHOP_URL: https://{host}
+      YC_MESSAGE_SYSTEM_ADMIN_EMAILS: ${YC_MESSAGE_SYSTEM_ADMIN_EMAILS}
+      YC_MESSAGE_CIPHER_KEY: ${YC_MESSAGE_CIPHER_KEY}
+      YC_MESSAGE__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-review:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-review:${VERSION}
+    ports: !reset []
+    environment:
+      YC_REVIEW_DB_URL: postgres://yc_review_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_review?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET}
+      YC_REVIEW__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-audit:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-audit:${VERSION}
+    ports: !reset []
+    environment:
+      YC_AUDIT_DB_URL: postgres://yc_audit_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_audit?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_AUDIT__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-analytics:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-analytics:${VERSION}
+    ports: !reset []
+    environment:
+      YC_ANALYTICS_DB_URL: postgres://yc_analytics_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_analytics?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_ANALYTICS__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-tenant:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-tenant:${VERSION}
+    ports: !reset []
+    environment:
+      YC_TENANT_DB_URL: postgres://yc_tenant_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_tenant?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_TENANT_ADVERTISE_URL: http://yc-tenant:8080
+      YC_TENANT_PLATFORM_HOSTS: ${YC_GATEWAY__PLATFORM_HOSTS}
+      YC_TENANT__HTTP__SHUTDOWN_DELAY: "0s"
+
+  # Frontend BFFs (separate repos; images on GHCR).
+  yc-platform-admin:
+    profiles: [frontends]
+    image: ${ADMIN_IMAGE}:${ADMIN_VERSION:-${VERSION}}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      NODE_ENV: production
+    depends_on:
+      - yc-gateway
+
+  yc-platform-shop:
+    profiles: [frontends]
+    image: ${SHOP_IMAGE}:${SHOP_VERSION:-${VERSION}}
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      SESSION_SECRET: ${SHOP_SESSION_SECRET}
+      NODE_ENV: production
+    depends_on:
+      - yc-gateway
+
+  edge:
+    profiles: [frontends]
+    image: caddy:2.10-alpine
+    container_name: yc-edge
+    restart: unless-stopped
+    environment:
+      YC_DEMO_ACME_EMAIL: ${YC_DEMO_ACME_EMAIL}
+    volumes:
+      - ./deploy/demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports: !override
+      - "80:80"
+      - "443:443"
+    extra_hosts: !reset []
+    depends_on:
+      - yc-platform-admin
+      - yc-platform-shop
+      - yc-gateway
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  caddy_data:
+  caddy_config:

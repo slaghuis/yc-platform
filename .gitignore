@@ -19,5 +19,12 @@ coverage.out
 .env
 /deploy/compose/dev-keys/
 /docker-compose.override.yml
+/deploy/demo/.env.demo
+/deploy/demo/seaweedfs-s3.json
+/deploy/demo/keys/*.pem
+# Host SSH keys kept next to the checkout for operators (never commit)
+/yellowcommerce_pk
+/yellowcommerce_pk.pub
+*.pem.bak
 
 .DS_Store

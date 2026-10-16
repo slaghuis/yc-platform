@@ -28,7 +28,7 @@ func NewMessages(client Caller) *Messages {
 type sendRequest struct {
 	Type      string         `json:"type"`
 	Reference string         `json:"reference"`
-	UserID    string         `json:"user_id"`
+	UserID    string         `json:"user_id,omitempty"`
 	Channel   string         `json:"channel"`
 	Address   string         `json:"address"`
 	Context   map[string]any `json:"context"`
