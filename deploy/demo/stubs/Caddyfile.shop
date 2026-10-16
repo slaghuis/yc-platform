@@ -1,0 +1,4 @@
+# Temporary stand-in until ghcr.io/slaghuis/yc-platform-shop is published.
+:3000 {
+	respond "Yellow Commerce demo shop — frontend image not deployed yet (yc-platform-shop)." 200
+}
