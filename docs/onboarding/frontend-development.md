@@ -31,7 +31,7 @@ Every other `*.localhost` host also goes to the shop, so shops provisioned later
 | System admin | `admin.localhost` | `sysadmin@yc.test` | `correct-horse-battery` |
 | Shop admin of `yc-demo` | `yc-demo.localhost` | `admin@yc-demo.test` | `demo-shop-admin-pass` |
 
-Override them with `SYSADMIN_EMAIL`, `SYSADMIN_PASSWORD`, `SHOP_ADMIN_EMAIL` and `SHOP_ADMIN_PASSWORD`. The shop admin is created the v1 way: registered as a customer on the shop host, then promoted by the system admin. Invitations replace this in Phase 12.
+Override them with `SYSADMIN_EMAIL`, `SYSADMIN_PASSWORD`, `SHOP_ADMIN_EMAIL` and `SHOP_ADMIN_PASSWORD`. The seed script still registers-then-promotes for a ready password; production and the console use invitations (`POST /sysadmin/invitations`, `POST /invitations/accept`, ADR-030).
 
 A customer registers on the storefront like any shopper.
 

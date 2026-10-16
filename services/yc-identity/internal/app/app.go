@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
@@ -18,6 +19,7 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/password"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/service"
 	"github.com/slaghuis/yc-platform/services/yc-identity/internal/token"
+	subscribers "github.com/slaghuis/yc-platform/services/yc-identity/internal/transport/events"
 	transport "github.com/slaghuis/yc-platform/services/yc-identity/internal/transport/http"
 	"github.com/slaghuis/yc-platform/services/yc-identity/migrations"
 )
@@ -44,7 +46,14 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 	if err != nil {
 		return err
 	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		httpkit.KeepRegistered(ctx, cfg.Gateway, httpkit.Registration{
+			ServiceName: cfg.Service, Version: build.Version, Routes: transport.Routes(),
+		})
+	})
 	serveErr := httpkit.Serve(ctx, cfg.HTTP, a.Handler)
+	wg.Wait()
 
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -54,11 +63,12 @@ func Run(ctx context.Context, cfg Config, build httpkit.BuildInfo) error {
 // App is the wired service. Telemetry must be initialised first.
 type App struct {
 	Handler http.Handler
+	Service *service.Service
 	closers []func(context.Context) error
 }
 
 // New migrates the database (when configured), connects to Postgres and
-// NATS, and builds the HTTP handler.
+// NATS, subscribes to tenant lifecycle events, and builds the HTTP handler.
 func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err error) {
 	a := &App{}
 	defer func() {
@@ -128,24 +138,40 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		messages = integration.NewMessages(internal)
 		orders = integration.NewOrders(internal)
 	}
-	svc := service.New(db, bus, signer, hasher, service.Config{
+	a.Service = service.New(db, bus, signer, hasher, service.Config{
 		AccessTokenTTL:  cfg.JWT.AccessTokenTTL,
 		VisitorTokenTTL: cfg.JWT.VisitorTokenTTL,
 		RefreshTokenTTL: cfg.JWT.RefreshTokenTTL,
 		ServiceTokenTTL: cfg.JWT.ServiceTokenTTL,
 		ResetTokenTTL:   cfg.Password.ResetTTL,
 		OAuthStateTTL:   cfg.OAuth.StateTTL,
+		InviteTTL:       cfg.Invitations.TTL,
+		AcceptURL:       cfg.Invitations.AcceptURL,
+		PlatformHosts:   cfg.platformHosts(),
 		ServiceClients:  cfg.serviceClients(),
 		OAuth:           providers,
 		ResetURL:        cfg.Password.ResetURL,
 		Messages:        messages,
 		Orders:          orders,
 		LogResetLinks:   cfg.Password.LogResetLinks,
+		LogInviteLinks:  cfg.Invitations.LogInviteLinks,
 
 		LoginMaxFailures:   cfg.Password.LoginMaxFailures,
 		LoginFailureWindow: cfg.Password.LoginFailureWindow,
 	})
-	a.Handler = transport.NewRouter(svc, build, []httpkit.Check{
+	for _, sub := range subscribers.Subscriptions(a.Service) {
+		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
+			return nil, err
+		}
+	}
+
+	idem := httpkit.PGIdempotencyStore{DB: db}
+	bgCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	var wg sync.WaitGroup
+	wg.Go(func() { idem.KeepPurged(bgCtx, cfg.Idempotency.Retention, cfg.Idempotency.PurgeInterval) })
+	a.closers = append(a.closers, func(context.Context) error { stop(); wg.Wait(); return nil })
+
+	a.Handler = transport.NewRouter(a.Service, idem, build, []httpkit.Check{
 		{Name: "postgres", Fn: db.Ping},
 		{Name: "nats", Fn: bus.Ping},
 	})
@@ -176,7 +202,7 @@ func BootstrapAdmin(ctx context.Context, cfg Config, email, pw, displayName stri
 	return created, err
 }
 
-// Close stops the event bus, then closes the database pool.
+// Close stops background loops and the event bus, then closes the database.
 func (a *App) Close(ctx context.Context) error {
 	var errs []error
 	for i := len(a.closers) - 1; i >= 0; i-- {

@@ -38,8 +38,30 @@ password:
   login_max_failures: 10
   login_failure_window: 15m
 
+# Admin invitations (ADR-030). "{host}" and "{token}" in accept_url.
+invitations:
+  ttl: 72h
+  accept_url: "https://{host}/account/accept-invite?token={token}"
+  log_invite_links: ${YC_IDENTITY_LOG_INVITE_LINKS:-false}
+
+# Hostnames that resolve to _platform at yc-gateway (its platform_hosts).
+# [0] is used for system_admin invite links. Keep equal to the gateway list.
+platform_hosts:
+  - ${YC_IDENTITY_PLATFORM_HOSTS:-admin.localhost}
+
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_IDENTITY_ADVERTISE_URL:-http://yc-identity:8080}
+  interval: 5s
+
+# Idempotency-Key responses are kept at least 24 h (api-conventions.md §10).
+idempotency:
+  retention: 24h
+  purge_interval: 1h
+
 # Internal calls through yc-gateway (ADR-021): yc-message sends reset
-# links. With no gateway URL, reset links are not sent.
+# and invite links. With no gateway URL, links are not sent.
 internal_calls:
   gateway_url: ${YC_GATEWAY_INTERNAL_URL}
   client_secret: ${YC_IDENTITY_SERVICE_SECRET}

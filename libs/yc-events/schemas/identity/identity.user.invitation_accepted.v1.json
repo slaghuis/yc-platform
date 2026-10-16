@@ -8,6 +8,7 @@
     "invitation_id",
     "user_id",
     "tenant_id",
+    "email",
     "role",
     "upgraded_customer",
     "accepted_at"
@@ -25,6 +26,11 @@
     "tenant_id": {
       "type": "string",
       "description": "_platform for system_admin; shop slug for shop_admin."
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Lowercased invitee email. PII (event-conventions §18)."
     },
     "role": {
       "type": "string",

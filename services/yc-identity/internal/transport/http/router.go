@@ -33,20 +33,40 @@ type Identity interface {
 	ListUsers(ctx context.Context, f repository.Filter, after *repository.Cursor, limit int) ([]domain.User, *repository.Cursor, error)
 	GetUser(ctx context.Context, id string) (domain.User, error)
 	Promote(ctx context.Context, id string, role domain.Role) (domain.User, error)
+	Suspend(ctx context.Context, id, reason string) (domain.User, error)
+	Reactivate(ctx context.Context, id string) (domain.User, error)
+	Demote(ctx context.Context, id string) (domain.User, error)
 	DeleteMe(ctx context.Context) error
 	DeleteUser(ctx context.Context, id string) error
+	CreateInvitation(ctx context.Context, in domain.InviteInput) (domain.Invitation, error)
+	ListInvitations(ctx context.Context, f repository.InvitationFilter, after *repository.InvitationCursor, limit int) ([]domain.Invitation, *repository.InvitationCursor, error)
+	ResendInvitation(ctx context.Context, id string) (domain.Invitation, error)
+	RevokeInvitation(ctx context.Context, id string) error
+	AcceptInvitation(ctx context.Context, in domain.AcceptInviteInput) (domain.Session, error)
+}
+
+// Routes are the gateway routes yc-identity registers (ADR-020 rule 7).
+// Accept stays on the static chain; gateway adds it separately.
+func Routes() []httpkit.RegisteredRoute {
+	sysadmin := []string{string(authctx.ActorSystemAdmin)}
+	return []httpkit.RegisteredRoute{
+		{Prefix: "/sysadmin/invitations", Roles: sysadmin},
+	}
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
+// POSTs carrying an Idempotency-Key are replayed from idem.
 // /internal/ routes are reached through yc-gateway's internal listener
 // (ADR-021).
-func NewRouter(svc Identity, build httpkit.BuildInfo, checks []httpkit.Check) http.Handler {
+func NewRouter(svc Identity, idem httpkit.IdempotencyStore, build httpkit.BuildInfo, checks []httpkit.Check) http.Handler {
+	mw := []func(http.Handler) http.Handler{
+		authctx.Middleware, authctx.Audience, httpkit.LimitBody(httpkit.MaxBodyBytes), withHost,
+	}
+	if idem != nil {
+		mw = append(mw, httpkit.Idempotency(httpkit.IdempotencyOptions{Store: idem}))
+	}
 	r := httpkit.NewRouter(httpkit.RouterOptions{
-		Build:  build,
-		Checks: checks,
-		Middleware: []func(http.Handler) http.Handler{
-			authctx.Middleware, authctx.Audience, httpkit.LimitBody(httpkit.MaxBodyBytes), withHost,
-		},
+		Build: build, Checks: checks, Middleware: mw,
 	})
 	strict := api.NewStrictHandlerWithOptions(handlers{svc: svc}, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  httpkit.RequestError,
@@ -247,6 +267,121 @@ func (h handlers) PromoteUser(ctx context.Context, req api.PromoteUserRequestObj
 	return api.PromoteUser200JSONResponse(user(u)), nil
 }
 
+func (h handlers) SuspendUser(ctx context.Context, req api.SuspendUserRequestObject) (api.SuspendUserResponseObject, error) {
+	var reason string
+	if req.Body != nil && req.Body.Reason != nil {
+		reason = *req.Body.Reason
+	}
+	u, err := h.svc.Suspend(ctx, req.ID.String(), reason)
+	if err != nil {
+		return nil, err
+	}
+	return api.SuspendUser200JSONResponse(user(u)), nil
+}
+
+func (h handlers) ReactivateUser(ctx context.Context, req api.ReactivateUserRequestObject) (api.ReactivateUserResponseObject, error) {
+	u, err := h.svc.Reactivate(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.ReactivateUser200JSONResponse(user(u)), nil
+}
+
+func (h handlers) DemoteUser(ctx context.Context, req api.DemoteUserRequestObject) (api.DemoteUserResponseObject, error) {
+	u, err := h.svc.Demote(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.DemoteUser200JSONResponse(user(u)), nil
+}
+
+func (h handlers) CreateInvitation(ctx context.Context, req api.CreateInvitationRequestObject) (api.CreateInvitationResponseObject, error) {
+	var displayName, acceptHost string
+	if req.Body.DisplayName != nil {
+		displayName = *req.Body.DisplayName
+	}
+	if req.Body.AcceptHost != nil {
+		acceptHost = *req.Body.AcceptHost
+	}
+	in, err := domain.NewInviteInput(req.Body.TenantID, string(req.Body.Email), string(req.Body.Role), displayName, acceptHost)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := h.svc.CreateInvitation(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateInvitation201JSONResponse(invitation(inv)), nil
+}
+
+func (h handlers) ListInvitations(ctx context.Context, req api.ListInvitationsRequestObject) (api.ListInvitationsResponseObject, error) {
+	p := req.Params
+	page, err := httpkit.ParsePage(p.PageSize, p.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	var after *repository.InvitationCursor
+	if page.Cursor != "" {
+		after = &repository.InvitationCursor{}
+		if err := httpkit.DecodeCursor(page.Cursor, after); err != nil {
+			return nil, err
+		}
+	}
+	f := repository.InvitationFilter{}
+	if p.TenantID != nil {
+		f.TenantID = *p.TenantID
+	}
+	if p.Status != nil {
+		f.Status = domain.InvitationStatus(*p.Status)
+	}
+	invs, next, err := h.svc.ListInvitations(ctx, f, after, page.Size)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListInvitations200JSONResponse{
+		Items: make([]api.Invitation, len(invs)),
+		Page:  httpkit.PageInfo{Size: page.Size, Cursor: page.Cursor},
+	}
+	for i, inv := range invs {
+		out.Items[i] = invitation(inv)
+	}
+	if next != nil {
+		out.Page.NextCursor = httpkit.EncodeCursor(next)
+	}
+	return out, nil
+}
+
+func (h handlers) ResendInvitation(ctx context.Context, req api.ResendInvitationRequestObject) (api.ResendInvitationResponseObject, error) {
+	inv, err := h.svc.ResendInvitation(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.ResendInvitation200JSONResponse(invitation(inv)), nil
+}
+
+func (h handlers) RevokeInvitation(ctx context.Context, req api.RevokeInvitationRequestObject) (api.RevokeInvitationResponseObject, error) {
+	if err := h.svc.RevokeInvitation(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.RevokeInvitation204Response{}, nil
+}
+
+func (h handlers) AcceptInvitation(ctx context.Context, req api.AcceptInvitationRequestObject) (api.AcceptInvitationResponseObject, error) {
+	var displayName string
+	if req.Body.DisplayName != nil {
+		displayName = *req.Body.DisplayName
+	}
+	in, err := domain.NewAcceptInviteInput(req.Body.Token, req.Body.Password, displayName)
+	if err != nil {
+		return nil, err
+	}
+	sess, err := h.svc.AcceptInvitation(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.AcceptInvitation200JSONResponse(session(sess)), nil
+}
+
 func (h handlers) DeleteMe(ctx context.Context, _ api.DeleteMeRequestObject) (api.DeleteMeResponseObject, error) {
 	if err := h.svc.DeleteMe(ctx); err != nil {
 		return nil, err
@@ -307,6 +442,30 @@ func user(u domain.User) api.User {
 	}
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
+	}
+	return out
+}
+
+func invitation(inv domain.Invitation) api.Invitation {
+	out := api.Invitation{
+		InvitationID: parseUUID(inv.ID),
+		TenantID:     inv.TenantID,
+		Email:        inv.Email,
+		Role:         api.InvitationRole(inv.Role),
+		Status:       api.InvitationStatus(inv.Status),
+		ExpiresAt:    inv.ExpiresAt.UTC(),
+		CreatedAt:    inv.CreatedAt.UTC(),
+	}
+	if inv.DisplayName != "" {
+		out.DisplayName = &inv.DisplayName
+	}
+	if inv.InvitedBy != "" {
+		id := parseUUID(inv.InvitedBy)
+		out.InvitedBy = &id
+	}
+	if inv.AcceptedUserID != "" {
+		id := parseUUID(inv.AcceptedUserID)
+		out.AcceptedUserID = &id
 	}
 	return out
 }

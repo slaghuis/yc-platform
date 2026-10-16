@@ -33,7 +33,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `identity.user.registered.v1` | yc-identity | yc-message, yc-orders, yc-preference | New customer registration |
 | `identity.user.promoted.v1` | yc-identity | yc-audit, yc-message | Role changed upward (yc-message keeps its shop admins) |
 | `identity.user.demoted.v1` | yc-identity | yc-audit, yc-message | Shop admin demoted to customer (ADR-030) |
-| `identity.user.invited.v1` | yc-identity | yc-audit, yc-message | System admin invited an email to a role; yc-message sends `admin_invite` (ADR-030) |
+| `identity.user.invited.v1` | yc-identity | yc-audit | System admin invited an email to a role; invite link sent via `POST /internal/send` `admin_invite` (ADR-030) |
 | `identity.user.invitation_accepted.v1` | yc-identity | yc-audit, yc-message, yc-preference | Invitation accepted; admin audience and preference defaults (ADR-030) |
 | `identity.user.invitation_revoked.v1` | yc-identity | yc-audit | Pending invitation revoked (ADR-030) |
 | `identity.user.logged_in.v1` | yc-identity | yc-cart | Successful login |

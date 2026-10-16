@@ -2,7 +2,7 @@
 
 Provision a shop, give it a shop admin and connect its payments. Allow about 30 minutes, most of it waiting for DNS and TLS.
 
-*Not built yet (v2 backlog / Phase 12): an emailed admin invite from `primary_admin_email`, and a `yc-tenant-cli verify` command (step 6 is a manual checklist).*
+*`yc-tenant-cli verify` is not built yet (v2 backlog); step 6 is a manual checklist.*
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ Provision a shop, give it a shop admin and connect its payments. Allow about 30 
    ```
    Currency, jurisdiction and tax-inclusive default to `ZAR`, `ZA` and `true`. `--contact-email` defaults to `--primary-admin-email` when only the latter is set. A taken tenant ID or hostname is a synchronous `409` (not a dead letter).
 2. **Check it landed.** yc-tenant publishes `platform.tenant.provisioned.v1` through its outbox. yc-gateway maps the hostnames (`tenant_hosts`, ADR-020); yc-pricing creates the pricing config; yc-inventory, yc-preference, yc-analytics and yc-message create their per-shop projections. Within a few seconds `curl -H 'Host: shop-abc.com' https://<gateway>/me` answers `200` (a visitor). `GET /sysadmin/tenants/shop-abc` on the platform host shows `status: active`.
-3. **Create the shop admin.** Until Phase 12 invitations land, the shop admin registers on the shop's hostname (`POST /register`). A system admin, logged in on the platform host, finds the user (`GET /admin/users?tenant_id=shop-abc&email=…`) and promotes them (`POST /admin/users/{id}/promote {"role": "shop_admin"}`). The shop admin then logs in again; tokens issued before the promotion stop working.
+3. **The owner accepts the invitation.** When `--primary-admin-email` is set, yc-identity consumes `platform.tenant.provisioned.v1` and emails an `admin_invite` link to that address (ADR-030). The owner opens `https://<shop host>/account/accept-invite?token=…`, sets a password (`POST /invitations/accept`), and becomes the shop admin. To invite later: `POST /sysadmin/invitations` on the platform host. (`POST /admin/users/{id}/promote` still works for an already-registered customer.)
 4. **Connect payments:** `yoco-setup.md` for Yoco (ZAR). For Stripe, `PUT /admin/gateway-config/stripe` with the secret key and the webhook secret of a Stripe webhook pointing at `https://<shop host>/webhooks/stripe`, then `POST /admin/gateway-config/stripe/test`.
 5. **The shop admin configures:**
    - Tax classes (`PUT /admin/tax-classes/{class_id}`; there are no platform defaults) and, if needed, the pricing config (`PUT /admin/pricing-config`; the currency is fixed once prices exist).

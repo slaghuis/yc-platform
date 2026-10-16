@@ -142,14 +142,44 @@ func (f *fakeIdentity) Promote(_ context.Context, id string, role domain.Role) (
 	return domain.User{ID: id, TenantID: "shop-a", Role: role, Status: domain.StatusActive}, nil
 }
 
+func (f *fakeIdentity) Suspend(_ context.Context, id, _ string) (domain.User, error) {
+	return domain.User{ID: id, TenantID: "shop-a", Role: domain.RoleCustomer, Status: domain.StatusSuspended}, nil
+}
+
+func (f *fakeIdentity) Reactivate(_ context.Context, id string) (domain.User, error) {
+	return domain.User{ID: id, TenantID: "shop-a", Role: domain.RoleCustomer, Status: domain.StatusActive}, nil
+}
+
+func (f *fakeIdentity) Demote(_ context.Context, id string) (domain.User, error) {
+	return domain.User{ID: id, TenantID: "shop-a", Role: domain.RoleCustomer, Status: domain.StatusActive}, nil
+}
+
 func (*fakeIdentity) DeleteMe(context.Context) error { return nil }
 
 func (*fakeIdentity) DeleteUser(context.Context, string) error { return nil }
 
+func (*fakeIdentity) CreateInvitation(_ context.Context, in domain.InviteInput) (domain.Invitation, error) {
+	return domain.Invitation{ID: userID, TenantID: in.TenantID, Email: in.Email, Role: in.Role, Status: domain.InvitationPending}, nil
+}
+
+func (*fakeIdentity) ListInvitations(context.Context, repository.InvitationFilter, *repository.InvitationCursor, int) ([]domain.Invitation, *repository.InvitationCursor, error) {
+	return nil, nil, nil
+}
+
+func (*fakeIdentity) ResendInvitation(_ context.Context, id string) (domain.Invitation, error) {
+	return domain.Invitation{ID: id, Status: domain.InvitationPending}, nil
+}
+
+func (*fakeIdentity) RevokeInvitation(context.Context, string) error { return nil }
+
+func (*fakeIdentity) AcceptInvitation(context.Context, domain.AcceptInviteInput) (domain.Session, error) {
+	return domain.Session{Token: "admin", UserID: userID, TenantID: "_platform", Role: domain.RoleSystemAdmin}, nil
+}
+
 func serve(t *testing.T, f *fakeIdentity, req *http.Request) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	transport.NewRouter(f, httpkit.BuildInfo{Service: "yc-identity"}, nil).ServeHTTP(rec, req)
+	transport.NewRouter(f, nil, httpkit.BuildInfo{Service: "yc-identity"}, nil).ServeHTTP(rec, req)
 	return rec
 }
 

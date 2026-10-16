@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: yc-identity
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Authentication and user identity (docs/services/yc-identity.md).
-    Phase 3 subset: visitor tokens, email + password registration and login,
-    Google and Facebook sign-in, refresh tokens, logout, password reset, the
-    caller's own user, user administration, token validation and service
-    tokens.
+    Visitor tokens, email + password registration and login, Google and
+    Facebook sign-in, refresh tokens, logout, password reset, invitations
+    (ADR-030), suspend/reactivate/demote, the caller's own user, user
+    administration, token validation and service tokens.
 
     Public routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -309,6 +309,173 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /admin/users/{id}/suspend:
+    post:
+      summary: Suspend a user (system_admin)
+      description: |
+        Sets status to suspended, revokes refresh families, and publishes
+        identity.user.suspended.v1 (ADR-030). Cannot suspend yourself or the
+        last active system admin. Idempotent when already suspended.
+      operationId: suspendUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendRequest' }
+      responses:
+        '200':
+          description: The suspended user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/users/{id}/reactivate:
+    post:
+      summary: Reactivate a suspended user (system_admin)
+      description: |
+        Sets status to active and publishes identity.user.reactivated.v1
+        (ADR-030). Idempotent when already active.
+      operationId: reactivateUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          description: The reactivated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/users/{id}/demote:
+    post:
+      summary: Demote a shop_admin to customer (system_admin)
+      description: |
+        Lowers shop_admin to customer in the same tenant and publishes
+        identity.user.demoted.v1 (ADR-030). System admins cannot be demoted.
+      operationId: demoteUser
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+      responses:
+        '200':
+          description: The demoted user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/invitations:
+    get:
+      summary: List invitations (system_admin)
+      description: |
+        Filter by tenant_id and status (pending, accepted, revoked, expired).
+        Newest first (ADR-030).
+      operationId: listInvitations
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/InvitationStatus' }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of invitations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitationList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create an invitation (system_admin)
+      description: |
+        Invites an email to system_admin on _platform or shop_admin on a shop.
+        Requires Idempotency-Key. Publishes identity.user.invited.v1 and emails
+        the accept link via yc-message (ADR-030).
+      operationId: createInvitation
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvitationRequest' }
+      responses:
+        '201':
+          description: Invitation created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/invitations/{id}/resend:
+    post:
+      summary: Resend an invitation (system_admin)
+      description: |
+        Issues a new token (voiding the old one), republishes
+        identity.user.invited.v1, and emails the link again.
+      operationId: resendInvitation
+      parameters:
+        - $ref: '#/components/parameters/InvitationID'
+      responses:
+        '200':
+          description: Invitation resent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /sysadmin/invitations/{id}:
+    delete:
+      summary: Revoke a pending invitation (system_admin)
+      description: |
+        Voids the token and publishes identity.user.invitation_revoked.v1.
+      operationId: revokeInvitation
+      parameters:
+        - $ref: '#/components/parameters/InvitationID'
+      responses:
+        '204': { description: Revoked. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /invitations/accept:
+    post:
+      summary: Accept an invitation
+      description: |
+        Anonymous. Sets password (or verifies current password for an existing
+        customer upgrade), activates the invited role, and returns a session.
+        Unknown, used and expired tokens share one error; failures are
+        throttled like login (ADR-030).
+      operationId: acceptInvitation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptInvitationRequest' }
+      responses:
+        '200':
+          description: Accepted; session issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
   /internal/validate-token:
     post:
       summary: Validate an access token (called by yc-gateway)
@@ -370,6 +537,11 @@ components:
       required: true
       schema: { type: string, enum: [google, facebook] }
     UserID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InvitationID:
       name: id
       in: path
       required: true
@@ -475,6 +647,56 @@ components:
       additionalProperties: false
       properties:
         role: { type: string, enum: [shop_admin] }
+    SuspendRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 500 }
+    InvitationStatus:
+      type: string
+      enum: [pending, accepted, revoked, expired]
+    CreateInvitationRequest:
+      type: object
+      required: [tenant_id, email, role]
+      additionalProperties: false
+      properties:
+        tenant_id: { type: string }
+        email: { type: string, format: email, maxLength: 254 }
+        role: { type: string, enum: [shop_admin, system_admin] }
+        display_name: { type: string, maxLength: 100 }
+        accept_host:
+          type: string
+          description: Hostname for the accept link; optional when known from platform_hosts or shop_hosts.
+    AcceptInvitationRequest:
+      type: object
+      required: [token, password]
+      additionalProperties: false
+      properties:
+        token: { type: string }
+        password: { type: string, minLength: 10, maxLength: 128 }
+        display_name: { type: string, maxLength: 100 }
+    Invitation:
+      type: object
+      required: [invitation_id, tenant_id, email, role, status, expires_at, created_at]
+      properties:
+        invitation_id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [shop_admin, system_admin] }
+        status: { $ref: '#/components/schemas/InvitationStatus' }
+        display_name: { type: string }
+        expires_at: { type: string, format: date-time }
+        invited_by: { type: string, format: uuid }
+        accepted_user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    InvitationList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Invitation' }
+        page: { $ref: '#/components/schemas/PageInfo' }
     TokenIdentity:
       type: object
       required: [tenant_id, actor_id, actor_type, jti, expires_at]

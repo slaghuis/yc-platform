@@ -243,14 +243,23 @@ func (s *Service) SeedUser(ctx context.Context, tenantID, userID, email string) 
 	if err := validateShopTenant(tenantID); err != nil {
 		return err
 	}
-	address, err := domain.NormaliseAddress(domain.ChannelEmail, email)
-	if err != nil {
-		return err
+	var address string
+	if email != "" {
+		var err error
+		address, err = domain.NormaliseAddress(domain.ChannelEmail, email)
+		if err != nil {
+			return err
+		}
 	}
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
 		p, err := s.ensure(ctx, tx, tenantID, userID)
 		if err != nil {
 			return err
+		}
+		// invitation_accepted.v1 carries no email (ADR-030); seed shop defaults
+		// without a channel. Registration always passes the login email.
+		if address == "" {
+			return nil
 		}
 		if _, ok := p.Channel(domain.ChannelEmail); !ok {
 			if _, err := s.putChannel(ctx, tx, tenantID, userID, domain.ChannelEmail, address); err != nil {

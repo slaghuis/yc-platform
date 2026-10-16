@@ -90,6 +90,7 @@ func (e MessageStatus) Valid() bool {
 // Defines values for MessageType.
 const (
 	AdminAlert          MessageType = "admin_alert"
+	AdminInvite         MessageType = "admin_invite"
 	CartAbandoned       MessageType = "cart_abandoned"
 	ChannelVerification MessageType = "channel_verification"
 	Milestone           MessageType = "milestone"
@@ -107,6 +108,8 @@ const (
 func (e MessageType) Valid() bool {
 	switch e {
 	case AdminAlert:
+		return true
+	case AdminInvite:
 		return true
 	case CartAbandoned:
 		return true

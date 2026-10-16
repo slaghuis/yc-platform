@@ -173,6 +173,64 @@ func (Users) SetRole(ctx context.Context, tx pgx.Tx, id string, role domain.Role
 	return u, nil
 }
 
+// SetStatus changes the status of user id (active or suspended).
+func (Users) SetStatus(ctx context.Context, tx pgx.Tx, id string, status domain.Status) (domain.User, error) {
+	u, err := scanUser(tx.QueryRow(ctx,
+		`UPDATE users SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING `+userColumns, id, status))
+	if dbkit.IsNoRows(err) {
+		return domain.User{}, ycerrors.NotFound("User", id)
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("set status: %w", err)
+	}
+	return u, nil
+}
+
+// SetDisplayName replaces the display name of user id.
+func (Users) SetDisplayName(ctx context.Context, tx pgx.Tx, id, displayName string) error {
+	tag, err := tx.Exec(ctx,
+		`UPDATE users SET display_name = NULLIF($2, ''), updated_at = NOW() WHERE id = $1`, id, displayName)
+	if err != nil {
+		return fmt.Errorf("set display name: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ycerrors.NotFound("User", id)
+	}
+	return nil
+}
+
+// ActivateAdmin upgrades an existing customer to role with an optional new
+// display name, and sets status active (invitation accept, ADR-030 rule 6).
+func (Users) ActivateAdmin(ctx context.Context, tx pgx.Tx, id string, role domain.Role, displayName string) (domain.User, error) {
+	u, err := scanUser(tx.QueryRow(ctx, `
+		UPDATE users
+		   SET role = $2, status = $3,
+		       display_name = CASE WHEN $4 = '' THEN display_name ELSE $4 END,
+		       updated_at = NOW()
+		 WHERE id = $1
+		RETURNING `+userColumns, id, role, domain.StatusActive, displayName))
+	if dbkit.IsNoRows(err) {
+		return domain.User{}, ycerrors.NotFound("User", id)
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("activate admin: %w", err)
+	}
+	return u, nil
+}
+
+// CountActive returns how many users in tenantID have role and status active.
+func (Users) CountActive(ctx context.Context, tx pgx.Tx, tenantID string, role domain.Role) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		 WHERE tenant_id = $1 AND role = $2 AND status = $3`,
+		tenantID, role, domain.StatusActive).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count active users: %w", err)
+	}
+	return n, nil
+}
+
 // Anonymise marks user id deleted and clears its personal data: email,
 // phone, display name and password. The row stays so its ID is never
 // reused and tokens naming it stop validating.

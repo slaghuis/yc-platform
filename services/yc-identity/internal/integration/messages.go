@@ -48,3 +48,17 @@ func (m *Messages) SendPasswordReset(ctx context.Context, reference, userID, ema
 			Context:   map[string]any{"reset_url": resetURL, "expires_at": expiresAt},
 		}, nil)
 }
+
+// SendAdminInvite emails an invitation accept link (ADR-030). reference
+// makes retries send it once. There is no user_id yet for new invitees.
+func (m *Messages) SendAdminInvite(ctx context.Context, reference, email, inviteURL, expiresAt, role string) error {
+	return m.client.Call(ctx, http.MethodPost, "/internal/send",
+		httpkit.CallOptions{IdempotencyKey: reference, Attempts: 3},
+		sendRequest{
+			Type:      "admin_invite",
+			Reference: reference,
+			Channel:   "email",
+			Address:   email,
+			Context:   map[string]any{"invite_url": inviteURL, "expires_at": expiresAt, "role": role},
+		}, nil)
+}

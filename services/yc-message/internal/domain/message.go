@@ -28,13 +28,15 @@ const (
 	// Phase 8: to admins rather than customers.
 	TypeAdminAlert Type = "admin_alert"
 	TypeMilestone  Type = "milestone"
+	// Phase 12: invitation link (ADR-030); sent via POST /internal/send.
+	TypeAdminInvite Type = "admin_invite"
 )
 
 // Types lists every message type, in a stable order.
 var Types = []Type{
 	TypeWelcome, TypePasswordReset, TypeChannelVerification,
 	TypeOrderConfirmation, TypeOrderShipped, TypeOrderDelivered, TypeOrderCancelled, TypeRefundIssued,
-	TypeCartAbandoned, TypeReviewPrompt, TypeAdminAlert, TypeMilestone,
+	TypeCartAbandoned, TypeReviewPrompt, TypeAdminAlert, TypeMilestone, TypeAdminInvite,
 }
 
 // Valid reports whether t is a known message type.
@@ -44,7 +46,7 @@ func (t Type) Valid() bool { return slices.Contains(Types, t) }
 // context are redacted once the message has been sent or has failed, so
 // shop admins never see the secret.
 func (t Type) Sensitive() bool {
-	return t == TypePasswordReset || t == TypeChannelVerification
+	return t == TypePasswordReset || t == TypeChannelVerification || t == TypeAdminInvite
 }
 
 // Channel is how a message reaches its recipient.

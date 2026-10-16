@@ -986,7 +986,9 @@ type IdentityUserInvitationAcceptedV1 struct {
 	UserID       string `json:"user_id"`
 	// _platform for system_admin; shop slug for shop_admin.
 	TenantID string `json:"tenant_id"`
-	Role     string `json:"role"`
+	// Lowercased invitee email. PII (event-conventions §18).
+	Email string `json:"email"`
+	Role  string `json:"role"`
 	// True when an existing customer of the shop was upgraded in place.
 	UpgradedCustomer bool      `json:"upgraded_customer"`
 	AcceptedAt       time.Time `json:"accepted_at"`

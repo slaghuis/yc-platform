@@ -47,6 +47,10 @@ routes:
     methods: [POST]
     upstream: identity
     anonymous: true
+  - prefix: /invitations/accept
+    methods: [POST]
+    upstream: identity
+    anonymous: true
   - prefix: /oauth
     methods: [POST]
     upstream: identity
