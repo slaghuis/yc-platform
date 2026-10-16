@@ -6,7 +6,7 @@ v1 (`implementation-plan.md`, Phases 0–9) delivered the platform as APIs only.
 |---|---|---|
 | `yc-platform` (this repo) | — | The platform. v1.1 is Phases 10–13 below. |
 | `yc-platform-admin` | `yellowcommerce.co.za` | Public marketing site and the system admin console |
-| `yc-platform-shop` | `yellowcommercedemo.co.za` | Demonstration shop for a fictitious customer: branded storefront, and the shop admin for shop admins |
+| `yc-platform-shop` | `demo.yellowcommerce.co.za` | Demonstration shop for a fictitious customer: branded storefront, and the shop admin for shop admins |
 
 Each frontend repository has its own `docs/implementation-plan.md`; this document owns the platform phases and the cross-repository schedule.
 
@@ -186,18 +186,19 @@ ADR-031.
 
 ### Scope
 
-- Provider chosen (ADR-031 Open Questions); VM provisioned and hardened (key-only SSH, firewall, unattended security updates)
+- Provider chosen: HostAfrica Ubuntu VPS (ADR-031); VM provisioned and hardened (key-only SSH, firewall, unattended security updates)
 - `deploy/demo/`: Compose override, Caddyfile, env template, deploy script, backup job
-- DNS and TLS for `yellowcommerce.co.za`, `yellowcommercedemo.co.za` and their `www` hosts
+- DNS and TLS for `yellowcommerce.co.za`, `www.yellowcommerce.co.za`, `demo.yellowcommerce.co.za`, and `images.yellowcommerce.co.za`
 - Bootstrap system admin; `yc-demo` provisioned through yc-tenant with its owner invited
 - Stripe and Yoco test-mode configuration and webhooks
 - `runbooks/rotate-secrets.md` and `runbooks/demo-environment.md` (deploy, restore, rebuild)
-- `pipeline.yaml` `deploy` section replaced or removed (backlog-v2 P1)
+- `pipeline.yaml` `deploy` section removed until pipeline-lib supports SSH Compose (backlog-v2 P1)
 - Restore drill from a nightly backup
+- MailHog as SMTP sink until a transactional mail provider is chosen
 
 ### Milestone
 
-- Both domains serve their frontends over HTTPS; a test-mode Yoco checkout on the demo shop completes, its webhook arrives, and the confirmation email is delivered
+- Platform and demo shop hosts serve their frontends over HTTPS; a test-mode Yoco checkout on the demo shop completes, its webhook arrives, and the confirmation email is delivered (MailHog until transactional mail)
 - `v1.1.0` tagged; both frontends pinned to it
 
 ### Exit criteria
@@ -226,5 +227,6 @@ Everything else stays in `backlog-v2.md`. The service-token-for-route-registrati
 | Decision | Needed by | Owner |
 |---|---|---|
 | The fictitious customer: name, product range, brand | S1 (placeholder brand until then) | Product owner |
-| Hosting provider and mail provider (ADR-031) | Start of Phase 13 | Platform owner |
+| Hosting provider (ADR-031) — HostAfrica, `demo.yellowcommerce.co.za` | Done (Phase 13) | Platform owner |
+| Transactional mail provider (ADR-031; MailHog until then) | Before external announce | Platform owner |
 | Product marketing beyond what v1 supports (promotions, campaigns) | After v1.1; see yc-platform-shop requirements | Product owner |

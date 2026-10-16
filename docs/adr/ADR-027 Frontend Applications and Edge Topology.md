@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-10-15
-**Context:** v1 ships APIs only. The next step is two browser applications in their own repositories: `yc-platform-admin` (marketing site and system admin console on `yellowcommerce.co.za`) and `yc-platform-shop` (a demonstration shop with storefront and shop admin on `yellowcommercedemo.co.za`). How a browser reaches the platform is not decided, and v1 has several properties that rule out the obvious answer of "the browser calls yc-gateway":
+**Context:** v1 ships APIs only. The next step is two browser applications in their own repositories: `yc-platform-admin` (marketing site and system admin console on `yellowcommerce.co.za`) and `yc-platform-shop` (a demonstration shop with storefront and shop admin on `demo.yellowcommerce.co.za`). How a browser reaches the platform is not decided, and v1 has several properties that rule out the obvious answer of "the browser calls yc-gateway":
 
 1. **The gateway owns root paths on every host.** Public routes are `/products`, `/cart`, `/orders/{id}`, `/login`, `/shipping/tracking/{n}` and so on (api-conventions §3). A storefront on the same host needs those paths for pages.
 2. **The platform already links to storefront pages on those paths.** yc-message builds `{shop}/orders/{id}`, `{shop}/cart`, `{shop}/products/{id}#review` and `{shop}/shipping/tracking/{n}`; yc-identity builds `/account/reset-password?token=…`. Today those links land on JSON.
@@ -17,7 +17,7 @@
 ```
                  ┌──────────── public edge (TLS) ─────────────┐
 browser ──https──▶ yellowcommerce.co.za      → yc-platform-admin │
-                 │ yellowcommercedemo.co.za  → yc-platform-shop  │
+                 │ demo.yellowcommerce.co.za  → yc-platform-shop  │
                  │   …/webhooks/*            → yc-gateway :8080  │
                  └─────────────────────────────────────────────┘
 yc-platform-admin / yc-platform-shop ──http, Host: <browser host>──▶ yc-gateway :8080 (private)

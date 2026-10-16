@@ -17,8 +17,8 @@ Operational gaps an operator will hit early, and accepted security findings.
 | Delete durable consumers when a subscription is removed, and a `removing-a-service.md` runbook | A removed subscription leaves its consumer behind, pending forever and looking like lag (`yc-product-cart-item-added`, 5,388 pending in the chaos run) | Chaos report |
 | `503` for a deregistered service's public routes | While a service is down its public paths return `404`, which clients don't retry; the internal listener already returns `503` | Chaos report finding 2, ADR-025 rule 18 |
 | `pipeline-lib` on a current Dagger, and govulncheck over `pipeline/` in CI | Dagger v0.14 pins OpenTelemetry exporters with unreachable advisories; the CI module was outside every scan until Phase 9 | Security review finding 10 |
-| `pipeline.yaml` deploy section | It names Kubernetes manifests (`deploy/k8s`) and contexts that don't exist; replace once the target is chosen | ADR-026 rule 1 |
-| `rotate-secrets.md` runbook | JWT keys, service secrets, payment encryption key and gateway credentials have no written rotation procedure | `runbooks/README.md` |
+| `pipeline.yaml` deploy section | Removed in Phase 13 (ADR-031 SSH Compose); re-add when pipeline-lib supports that target | ADR-026 rule 1, ADR-031 |
+| `rotate-secrets.md` runbook | Written in Phase 13 (`docs/runbooks/rotate-secrets.md`) | `runbooks/README.md` |
 | Yoco disputes | Only Stripe chargebacks reach yc-orders; Yoco disputes are handled in Yoco's portal | ADR-025 rule 17, `runbooks/yoco-setup.md` |
 | Record idempotency in the business transaction | A crash after the commit but before the response is stored leaves the key "in progress": retries get 409 until the 2-minute lease lapses (seen in the kill-orders drill; the saga recovers on its own). Consumers write their dedup row in a second commit, doubling commits per event | Chaos report, load report |
 

@@ -1,0 +1,8 @@
+# Install on the demo VM as the deploy user (crontab -e).
+# Adjust paths if the clone does not live in /opt/yc-platform.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Nightly at 02:15 UTC
+15 2 * * * cd /opt/yc-platform && ENV_FILE=deploy/demo/.env.demo ./deploy/demo/backup.sh >>/var/log/yc-demo-backup.log 2>&1
