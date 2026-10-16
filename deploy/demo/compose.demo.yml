@@ -48,7 +48,7 @@ services:
       YC_IDENTITY_JWT_PRIVATE_KEY_FILE: /keys/jwt-private.pem
       YC_IDENTITY_OAUTH_FAKE: "false"
       YC_IDENTITY_LOG_RESET_LINKS: "false"
-      YC_IDENTITY_LOG_INVITE_LINKS: "false"
+      YC_IDENTITY_LOG_INVITE_LINKS: ${YC_IDENTITY_LOG_INVITE_LINKS:-false}
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_IDENTITY__PASSWORD__RESET_URL: https://{host}/account/reset-password?token={token}
       YC_IDENTITY__INVITATIONS__ACCEPT_URL: https://{host}/account/accept-invite?token={token}
