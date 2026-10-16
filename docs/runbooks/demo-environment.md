@@ -34,7 +34,10 @@ Operate the public demonstration stack on one Ubuntu VPS (ADR-031): Compose + Ca
    mkdir -p deploy/demo/keys
    openssl genrsa -out deploy/demo/keys/jwt-private.pem 2048
    openssl rsa -in deploy/demo/keys/jwt-private.pem -pubout -out deploy/demo/keys/jwt-public.pem
-   chmod 600 deploy/demo/keys/jwt-private.pem
+   # Non-root containers must traverse deploy/demo and read the PEM:
+   chmod 755 deploy deploy/demo deploy/demo/keys
+   chmod 644 deploy/demo/keys/jwt-*.pem
+   chmod 755 deploy/demo/postgres-init.sh
    ```
 4. **GHCR login** (once): `echo $GHCR_TOKEN | docker login ghcr.io -u USER --password-stdin`
 5. **Deploy:** `VERSION=… ./deploy/demo/deploy.sh` (or set `VERSION` in `.env.demo`).

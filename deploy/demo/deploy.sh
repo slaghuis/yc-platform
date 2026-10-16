@@ -20,10 +20,15 @@ if [[ ! -f "$S3_JSON" ]]; then
 	exit 1
 fi
 
-if [[ ! -f "${YC_DEMO_KEYS_DIR:-deploy/demo/keys}/jwt-private.pem" ]]; then
-	echo "missing JWT private key under ${YC_DEMO_KEYS_DIR:-deploy/demo/keys}/" >&2
+KEYS_DIR="${YC_DEMO_KEYS_DIR:-deploy/demo/keys}"
+if [[ ! -f "${KEYS_DIR}/jwt-private.pem" ]]; then
+	echo "missing JWT private key under ${KEYS_DIR}/" >&2
 	exit 1
 fi
+# Containers run as non-root: dirs must be traversable and the PEM readable.
+chmod 755 deploy deploy/demo "$KEYS_DIR" 2>/dev/null || true
+chmod 644 "${KEYS_DIR}/jwt-private.pem" "${KEYS_DIR}/jwt-public.pem" 2>/dev/null || true
+chmod 755 deploy/demo/postgres-init.sh
 
 # shellcheck disable=SC1090
 set -a
