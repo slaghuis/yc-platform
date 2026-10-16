@@ -75,6 +75,7 @@ Resolve channel for user:
 |---|---|
 | `welcome` | `identity.user.registered.v1` |
 | `password_reset` | yc-identity calls `POST /internal/send` (the token must not go on the bus, ADR-023 rule 6) |
+| `admin_invite` | yc-identity calls `POST /internal/send` with the invite link (ADR-030) |
 | `channel_verification` | New channel added |
 | `order_confirmation` | `order.placed.v1` |
 | `order_shipped` | `order.shipped.v1` |
@@ -166,7 +167,7 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 
 ### Phase 8 Implementation Notes
 
-- **Admin alerts** (ADR-025 rule 11): `monitor.alert.opened.v1` becomes an `admin_alert` email (subject `[severity] summary`) to each audience in the alert's `notify`. System admins are the addresses in `admins.system_emails` (`YC_MESSAGE_SYSTEM_ADMIN_EMAILS`, comma-separated; `ops@yourcommerce.test` in the dev stack), sent under `_platform`. Shop admins come from a projection of `identity.user.promoted.v1` (`to_role` shop_admin), sent in the shop. Resolved and acknowledged alerts send nothing.
+- **Admin alerts** (ADR-025 rule 11): `monitor.alert.opened.v1` becomes an `admin_alert` email (subject `[severity] summary`) to each audience in the alert's `notify`. System admins are the addresses in `admins.system_emails` (`YC_MESSAGE_SYSTEM_ADMIN_EMAILS`, comma-separated; `ops@yourcommerce.test` in the dev stack) plus invited system admins projected from `identity.user.invitation_accepted.v1`, sent under `_platform`. Shop admins come from projections of `identity.user.promoted.v1` and `invitation_accepted.v1` (`shop_admin`); demotions and suspensions remove them. Resolved and acknowledged alerts send nothing.
 - **Milestones:** `analytics.milestone.reached.v1` becomes a `milestone` email to the shop admins.
 - **Missing recipients:** when yc-preference answers 404 for a customer, the message is skipped; any other failure (including 503 while yc-preference is down) retries the event, so it dead-letters after `MaxRetries` and can be replayed with `yc-dlq-cli`. `nats.retry_backoff` (`YC_MESSAGE_EVENT_RETRY_BACKOFF`, comma-separated durations) shortens the redelivery backoff for demos.
 - **GDPR:** see GDPR Behavior.
@@ -174,6 +175,11 @@ The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. I
 ### Phase 10 Implementation Notes
 
 - **Platform sends:** `POST /internal/send` from a `_platform` caller is accepted for `password_reset` only and must carry an `address` (system admins have no yc-preference record). It is queued and sent under `_platform`. Before this, yc-message refused the request and yc-identity logged "password reset link not sent" while still answering 202, so system admins never received reset emails.
+
+### Phase 12 Implementation Notes
+
+- **`admin_invite`:** platform-default email (and SMS) template; yc-identity sends via `POST /internal/send` with `invite_url` / `expires_at` / `role` (ADR-030). Accepted for both shop and `_platform` callers; sensitive (body redacted after send).
+- **Admin audiences:** `invitation_accepted` adds shop/system admins; `demoted` and `suspended` remove them; `reactivated` restores. Invited system admins are soft-suspended so reactivation keeps their email.
 
 ## Database Schema
 
@@ -271,6 +277,8 @@ Driven by nearly every service. Each subscription maps event → message type.
 | Event | Message Type |
 |---|---|
 | `identity.user.registered.v1` | `welcome` |
+| `identity.user.invitation_accepted.v1` | Admin audience projection (ADR-030) |
+| `identity.user.demoted.v1` / `suspended.v1` / `reactivated.v1` | Admin audience projection (ADR-030) |
 | `order.placed.v1` | `order_confirmation` |
 | `order.shipped.v1` | `order_shipped` |
 | `order.delivered.v1` | `order_delivered` |

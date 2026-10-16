@@ -180,6 +180,8 @@ func TestIdentity(t *testing.T) {
 	t.Setenv("YC_IDENTITY__PASSWORD__ARGON2__TIME", "1")
 	t.Setenv("YC_IDENTITY__PASSWORD__ARGON2__MEMORY_KB", "8192")
 	t.Setenv("YC_IDENTITY_LOG_RESET_LINKS", "true")
+	t.Setenv("YC_IDENTITY_LOG_INVITE_LINKS", "true")
+	t.Setenv("YC_IDENTITY_PLATFORM_HOSTS", "admin.localhost")
 	const cartSecret = "cart-secret-0123456789-0123456789-abcdef"
 	t.Setenv("YC_CART_SERVICE_SECRET", cartSecret)
 	t.Setenv("YC_IDENTITY__OAUTH__GOOGLE__FAKE", "true")
@@ -722,6 +724,167 @@ func TestIdentity(t *testing.T) {
 		_, code := validate(t, sess.AccessToken)
 		assert.Equal(t, http.StatusUnauthorized, code)
 		assert.Equal(t, http.StatusUnauthorized, call(t, srv, http.MethodPost, "/login", body, as("shop-a", "", ""), nil))
+	})
+
+	t.Run("invitations: create, accept once, reject reuse and unknown tokens", func(t *testing.T) {
+		inviteHdr := as("_platform", sysadmin.UserID.String(), "system_admin")
+		inviteHdr["Idempotency-Key"] = "invite-colleague-" + sysadmin.UserID.String()
+
+		var inv api.Invitation
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/sysadmin/invitations",
+			map[string]any{
+				"tenant_id": "_platform", "email": "colleague@yc.dev", "role": "system_admin",
+				"display_name": "Colleague",
+			}, inviteHdr, &inv))
+		assert.Equal(t, api.InvitationStatus("pending"), inv.Status)
+		assert.Equal(t, "colleague@yc.dev", inv.Email)
+
+		env := lastEvent(t, "yc._platform.identity.user.invited.v1")
+		var invited events.IdentityUserInvitedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &invited))
+		assert.Equal(t, inv.InvitationID.String(), invited.InvitationID)
+		assert.Equal(t, "colleague@yc.dev", invited.Email)
+		assert.Equal(t, "system_admin", invited.Role)
+
+		m := regexp.MustCompile(`"invite_token":"([^"]+)"`).FindStringSubmatch(logs.String())
+		require.Len(t, m, 2, "log_invite_links logs the token")
+		token := m[1]
+		assert.NotContains(t, string(env.Payload), token, "the event carries no token")
+
+		got := sends()
+		var inviteSend *sent
+		for i := range got {
+			if got[i].Body["type"] == "admin_invite" {
+				inviteSend = &got[i]
+			}
+		}
+		require.NotNil(t, inviteSend, "admin_invite emailed")
+		assert.Equal(t, "_platform", inviteSend.Tenant)
+		assert.Equal(t, "colleague@yc.dev", inviteSend.Body["address"])
+		msgCtx, _ := inviteSend.Body["context"].(map[string]any)
+		assert.Equal(t, "https://admin.localhost/account/accept-invite?token="+token, msgCtx["invite_url"])
+		assert.Equal(t, "system_admin", msgCtx["role"])
+
+		bad := map[string]string{"token": "not-a-real-token", "password": "correct horse battery"}
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/invitations/accept",
+			bad, as("_platform", "", ""), nil), "unknown token")
+
+		var sess api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/invitations/accept",
+			map[string]string{"token": token, "password": "correct horse battery", "display_name": "Colleague"},
+			as("_platform", "", ""), &sess))
+		assert.Equal(t, api.Role("system_admin"), sess.Role)
+		assert.Equal(t, "_platform", sess.TenantID)
+
+		env = lastEvent(t, "yc._platform.identity.user.invitation_accepted.v1")
+		var accepted events.IdentityUserInvitationAcceptedV1
+		require.NoError(t, json.Unmarshal(env.Payload, &accepted))
+		assert.Equal(t, inv.InvitationID.String(), accepted.InvitationID)
+		assert.Equal(t, sess.UserID.String(), accepted.UserID)
+		assert.Equal(t, "colleague@yc.dev", accepted.Email)
+		assert.False(t, accepted.UpgradedCustomer)
+
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/invitations/accept",
+			map[string]string{"token": token, "password": "correct horse battery"},
+			as("_platform", "", ""), nil), "single use")
+
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login",
+			map[string]string{"email": "colleague@yc.dev", "password": "correct horse battery"},
+			as("_platform", "", ""), nil))
+	})
+
+	t.Run("invitations: shop admin invite upgrades an existing customer", func(t *testing.T) {
+		var cust api.Session
+		body := map[string]string{"email": "owner@shop-b.test", "password": "shop owner password", "display_name": "Owner"}
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/register", body, as("shop-b", "", ""), &cust))
+
+		inviteHdr := as("_platform", sysadmin.UserID.String(), "system_admin")
+		inviteHdr["Idempotency-Key"] = "invite-owner-shop-b"
+		var inv api.Invitation
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/sysadmin/invitations",
+			map[string]any{
+				"tenant_id": "shop-b", "email": "owner@shop-b.test", "role": "shop_admin",
+				"accept_host": "shop-b.localhost",
+			}, inviteHdr, &inv))
+
+		m := regexp.MustCompile(`"invite_token":"([^"]+)"`).FindAllStringSubmatch(logs.String(), -1)
+		require.NotEmpty(t, m)
+		token := m[len(m)-1][1]
+
+		var sess api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/invitations/accept",
+			map[string]string{"token": token, "password": "shop owner password"},
+			as("shop-b", "", ""), &sess))
+		assert.Equal(t, cust.UserID, sess.UserID, "customer keeps user_id")
+		assert.Equal(t, api.Role("shop_admin"), sess.Role)
+
+		var accepted events.IdentityUserInvitationAcceptedV1
+		require.NoError(t, json.Unmarshal(lastEvent(t, "yc.shop-b.identity.user.invitation_accepted.v1").Payload, &accepted))
+		assert.True(t, accepted.UpgradedCustomer)
+
+		_, code := validate(t, cust.AccessToken)
+		assert.Equal(t, http.StatusUnauthorized, code, "pre-accept customer token stops validating")
+	})
+
+	t.Run("invitations: expired token is refused like an unknown one", func(t *testing.T) {
+		inviteHdr := as("_platform", sysadmin.UserID.String(), "system_admin")
+		inviteHdr["Idempotency-Key"] = "invite-expired-1"
+		var inv api.Invitation
+		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/sysadmin/invitations",
+			map[string]any{
+				"tenant_id": "shop-b", "email": "temp@shop-b.test", "role": "shop_admin",
+				"accept_host": "shop-b.localhost",
+			}, inviteHdr, &inv))
+		m := regexp.MustCompile(`"invite_token":"([^"]+)"`).FindAllStringSubmatch(logs.String(), -1)
+		token := m[len(m)-1][1]
+
+		require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-b", func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE invitations SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, inv.InvitationID)
+			return err
+		}))
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPost, "/invitations/accept",
+			map[string]string{"token": token, "password": "correct horse battery"},
+			as("shop-b", "", ""), nil), "expired looks like unknown")
+	})
+
+	t.Run("suspend, demote and reactivate via API", func(t *testing.T) {
+		assert.Equal(t, http.StatusConflict, call(t, srv, http.MethodPost,
+			"/admin/users/"+sysadmin.UserID.String()+"/suspend", nil, root, nil), "cannot suspend self")
+
+		var list api.InvitationList
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodGet,
+			"/sysadmin/invitations?tenant_id=_platform&status=accepted", nil, root, &list))
+		require.NotEmpty(t, list.Items)
+
+		var colleague api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login",
+			map[string]string{"email": "colleague@yc.dev", "password": "correct horse battery"},
+			as("_platform", "", ""), &colleague))
+
+		var suspended api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost,
+			"/admin/users/"+colleague.UserID.String()+"/suspend",
+			map[string]string{"reason": "test"}, root, &suspended))
+		assert.Equal(t, api.UserStatus("suspended"), suspended.Status)
+		_, code := validate(t, colleague.AccessToken)
+		assert.Equal(t, http.StatusUnauthorized, code)
+
+		var reactivated api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost,
+			"/admin/users/"+colleague.UserID.String()+"/reactivate", nil, root, &reactivated))
+		assert.Equal(t, api.UserStatus("active"), reactivated.Status)
+
+		var shopOwner api.Session
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost, "/login",
+			map[string]string{"email": "owner@shop-b.test", "password": "shop owner password"},
+			as("shop-b", "", ""), &shopOwner))
+		var demoted api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPost,
+			"/admin/users/"+shopOwner.UserID.String()+"/demote", nil, root, &demoted))
+		assert.Equal(t, api.Role("customer"), demoted.Role)
+		assert.Equal(t, http.StatusConflict, call(t, srv, http.MethodPost,
+			"/admin/users/"+colleague.UserID.String()+"/demote", nil, root, nil),
+			"system admins are suspended, not demoted")
 	})
 
 	t.Run("readyz reports dependencies", func(t *testing.T) {

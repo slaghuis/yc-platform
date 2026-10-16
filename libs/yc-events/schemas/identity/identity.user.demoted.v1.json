@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.demoted.v1.json",
+  "title": "identity.user.demoted.v1",
+  "description": "A system admin demoted a shop_admin to customer in the same tenant (ADR-030). System admins are not demoted; they are suspended. Tokens issued before the demotion stop validating. yc-message removes the user from the shop admin audience.",
+  "type": "object",
+  "required": ["user_id", "from_role", "to_role", "demoted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "from_role": {
+      "type": "string",
+      "enum": ["shop_admin"]
+    },
+    "to_role": {
+      "type": "string",
+      "enum": ["customer"]
+    },
+    "demoted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

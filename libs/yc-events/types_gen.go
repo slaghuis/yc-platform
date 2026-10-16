@@ -32,11 +32,17 @@ const (
 	TypeCheckoutValidationFailedV1           = "checkout.validation_failed.v1"
 	TypeIdentityOauthLinkedV1                = "identity.oauth_linked.v1"
 	TypeIdentityUserDeletedV1                = "identity.user.deleted.v1"
+	TypeIdentityUserDemotedV1                = "identity.user.demoted.v1"
+	TypeIdentityUserInvitationAcceptedV1     = "identity.user.invitation_accepted.v1"
+	TypeIdentityUserInvitationRevokedV1      = "identity.user.invitation_revoked.v1"
+	TypeIdentityUserInvitedV1                = "identity.user.invited.v1"
 	TypeIdentityUserLoggedInV1               = "identity.user.logged_in.v1"
 	TypeIdentityUserPasswordChangedV1        = "identity.user.password_changed.v1"
 	TypeIdentityUserPasswordResetRequestedV1 = "identity.user.password_reset_requested.v1"
 	TypeIdentityUserPromotedV1               = "identity.user.promoted.v1"
+	TypeIdentityUserReactivatedV1            = "identity.user.reactivated.v1"
 	TypeIdentityUserRegisteredV1             = "identity.user.registered.v1"
+	TypeIdentityUserSuspendedV1              = "identity.user.suspended.v1"
 	TypeIdentityVisitorCreatedV1             = "identity.visitor.created.v1"
 	TypeImageDeletedV1                       = "image.deleted.v1"
 	TypeImageProcessedV1                     = "image.processed.v1"
@@ -166,11 +172,17 @@ var EventTypes = []string{
 	TypeCheckoutValidationFailedV1,
 	TypeIdentityOauthLinkedV1,
 	TypeIdentityUserDeletedV1,
+	TypeIdentityUserDemotedV1,
+	TypeIdentityUserInvitationAcceptedV1,
+	TypeIdentityUserInvitationRevokedV1,
+	TypeIdentityUserInvitedV1,
 	TypeIdentityUserLoggedInV1,
 	TypeIdentityUserPasswordChangedV1,
 	TypeIdentityUserPasswordResetRequestedV1,
 	TypeIdentityUserPromotedV1,
+	TypeIdentityUserReactivatedV1,
 	TypeIdentityUserRegisteredV1,
+	TypeIdentityUserSuspendedV1,
 	TypeIdentityVisitorCreatedV1,
 	TypeImageDeletedV1,
 	TypeImageProcessedV1,
@@ -338,6 +350,14 @@ const (
 	IdentityUserDeletedV1RoleShopAdmin                       = "shop_admin"
 	IdentityUserDeletedV1RequestedByUser                     = "user"
 	IdentityUserDeletedV1RequestedBySystemAdmin              = "system_admin"
+	IdentityUserDemotedV1FromRoleShopAdmin                   = "shop_admin"
+	IdentityUserDemotedV1ToRoleCustomer                      = "customer"
+	IdentityUserInvitationAcceptedV1RoleShopAdmin            = "shop_admin"
+	IdentityUserInvitationAcceptedV1RoleSystemAdmin          = "system_admin"
+	IdentityUserInvitationRevokedV1RoleShopAdmin             = "shop_admin"
+	IdentityUserInvitationRevokedV1RoleSystemAdmin           = "system_admin"
+	IdentityUserInvitedV1RoleShopAdmin                       = "shop_admin"
+	IdentityUserInvitedV1RoleSystemAdmin                     = "system_admin"
 	IdentityUserLoggedInV1RoleCustomer                       = "customer"
 	IdentityUserLoggedInV1RoleShopAdmin                      = "shop_admin"
 	IdentityUserLoggedInV1RoleSystemAdmin                    = "system_admin"
@@ -350,10 +370,16 @@ const (
 	IdentityUserPromotedV1FromRoleShopAdmin                  = "shop_admin"
 	IdentityUserPromotedV1ToRoleCustomer                     = "customer"
 	IdentityUserPromotedV1ToRoleShopAdmin                    = "shop_admin"
+	IdentityUserReactivatedV1RoleCustomer                    = "customer"
+	IdentityUserReactivatedV1RoleShopAdmin                   = "shop_admin"
+	IdentityUserReactivatedV1RoleSystemAdmin                 = "system_admin"
 	IdentityUserRegisteredV1RoleCustomer                     = "customer"
 	IdentityUserRegisteredV1MethodPassword                   = "password"
 	IdentityUserRegisteredV1MethodGoogle                     = "google"
 	IdentityUserRegisteredV1MethodFacebook                   = "facebook"
+	IdentityUserSuspendedV1RoleCustomer                      = "customer"
+	IdentityUserSuspendedV1RoleShopAdmin                     = "shop_admin"
+	IdentityUserSuspendedV1RoleSystemAdmin                   = "system_admin"
 	ImageProcessedV1VariantsItemVariantOriginal              = "original"
 	ImageProcessedV1VariantsItemVariantXlarge                = "xlarge"
 	ImageProcessedV1VariantsItemVariantLarge                 = "large"
@@ -939,6 +965,74 @@ type IdentityUserDeletedV1 struct {
 // EventType returns identity.user.deleted.v1.
 func (IdentityUserDeletedV1) EventType() string { return TypeIdentityUserDeletedV1 }
 
+// IdentityUserDemotedV1 is the payload of identity.user.demoted.v1.
+//
+// A system admin demoted a shop_admin to customer in the same tenant (ADR-030). System admins are not demoted; they are suspended. Tokens issued before the demotion stop validating. yc-message removes the user from the shop admin audience.
+type IdentityUserDemotedV1 struct {
+	UserID    string    `json:"user_id"`
+	FromRole  string    `json:"from_role"`
+	ToRole    string    `json:"to_role"`
+	DemotedAt time.Time `json:"demoted_at"`
+}
+
+// EventType returns identity.user.demoted.v1.
+func (IdentityUserDemotedV1) EventType() string { return TypeIdentityUserDemotedV1 }
+
+// IdentityUserInvitationAcceptedV1 is the payload of identity.user.invitation_accepted.v1.
+//
+// An invitation was accepted: the user is active in the invited role (ADR-030). If upgraded_customer is true, an existing customer kept their user_id, orders and cart. yc-message updates admin audiences; yc-preference seeds defaults for new users.
+type IdentityUserInvitationAcceptedV1 struct {
+	InvitationID string `json:"invitation_id"`
+	UserID       string `json:"user_id"`
+	// _platform for system_admin; shop slug for shop_admin.
+	TenantID string `json:"tenant_id"`
+	// Lowercased invitee email. PII (event-conventions §18).
+	Email string `json:"email"`
+	Role  string `json:"role"`
+	// True when an existing customer of the shop was upgraded in place.
+	UpgradedCustomer bool      `json:"upgraded_customer"`
+	AcceptedAt       time.Time `json:"accepted_at"`
+}
+
+// EventType returns identity.user.invitation_accepted.v1.
+func (IdentityUserInvitationAcceptedV1) EventType() string {
+	return TypeIdentityUserInvitationAcceptedV1
+}
+
+// IdentityUserInvitationRevokedV1 is the payload of identity.user.invitation_revoked.v1.
+//
+// A pending invitation was revoked by a system admin (ADR-030). The invite token no longer works.
+type IdentityUserInvitationRevokedV1 struct {
+	InvitationID string `json:"invitation_id"`
+	TenantID     string `json:"tenant_id"`
+	// Lowercased invitee email. PII (event-conventions §18).
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	RevokedAt time.Time `json:"revoked_at"`
+}
+
+// EventType returns identity.user.invitation_revoked.v1.
+func (IdentityUserInvitationRevokedV1) EventType() string { return TypeIdentityUserInvitationRevokedV1 }
+
+// IdentityUserInvitedV1 is the payload of identity.user.invited.v1.
+//
+// A system admin invited an email to a role in a tenant (ADR-030). Published on create and on resend; the previous token is void. yc-message sends the admin_invite link. The envelope actor is the inviting system admin (or the actor from platform.tenant.provisioned.v1 when the first shop admin is auto-invited).
+type IdentityUserInvitedV1 struct {
+	InvitationID string `json:"invitation_id"`
+	// _platform for system_admin; an active shop slug for shop_admin (ADR-001).
+	TenantID string `json:"tenant_id"`
+	// Lowercased invitee email. PII (event-conventions §18).
+	Email string `json:"email"`
+	Role  string `json:"role"`
+	// Optional name suggested at invite time. PII (event-conventions §18).
+	DisplayName *string   `json:"display_name,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	InvitedAt   time.Time `json:"invited_at"`
+}
+
+// EventType returns identity.user.invited.v1.
+func (IdentityUserInvitedV1) EventType() string { return TypeIdentityUserInvitedV1 }
+
 // IdentityUserLoggedInV1 is the payload of identity.user.logged_in.v1.
 //
 // A registered user logged in. yc-cart merges the previous visitor's cart into the user's.
@@ -997,6 +1091,19 @@ type IdentityUserPromotedV1 struct {
 // EventType returns identity.user.promoted.v1.
 func (IdentityUserPromotedV1) EventType() string { return TypeIdentityUserPromotedV1 }
 
+// IdentityUserReactivatedV1 is the payload of identity.user.reactivated.v1.
+//
+// A system admin reactivated a suspended user (ADR-030). The user may log in again. yc-message restores admin alert audiences for shop_admin and system_admin roles.
+type IdentityUserReactivatedV1 struct {
+	UserID        string    `json:"user_id"`
+	TenantID      string    `json:"tenant_id"`
+	Role          string    `json:"role"`
+	ReactivatedAt time.Time `json:"reactivated_at"`
+}
+
+// EventType returns identity.user.reactivated.v1.
+func (IdentityUserReactivatedV1) EventType() string { return TypeIdentityUserReactivatedV1 }
+
 // IdentityUserRegisteredV1 is the payload of identity.user.registered.v1.
 //
 // A visitor registered and became a customer. The user keeps the visitor's user_id, so anything the visitor owned (e.g. a cart) stays with them. yc-preference seeds defaults; yc-message sends a welcome.
@@ -1013,6 +1120,22 @@ type IdentityUserRegisteredV1 struct {
 
 // EventType returns identity.user.registered.v1.
 func (IdentityUserRegisteredV1) EventType() string { return TypeIdentityUserRegisteredV1 }
+
+// IdentityUserSuspendedV1 is the payload of identity.user.suspended.v1.
+//
+// A system admin suspended a user (ADR-030). Refresh families are revoked; access tokens stop validating within the gateway cache TTL (≤ 60 s). yc-message removes the user from admin alert audiences.
+type IdentityUserSuspendedV1 struct {
+	UserID string `json:"user_id"`
+	// The user's tenant (_platform for system_admin).
+	TenantID string `json:"tenant_id"`
+	Role     string `json:"role"`
+	// Optional operator note; not shown to the user.
+	Reason      *string   `json:"reason,omitempty"`
+	SuspendedAt time.Time `json:"suspended_at"`
+}
+
+// EventType returns identity.user.suspended.v1.
+func (IdentityUserSuspendedV1) EventType() string { return TypeIdentityUserSuspendedV1 }
 
 // IdentityVisitorCreatedV1 is the payload of identity.visitor.created.v1.
 //

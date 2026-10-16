@@ -46,6 +46,66 @@ func (e ActorType) Valid() bool {
 	}
 }
 
+// Defines values for CreateInvitationRequestRole.
+const (
+	CreateInvitationRequestRoleShopAdmin   CreateInvitationRequestRole = "shop_admin"
+	CreateInvitationRequestRoleSystemAdmin CreateInvitationRequestRole = "system_admin"
+)
+
+// Valid indicates whether the value is a known member of the CreateInvitationRequestRole enum.
+func (e CreateInvitationRequestRole) Valid() bool {
+	switch e {
+	case CreateInvitationRequestRoleShopAdmin:
+		return true
+	case CreateInvitationRequestRoleSystemAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InvitationRole.
+const (
+	InvitationRoleShopAdmin   InvitationRole = "shop_admin"
+	InvitationRoleSystemAdmin InvitationRole = "system_admin"
+)
+
+// Valid indicates whether the value is a known member of the InvitationRole enum.
+func (e InvitationRole) Valid() bool {
+	switch e {
+	case InvitationRoleShopAdmin:
+		return true
+	case InvitationRoleSystemAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InvitationStatus.
+const (
+	Accepted InvitationStatus = "accepted"
+	Expired  InvitationStatus = "expired"
+	Pending  InvitationStatus = "pending"
+	Revoked  InvitationStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the InvitationStatus enum.
+func (e InvitationStatus) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	case Expired:
+		return true
+	case Pending:
+		return true
+	case Revoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PromoteRequestRole.
 const (
 	PromoteRequestRoleShopAdmin PromoteRequestRole = "shop_admin"
@@ -190,8 +250,56 @@ func (e StartOAuthParamsProvider) Valid() bool {
 	}
 }
 
+// AcceptInvitationRequest defines model for AcceptInvitationRequest.
+type AcceptInvitationRequest struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	Password    string  `json:"password"`
+	Token       string  `json:"token"`
+}
+
 // ActorType defines model for ActorType.
 type ActorType string
+
+// CreateInvitationRequest defines model for CreateInvitationRequest.
+type CreateInvitationRequest struct {
+	// AcceptHost Hostname for the accept link; optional when known from platform_hosts or shop_hosts.
+	AcceptHost  *string                     `json:"accept_host,omitempty"`
+	DisplayName *string                     `json:"display_name,omitempty"`
+	Email       openapi_types.Email         `json:"email"`
+	Role        CreateInvitationRequestRole `json:"role"`
+	TenantID    string                      `json:"tenant_id"`
+}
+
+// CreateInvitationRequestRole defines model for CreateInvitationRequest.Role.
+type CreateInvitationRequestRole string
+
+// Invitation defines model for Invitation.
+type Invitation struct {
+	AcceptedUserID *openapi_types.UUID `json:"accepted_user_id,omitempty"`
+	CreatedAt      time.Time           `json:"created_at"`
+	DisplayName    *string             `json:"display_name,omitempty"`
+	Email          string              `json:"email"`
+	ExpiresAt      time.Time           `json:"expires_at"`
+	InvitationID   openapi_types.UUID  `json:"invitation_id"`
+	InvitedBy      *openapi_types.UUID `json:"invited_by,omitempty"`
+	Role           InvitationRole      `json:"role"`
+	Status         InvitationStatus    `json:"status"`
+	TenantID       string              `json:"tenant_id"`
+}
+
+// InvitationRole defines model for Invitation.Role.
+type InvitationRole string
+
+// InvitationList defines model for InvitationList.
+type InvitationList struct {
+	Items []Invitation `json:"items"`
+
+	// Page Cursor pagination (api-conventions.md §7).
+	Page PageInfo `json:"page"`
+}
+
+// InvitationStatus defines model for InvitationStatus.
+type InvitationStatus string
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -302,6 +410,11 @@ type Session struct {
 // SessionTokenType defines model for Session.TokenType.
 type SessionTokenType string
 
+// SuspendRequest defines model for SuspendRequest.
+type SuspendRequest struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // TokenIdentity defines model for TokenIdentity.
 type TokenIdentity struct {
 	// ActorID User ID, or the service name for service tokens
@@ -339,6 +452,9 @@ type UserList struct {
 // Cursor defines model for Cursor.
 type Cursor = string
 
+// InvitationID defines model for InvitationID.
+type InvitationID = openapi_types.UUID
+
 // PageSize defines model for PageSize.
 type PageSize = int
 
@@ -374,14 +490,33 @@ type CompleteOAuthParamsProvider string
 // StartOAuthParamsProvider defines parameters for StartOAuth.
 type StartOAuthParamsProvider string
 
+// ListInvitationsParams defines parameters for ListInvitations.
+type ListInvitationsParams struct {
+	TenantID *string           `form:"tenant_id,omitempty" json:"tenant_id,omitempty"`
+	Status   *InvitationStatus `form:"status,omitempty" json:"status,omitempty"`
+	PageSize *PageSize         `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Cursor   *Cursor           `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateInvitationParams defines parameters for CreateInvitation.
+type CreateInvitationParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // PromoteUserJSONRequestBody defines body for PromoteUser for application/json ContentType.
 type PromoteUserJSONRequestBody = PromoteRequest
+
+// SuspendUserJSONRequestBody defines body for SuspendUser for application/json ContentType.
+type SuspendUserJSONRequestBody = SuspendRequest
 
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody IssueServiceTokenJSONBody
 
 // ValidateTokenJSONRequestBody defines body for ValidateToken for application/json ContentType.
 type ValidateTokenJSONRequestBody ValidateTokenJSONBody
+
+// AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
+type AcceptInvitationJSONRequestBody = AcceptInvitationRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -407,6 +542,9 @@ type RefreshJSONRequestBody = RefreshRequest
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = RegisterRequest
 
+// CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
+type CreateInvitationJSONRequestBody = CreateInvitationRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// ListUsers List users
@@ -418,15 +556,27 @@ type ServerInterface interface {
 	// GetUser Get a user
 	// (GET /admin/users/{id})
 	GetUser(w http.ResponseWriter, r *http.Request, id UserID)
+	// DemoteUser Demote a shop_admin to customer (system_admin)
+	// (POST /admin/users/{id}/demote)
+	DemoteUser(w http.ResponseWriter, r *http.Request, id UserID)
 	// PromoteUser Promote a user (system_admin)
 	// (POST /admin/users/{id}/promote)
 	PromoteUser(w http.ResponseWriter, r *http.Request, id UserID)
+	// ReactivateUser Reactivate a suspended user (system_admin)
+	// (POST /admin/users/{id}/reactivate)
+	ReactivateUser(w http.ResponseWriter, r *http.Request, id UserID)
+	// SuspendUser Suspend a user (system_admin)
+	// (POST /admin/users/{id}/suspend)
+	SuspendUser(w http.ResponseWriter, r *http.Request, id UserID)
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(w http.ResponseWriter, r *http.Request)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(w http.ResponseWriter, r *http.Request)
+	// AcceptInvitation Accept an invitation
+	// (POST /invitations/accept)
+	AcceptInvitation(w http.ResponseWriter, r *http.Request)
 	// Login Log in with email and password
 	// (POST /login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -457,6 +607,18 @@ type ServerInterface interface {
 	// Register Register with email and password
 	// (POST /register)
 	Register(w http.ResponseWriter, r *http.Request)
+	// ListInvitations List invitations (system_admin)
+	// (GET /sysadmin/invitations)
+	ListInvitations(w http.ResponseWriter, r *http.Request, params ListInvitationsParams)
+	// CreateInvitation Create an invitation (system_admin)
+	// (POST /sysadmin/invitations)
+	CreateInvitation(w http.ResponseWriter, r *http.Request, params CreateInvitationParams)
+	// RevokeInvitation Revoke a pending invitation (system_admin)
+	// (DELETE /sysadmin/invitations/{id})
+	RevokeInvitation(w http.ResponseWriter, r *http.Request, id InvitationID)
+	// ResendInvitation Resend an invitation (system_admin)
+	// (POST /sysadmin/invitations/{id}/resend)
+	ResendInvitation(w http.ResponseWriter, r *http.Request, id InvitationID)
 	// CreateVisitor Issue a visitor token for the tenant yc-gateway resolved
 	// (POST /visitor)
 	CreateVisitor(w http.ResponseWriter, r *http.Request)
@@ -484,9 +646,27 @@ func (_ Unimplemented) GetUser(w http.ResponseWriter, r *http.Request, id UserID
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// DemoteUser Demote a shop_admin to customer (system_admin)
+// (POST /admin/users/{id}/demote)
+func (_ Unimplemented) DemoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // PromoteUser Promote a user (system_admin)
 // (POST /admin/users/{id}/promote)
 func (_ Unimplemented) PromoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReactivateUser Reactivate a suspended user (system_admin)
+// (POST /admin/users/{id}/reactivate)
+func (_ Unimplemented) ReactivateUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SuspendUser Suspend a user (system_admin)
+// (POST /admin/users/{id}/suspend)
+func (_ Unimplemented) SuspendUser(w http.ResponseWriter, r *http.Request, id UserID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -499,6 +679,12 @@ func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request)
 // ValidateToken Validate an access token (called by yc-gateway)
 // (POST /internal/validate-token)
 func (_ Unimplemented) ValidateToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AcceptInvitation Accept an invitation
+// (POST /invitations/accept)
+func (_ Unimplemented) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -559,6 +745,30 @@ func (_ Unimplemented) Refresh(w http.ResponseWriter, r *http.Request) {
 // Register Register with email and password
 // (POST /register)
 func (_ Unimplemented) Register(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListInvitations List invitations (system_admin)
+// (GET /sysadmin/invitations)
+func (_ Unimplemented) ListInvitations(w http.ResponseWriter, r *http.Request, params ListInvitationsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateInvitation Create an invitation (system_admin)
+// (POST /sysadmin/invitations)
+func (_ Unimplemented) CreateInvitation(w http.ResponseWriter, r *http.Request, params CreateInvitationParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RevokeInvitation Revoke a pending invitation (system_admin)
+// (DELETE /sysadmin/invitations/{id})
+func (_ Unimplemented) RevokeInvitation(w http.ResponseWriter, r *http.Request, id InvitationID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ResendInvitation Resend an invitation (system_admin)
+// (POST /sysadmin/invitations/{id}/resend)
+func (_ Unimplemented) ResendInvitation(w http.ResponseWriter, r *http.Request, id InvitationID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -714,6 +924,32 @@ func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// DemoteUser operation middleware
+func (siw *ServerInterfaceWrapper) DemoteUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DemoteUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PromoteUser operation middleware
 func (siw *ServerInterfaceWrapper) PromoteUser(w http.ResponseWriter, r *http.Request) {
 
@@ -731,6 +967,58 @@ func (siw *ServerInterfaceWrapper) PromoteUser(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PromoteUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReactivateUser operation middleware
+func (siw *ServerInterfaceWrapper) ReactivateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReactivateUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SuspendUser operation middleware
+func (siw *ServerInterfaceWrapper) SuspendUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SuspendUser(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -759,6 +1047,20 @@ func (siw *ServerInterfaceWrapper) ValidateToken(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidateToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptInvitation operation middleware
+func (siw *ServerInterfaceWrapper) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptInvitation(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -923,6 +1225,175 @@ func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListInvitations operation middleware
+func (siw *ServerInterfaceWrapper) ListInvitations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListInvitationsParams
+
+	// ------------- Optional query parameter "tenant_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tenant_id", r.URL.Query(), &params.TenantID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tenant_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListInvitations(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateInvitation operation middleware
+func (siw *ServerInterfaceWrapper) CreateInvitation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateInvitationParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateInvitation(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeInvitation operation middleware
+func (siw *ServerInterfaceWrapper) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InvitationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeInvitation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendInvitation operation middleware
+func (siw *ServerInterfaceWrapper) ResendInvitation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id InvitationID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendInvitation(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1105,6 +1576,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/admin/users/{id}/promote", wrapper.PromoteUser)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/users/{id}/suspend", wrapper.SuspendUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/users/{id}/reactivate", wrapper.ReactivateUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/users/{id}/demote", wrapper.DemoteUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sysadmin/invitations", wrapper.ListInvitations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sysadmin/invitations", wrapper.CreateInvitation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sysadmin/invitations/{id}/resend", wrapper.ResendInvitation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/sysadmin/invitations/{id}", wrapper.RevokeInvitation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/invitations/accept", wrapper.AcceptInvitation)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/validate-token", wrapper.ValidateToken)
 	})
 	r.Group(func(r chi.Router) {
@@ -1280,6 +1775,72 @@ func (response GetUser404ApplicationProblemPlusJSONResponse) VisitGetUserRespons
 	return err
 }
 
+type DemoteUserRequestObject struct {
+	ID UserID `json:"id"`
+}
+
+type DemoteUserResponseObject interface {
+	VisitDemoteUserResponse(w http.ResponseWriter) error
+}
+
+type DemoteUser200JSONResponse User
+
+func (response DemoteUser200JSONResponse) VisitDemoteUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DemoteUser403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DemoteUser403ApplicationProblemPlusJSONResponse) VisitDemoteUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DemoteUser404ApplicationProblemPlusJSONResponse Problem
+
+func (response DemoteUser404ApplicationProblemPlusJSONResponse) VisitDemoteUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DemoteUser409ApplicationProblemPlusJSONResponse Problem
+
+func (response DemoteUser409ApplicationProblemPlusJSONResponse) VisitDemoteUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PromoteUserRequestObject struct {
 	ID   UserID `json:"id"`
 	Body *PromoteUserJSONRequestBody
@@ -1343,6 +1904,139 @@ func (response PromoteUser404ApplicationProblemPlusJSONResponse) VisitPromoteUse
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReactivateUserRequestObject struct {
+	ID UserID `json:"id"`
+}
+
+type ReactivateUserResponseObject interface {
+	VisitReactivateUserResponse(w http.ResponseWriter) error
+}
+
+type ReactivateUser200JSONResponse User
+
+func (response ReactivateUser200JSONResponse) VisitReactivateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReactivateUser403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ReactivateUser403ApplicationProblemPlusJSONResponse) VisitReactivateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReactivateUser404ApplicationProblemPlusJSONResponse Problem
+
+func (response ReactivateUser404ApplicationProblemPlusJSONResponse) VisitReactivateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReactivateUser409ApplicationProblemPlusJSONResponse Problem
+
+func (response ReactivateUser409ApplicationProblemPlusJSONResponse) VisitReactivateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SuspendUserRequestObject struct {
+	ID   UserID `json:"id"`
+	Body *SuspendUserJSONRequestBody
+}
+
+type SuspendUserResponseObject interface {
+	VisitSuspendUserResponse(w http.ResponseWriter) error
+}
+
+type SuspendUser200JSONResponse User
+
+func (response SuspendUser200JSONResponse) VisitSuspendUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SuspendUser403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SuspendUser403ApplicationProblemPlusJSONResponse) VisitSuspendUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SuspendUser404ApplicationProblemPlusJSONResponse Problem
+
+func (response SuspendUser404ApplicationProblemPlusJSONResponse) VisitSuspendUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SuspendUser409ApplicationProblemPlusJSONResponse Problem
+
+func (response SuspendUser409ApplicationProblemPlusJSONResponse) VisitSuspendUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1447,6 +2141,72 @@ func (response ValidateToken401ApplicationProblemPlusJSONResponse) VisitValidate
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptInvitationRequestObject struct {
+	Body *AcceptInvitationJSONRequestBody
+}
+
+type AcceptInvitationResponseObject interface {
+	VisitAcceptInvitationResponse(w http.ResponseWriter) error
+}
+
+type AcceptInvitation200JSONResponse Session
+
+func (response AcceptInvitation200JSONResponse) VisitAcceptInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptInvitation400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptInvitation400ApplicationProblemPlusJSONResponse) VisitAcceptInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptInvitation409ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptInvitation409ApplicationProblemPlusJSONResponse) VisitAcceptInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptInvitation429ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptInvitation429ApplicationProblemPlusJSONResponse) VisitAcceptInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1975,6 +2735,237 @@ func (response Register409ApplicationProblemPlusJSONResponse) VisitRegisterRespo
 	return err
 }
 
+type ListInvitationsRequestObject struct {
+	Params ListInvitationsParams
+}
+
+type ListInvitationsResponseObject interface {
+	VisitListInvitationsResponse(w http.ResponseWriter) error
+}
+
+type ListInvitations200JSONResponse InvitationList
+
+func (response ListInvitations200JSONResponse) VisitListInvitationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInvitations400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListInvitations400ApplicationProblemPlusJSONResponse) VisitListInvitationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInvitations403ApplicationProblemPlusJSONResponse Problem
+
+func (response ListInvitations403ApplicationProblemPlusJSONResponse) VisitListInvitationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvitationRequestObject struct {
+	Params CreateInvitationParams
+	Body   *CreateInvitationJSONRequestBody
+}
+
+type CreateInvitationResponseObject interface {
+	VisitCreateInvitationResponse(w http.ResponseWriter) error
+}
+
+type CreateInvitation201JSONResponse Invitation
+
+func (response CreateInvitation201JSONResponse) VisitCreateInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvitation400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateInvitation400ApplicationProblemPlusJSONResponse) VisitCreateInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvitation403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateInvitation403ApplicationProblemPlusJSONResponse) VisitCreateInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateInvitation409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateInvitation409ApplicationProblemPlusJSONResponse) VisitCreateInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeInvitationRequestObject struct {
+	ID InvitationID `json:"id"`
+}
+
+type RevokeInvitationResponseObject interface {
+	VisitRevokeInvitationResponse(w http.ResponseWriter) error
+}
+
+type RevokeInvitation204Response struct {
+}
+
+func (response RevokeInvitation204Response) VisitRevokeInvitationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeInvitation403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeInvitation403ApplicationProblemPlusJSONResponse) VisitRevokeInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeInvitation404ApplicationProblemPlusJSONResponse Problem
+
+func (response RevokeInvitation404ApplicationProblemPlusJSONResponse) VisitRevokeInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendInvitationRequestObject struct {
+	ID InvitationID `json:"id"`
+}
+
+type ResendInvitationResponseObject interface {
+	VisitResendInvitationResponse(w http.ResponseWriter) error
+}
+
+type ResendInvitation200JSONResponse Invitation
+
+func (response ResendInvitation200JSONResponse) VisitResendInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendInvitation403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ResendInvitation403ApplicationProblemPlusJSONResponse) VisitResendInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendInvitation404ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendInvitation404ApplicationProblemPlusJSONResponse) VisitResendInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendInvitation409ApplicationProblemPlusJSONResponse Problem
+
+func (response ResendInvitation409ApplicationProblemPlusJSONResponse) VisitResendInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateVisitorRequestObject struct {
 }
 
@@ -2023,15 +3014,27 @@ type StrictServerInterface interface {
 	// GetUser Get a user
 	// (GET /admin/users/{id})
 	GetUser(ctx context.Context, request GetUserRequestObject) (GetUserResponseObject, error)
+	// DemoteUser Demote a shop_admin to customer (system_admin)
+	// (POST /admin/users/{id}/demote)
+	DemoteUser(ctx context.Context, request DemoteUserRequestObject) (DemoteUserResponseObject, error)
 	// PromoteUser Promote a user (system_admin)
 	// (POST /admin/users/{id}/promote)
 	PromoteUser(ctx context.Context, request PromoteUserRequestObject) (PromoteUserResponseObject, error)
+	// ReactivateUser Reactivate a suspended user (system_admin)
+	// (POST /admin/users/{id}/reactivate)
+	ReactivateUser(ctx context.Context, request ReactivateUserRequestObject) (ReactivateUserResponseObject, error)
+	// SuspendUser Suspend a user (system_admin)
+	// (POST /admin/users/{id}/suspend)
+	SuspendUser(ctx context.Context, request SuspendUserRequestObject) (SuspendUserResponseObject, error)
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(ctx context.Context, request IssueServiceTokenRequestObject) (IssueServiceTokenResponseObject, error)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(ctx context.Context, request ValidateTokenRequestObject) (ValidateTokenResponseObject, error)
+	// AcceptInvitation Accept an invitation
+	// (POST /invitations/accept)
+	AcceptInvitation(ctx context.Context, request AcceptInvitationRequestObject) (AcceptInvitationResponseObject, error)
 	// Login Log in with email and password
 	// (POST /login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
@@ -2062,6 +3065,18 @@ type StrictServerInterface interface {
 	// Register Register with email and password
 	// (POST /register)
 	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
+	// ListInvitations List invitations (system_admin)
+	// (GET /sysadmin/invitations)
+	ListInvitations(ctx context.Context, request ListInvitationsRequestObject) (ListInvitationsResponseObject, error)
+	// CreateInvitation Create an invitation (system_admin)
+	// (POST /sysadmin/invitations)
+	CreateInvitation(ctx context.Context, request CreateInvitationRequestObject) (CreateInvitationResponseObject, error)
+	// RevokeInvitation Revoke a pending invitation (system_admin)
+	// (DELETE /sysadmin/invitations/{id})
+	RevokeInvitation(ctx context.Context, request RevokeInvitationRequestObject) (RevokeInvitationResponseObject, error)
+	// ResendInvitation Resend an invitation (system_admin)
+	// (POST /sysadmin/invitations/{id}/resend)
+	ResendInvitation(ctx context.Context, request ResendInvitationRequestObject) (ResendInvitationResponseObject, error)
 	// CreateVisitor Issue a visitor token for the tenant yc-gateway resolved
 	// (POST /visitor)
 	CreateVisitor(ctx context.Context, request CreateVisitorRequestObject) (CreateVisitorResponseObject, error)
@@ -2184,6 +3199,32 @@ func (sh *strictHandler) GetUser(w http.ResponseWriter, r *http.Request, id User
 	}
 }
 
+// DemoteUser operation middleware
+func (sh *strictHandler) DemoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request DemoteUserRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DemoteUser(ctx, request.(DemoteUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DemoteUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DemoteUserResponseObject); ok {
+		if err := validResponse.VisitDemoteUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // PromoteUser operation middleware
 func (sh *strictHandler) PromoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
 	var request PromoteUserRequestObject
@@ -2210,6 +3251,68 @@ func (sh *strictHandler) PromoteUser(w http.ResponseWriter, r *http.Request, id 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PromoteUserResponseObject); ok {
 		if err := validResponse.VisitPromoteUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReactivateUser operation middleware
+func (sh *strictHandler) ReactivateUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request ReactivateUserRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReactivateUser(ctx, request.(ReactivateUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReactivateUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReactivateUserResponseObject); ok {
+		if err := validResponse.VisitReactivateUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SuspendUser operation middleware
+func (sh *strictHandler) SuspendUser(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request SuspendUserRequestObject
+
+	request.ID = id
+
+	var body SuspendUserJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SuspendUser(ctx, request.(SuspendUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SuspendUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SuspendUserResponseObject); ok {
+		if err := validResponse.VisitSuspendUserResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2272,6 +3375,37 @@ func (sh *strictHandler) ValidateToken(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ValidateTokenResponseObject); ok {
 		if err := validResponse.VisitValidateTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptInvitation operation middleware
+func (sh *strictHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	var request AcceptInvitationRequestObject
+
+	var body AcceptInvitationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptInvitation(ctx, request.(AcceptInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptInvitationResponseObject); ok {
+		if err := validResponse.VisitAcceptInvitationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2578,6 +3712,117 @@ func (sh *strictHandler) Register(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RegisterResponseObject); ok {
 		if err := validResponse.VisitRegisterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListInvitations operation middleware
+func (sh *strictHandler) ListInvitations(w http.ResponseWriter, r *http.Request, params ListInvitationsParams) {
+	var request ListInvitationsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListInvitations(ctx, request.(ListInvitationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListInvitations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListInvitationsResponseObject); ok {
+		if err := validResponse.VisitListInvitationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateInvitation operation middleware
+func (sh *strictHandler) CreateInvitation(w http.ResponseWriter, r *http.Request, params CreateInvitationParams) {
+	var request CreateInvitationRequestObject
+
+	request.Params = params
+
+	var body CreateInvitationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateInvitation(ctx, request.(CreateInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateInvitationResponseObject); ok {
+		if err := validResponse.VisitCreateInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeInvitation operation middleware
+func (sh *strictHandler) RevokeInvitation(w http.ResponseWriter, r *http.Request, id InvitationID) {
+	var request RevokeInvitationRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeInvitation(ctx, request.(RevokeInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeInvitationResponseObject); ok {
+		if err := validResponse.VisitRevokeInvitationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResendInvitation operation middleware
+func (sh *strictHandler) ResendInvitation(w http.ResponseWriter, r *http.Request, id InvitationID) {
+	var request ResendInvitationRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResendInvitation(ctx, request.(ResendInvitationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResendInvitation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResendInvitationResponseObject); ok {
+		if err := validResponse.VisitResendInvitationResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -64,7 +64,8 @@ func IdentityStream() StreamConfig {
 		"identity.user.registered.v1", "identity.user.promoted.v1", "identity.user.demoted.v1",
 		"identity.user.logged_in.v1", "identity.user.login_failed.v1",
 		"identity.user.password_reset_requested.v1", "identity.user.password_changed.v1",
-		"identity.user.suspended.v1",
+		"identity.user.suspended.v1", "identity.user.reactivated.v1",
+		"identity.user.invited.v1", "identity.user.invitation_accepted.v1", "identity.user.invitation_revoked.v1",
 		"identity.oauth_linked.v1", "identity.oauth_unlinked.v1",
 	}
 	subjects := make([]string, 0, len(events))

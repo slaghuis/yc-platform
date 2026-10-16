@@ -33,9 +33,62 @@ func (s *Service) ShopAdminPromoted(ctx context.Context, tenantID, _ string, p e
 	})
 }
 
+// InvitationAccepted adds the new admin to the alert audience (ADR-030).
+func (s *Service) InvitationAccepted(ctx context.Context, _, _ string, p events.IdentityUserInvitationAcceptedV1) error {
+	switch p.Role {
+	case notifyShopAdmin:
+		return s.inTenant(ctx, p.TenantID, func(tx pgx.Tx, tenantID string) error {
+			return s.repo.PutShopAdmin(ctx, tx, tenantID, p.UserID, p.AcceptedAt)
+		})
+	case notifySystemAdmin:
+		return s.inAnyTenant(ctx, eventbus.PlatformTenantID, func(tx pgx.Tx, _ string) error {
+			return s.repo.PutSystemAdmin(ctx, tx, p.UserID, p.Email, p.AcceptedAt)
+		})
+	default:
+		return nil
+	}
+}
+
+// UserDemoted removes a shop admin from the alert audience (ADR-030).
+func (s *Service) UserDemoted(ctx context.Context, tenantID, _ string, p events.IdentityUserDemotedV1) error {
+	return s.inTenant(ctx, tenantID, func(tx pgx.Tx, tenantID string) error {
+		return s.repo.DeleteShopAdmin(ctx, tx, tenantID, p.UserID)
+	})
+}
+
+// UserSuspended removes the user from shop and system alert audiences (ADR-030).
+func (s *Service) UserSuspended(ctx context.Context, _, _ string, p events.IdentityUserSuspendedV1) error {
+	return s.inAnyTenant(ctx, eventbus.PlatformTenantID, func(tx pgx.Tx, _ string) error {
+		if err := s.repo.SuspendSystemAdmin(ctx, tx, p.UserID, p.SuspendedAt); err != nil {
+			return err
+		}
+		if p.TenantID == eventbus.PlatformTenantID || p.TenantID == "" {
+			return nil
+		}
+		return s.repo.DeleteShopAdmin(ctx, tx, p.TenantID, p.UserID)
+	})
+}
+
+// UserReactivated restores admin alert audiences for shop_admin and
+// system_admin roles (ADR-030).
+func (s *Service) UserReactivated(ctx context.Context, _, _ string, p events.IdentityUserReactivatedV1) error {
+	switch p.Role {
+	case notifyShopAdmin:
+		return s.inTenant(ctx, p.TenantID, func(tx pgx.Tx, tenantID string) error {
+			return s.repo.PutShopAdmin(ctx, tx, tenantID, p.UserID, p.ReactivatedAt)
+		})
+	case notifySystemAdmin:
+		return s.inAnyTenant(ctx, eventbus.PlatformTenantID, func(tx pgx.Tx, _ string) error {
+			return s.repo.ReactivateSystemAdmin(ctx, tx, p.UserID)
+		})
+	default:
+		return nil
+	}
+}
+
 // AdminAlert emails a yc-monitor alert to the admins it names: the
-// platform's system admins (from configuration) and the alert's shop's
-// admins. Platform alerts are kept under the platform tenant.
+// platform's system admins (from configuration and invited) and the
+// alert's shop's admins. Platform alerts are kept under the platform tenant.
 func (s *Service) AdminAlert(ctx context.Context, tenantID, eventID string, p events.MonitorAlertOpenedV1) error {
 	dims := make([]map[string]any, 0, len(p.Dimensions))
 	for _, k := range slices.Sorted(maps.Keys(p.Dimensions)) {
@@ -47,7 +100,23 @@ func (s *Service) AdminAlert(ctx context.Context, tenantID, eventID string, p ev
 	}
 	var to []domain.Recipient
 	if slices.Contains(p.Notify, notifySystemAdmin) {
+		seen := map[string]bool{}
 		for _, email := range s.cfg.SystemAdminEmails {
+			if seen[email] {
+				continue
+			}
+			seen[email] = true
+			to = append(to, domain.Recipient{Channel: domain.ChannelEmail, Address: email})
+		}
+		invited, err := s.invitedSystemAdminEmails(ctx)
+		if err != nil {
+			return err
+		}
+		for _, email := range invited {
+			if seen[email] {
+				continue
+			}
+			seen[email] = true
 			to = append(to, domain.Recipient{Channel: domain.ChannelEmail, Address: email})
 		}
 	}
@@ -83,6 +152,16 @@ func milestoneTitle(p events.AnalyticsMilestoneReachedV1) string {
 		return money.New(p.Threshold, *p.Currency).String() + " in sales"
 	}
 	return strconv.FormatInt(p.Threshold, 10) + " in sales"
+}
+
+func (s *Service) invitedSystemAdminEmails(ctx context.Context) ([]string, error) {
+	var emails []string
+	err := s.inAnyTenant(ctx, eventbus.PlatformTenantID, func(tx pgx.Tx, _ string) error {
+		var err error
+		emails, err = s.repo.SystemAdminEmails(ctx, tx)
+		return err
+	})
+	return emails, err
 }
 
 // shopAdmins resolves each of the shop's admins' channel through

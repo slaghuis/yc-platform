@@ -25,6 +25,10 @@ type Handlers interface {
 	ReviewPrompt(ctx context.Context, tenantID, eventID string, p ycevents.ReviewPromptRequestedV1) error
 	ChannelAdded(ctx context.Context, tenantID, eventID string, p ycevents.PreferenceChannelAddedV1) error
 	ShopAdminPromoted(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserPromotedV1) error
+	InvitationAccepted(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserInvitationAcceptedV1) error
+	UserDemoted(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserDemotedV1) error
+	UserSuspended(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserSuspendedV1) error
+	UserReactivated(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserReactivatedV1) error
 	AdminAlert(ctx context.Context, tenantID, eventID string, p ycevents.MonitorAlertOpenedV1) error
 	Milestone(ctx context.Context, tenantID, eventID string, p ycevents.AnalyticsMilestoneReachedV1) error
 	TenantProvisioned(ctx context.Context, tenantID string, p ycevents.PlatformTenantProvisionedV1) error
@@ -47,6 +51,10 @@ func Subscriptions(h Handlers) []Subscription {
 	return []Subscription{
 		{Opts: gdprOpts, Handler: gdpr},
 		subscribe(ycevents.TypeIdentityUserPromotedV1, "user-promoted", h.ShopAdminPromoted),
+		subscribe(ycevents.TypeIdentityUserInvitationAcceptedV1, "invitation-accepted", h.InvitationAccepted),
+		subscribe(ycevents.TypeIdentityUserDemotedV1, "user-demoted", h.UserDemoted),
+		subscribe(ycevents.TypeIdentityUserSuspendedV1, "user-suspended", h.UserSuspended),
+		subscribe(ycevents.TypeIdentityUserReactivatedV1, "user-reactivated", h.UserReactivated),
 		subscribe(ycevents.TypeMonitorAlertOpenedV1, "monitor-alert-opened", h.AdminAlert),
 		subscribe(ycevents.TypeAnalyticsMilestoneReachedV1, "analytics-milestone-reached", h.Milestone),
 		subscribeTenant(ycevents.TypePlatformTenantProvisionedV1, "tenant-provisioned", h.TenantProvisioned),

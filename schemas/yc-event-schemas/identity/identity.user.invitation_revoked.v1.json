@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/identity/identity.user.invitation_revoked.v1.json",
+  "title": "identity.user.invitation_revoked.v1",
+  "description": "A pending invitation was revoked by a system admin (ADR-030). The invite token no longer works.",
+  "type": "object",
+  "required": ["invitation_id", "tenant_id", "email", "role", "revoked_at"],
+  "additionalProperties": false,
+  "properties": {
+    "invitation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_id": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Lowercased invitee email. PII (event-conventions §18)."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["shop_admin", "system_admin"]
+    },
+    "revoked_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

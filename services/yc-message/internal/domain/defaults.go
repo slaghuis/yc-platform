@@ -146,6 +146,19 @@ See how the shop is doing in the analytics dashboard at {{.shop_url}}.
 `,
 	},
 	{TypeMilestone, ChannelSMS}: {Body: `Congratulations! Your shop reached a milestone: {{.title}}.`},
+
+	{TypeAdminInvite, ChannelEmail}: {
+		Subject: "You're invited as {{.role}}",
+		Body: `You have been invited to join as {{.role}}.
+
+Accept the invitation here:
+
+{{.invite_url}}
+
+The link works once and expires at {{.expires_at}}. If you did not expect this, ignore this email.
+`,
+	},
+	{TypeAdminInvite, ChannelSMS}: {Body: `You're invited as {{.role}}: {{.invite_url}} (expires {{.expires_at}})`},
 }
 
 // Default returns the platform's built-in template for a type and channel.
@@ -201,6 +214,10 @@ var samples = map[Type]map[string]any{
 		"value": "", "threshold": "", "opened_at": "2026-01-01 13:00 UTC",
 	},
 	TypeMilestone: {"title": "your first order", "reached_at": "2026-01-01 13:00 UTC"},
+	TypeAdminInvite: {
+		"role": "shop_admin", "invite_url": "https://shop.example/account/accept-invite?token=example",
+		"expires_at": "2026-01-01 13:00 UTC",
+	},
 }
 
 // Sample returns an example context for a message type, with the fields

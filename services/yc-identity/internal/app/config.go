@@ -17,21 +17,25 @@ import (
 
 // Config is the service configuration (config/config.default.yaml).
 type Config struct {
-	Service     string               `koanf:"service"`
-	Environment string               `koanf:"environment"`
-	HTTP        httpkit.ServerConfig `koanf:"http"`
-	Log         LogConfig            `koanf:"log"`
-	Database    dbkit.Config         `koanf:"database"`
-	NATS        NATSConfig           `koanf:"nats"`
-	Telemetry   TelemetryConfig      `koanf:"telemetry"`
-	JWT         JWTConfig            `koanf:"jwt"`
-	Password    PasswordConfig       `koanf:"password"`
+	Service       string                `koanf:"service"`
+	Environment   string                `koanf:"environment"`
+	HTTP          httpkit.ServerConfig  `koanf:"http"`
+	Log           LogConfig             `koanf:"log"`
+	Database      dbkit.Config          `koanf:"database"`
+	NATS          NATSConfig            `koanf:"nats"`
+	Telemetry     TelemetryConfig       `koanf:"telemetry"`
+	JWT           JWTConfig             `koanf:"jwt"`
+	Password      PasswordConfig        `koanf:"password"`
+	Invitations   InvitationsConfig     `koanf:"invitations"`
+	PlatformHosts []string              `koanf:"platform_hosts"`
+	Gateway       httpkit.GatewayConfig `koanf:"gateway"`
+	Idempotency   IdempotencyConfig     `koanf:"idempotency"`
 	// ServiceClients maps service name to client secret (ADR-021). Clients
 	// with an empty secret are left out.
 	ServiceClients map[string]string `koanf:"service_clients"`
 	OAuth          OAuthConfig       `koanf:"oauth"`
-	// InternalCalls reaches yc-message for reset links. Without a gateway
-	// URL reset links are not sent.
+	// InternalCalls reaches yc-message for reset and invite links. Without
+	// a gateway URL links are not sent.
 	InternalCalls httpkit.InternalConfig `koanf:"internal_calls"`
 }
 
@@ -112,6 +116,21 @@ type PasswordConfig struct {
 	LoginFailureWindow time.Duration `koanf:"login_failure_window"`
 }
 
+// InvitationsConfig is the `invitations:` block (ADR-030).
+type InvitationsConfig struct {
+	TTL time.Duration `koanf:"ttl"`
+	// AcceptURL is the accept-invite page; "{host}" and "{token}".
+	AcceptURL string `koanf:"accept_url"`
+	// LogInviteLinks logs invite tokens. Refused in production.
+	LogInviteLinks bool `koanf:"log_invite_links"`
+}
+
+// IdempotencyConfig is the `idempotency:` block.
+type IdempotencyConfig struct {
+	Retention     time.Duration `koanf:"retention"`
+	PurgeInterval time.Duration `koanf:"purge_interval"`
+}
+
 // LoadConfig layers the embedded defaults, the optional file named by
 // YC_CONFIG_FILE and YC_IDENTITY__* environment overrides.
 func LoadConfig() (Config, error) {
@@ -122,6 +141,20 @@ func LoadConfig() (Config, error) {
 		config.Env("YC_IDENTITY"),
 	)
 	return cfg, err
+}
+
+// platformHosts returns the platform hostnames, split, trimmed and lowercased.
+func (c *Config) platformHosts() []string {
+	var out []string
+	for _, item := range c.PlatformHosts {
+		for s := range strings.SplitSeq(item, ",") {
+			s = strings.ToLower(strings.TrimSpace(s))
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 // Validate reports missing required settings.
@@ -145,8 +178,23 @@ func (c *Config) Validate() error {
 	if c.Password.ResetTTL <= 0 || c.OAuth.StateTTL <= 0 || c.OAuth.Timeout <= 0 {
 		errs = append(errs, errors.New("password.reset_ttl, oauth.state_ttl and oauth.timeout must be positive"))
 	}
+	if c.Invitations.TTL <= 0 {
+		errs = append(errs, errors.New("invitations.ttl must be positive"))
+	}
+	if !strings.Contains(c.Invitations.AcceptURL, "{token}") {
+		errs = append(errs, errors.New("invitations.accept_url must contain {token}"))
+	}
 	if c.Password.LoginMaxFailures < 0 || (c.Password.LoginMaxFailures > 0 && c.Password.LoginFailureWindow <= 0) {
 		errs = append(errs, errors.New("password.login_max_failures must be 0 or more, with a positive login_failure_window"))
+	}
+	if c.Gateway.InternalURL != "" && c.Gateway.AdvertiseURL == "" {
+		errs = append(errs, errors.New("gateway.advertise_url is required with gateway.internal_url"))
+	}
+	if c.Idempotency.Retention < 24*time.Hour {
+		errs = append(errs, errors.New("idempotency.retention must be at least 24h"))
+	}
+	if c.Idempotency.PurgeInterval <= 0 {
+		errs = append(errs, errors.New("idempotency.purge_interval must be positive"))
 	}
 	for name, secret := range c.serviceClients() {
 		if len(secret) < minServiceSecretLen {
@@ -171,6 +219,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Password.LogResetLinks && c.Environment == "production" {
 		errs = append(errs, errors.New("password.log_reset_links is not allowed in production"))
+	}
+	if c.Invitations.LogInviteLinks && c.Environment == "production" {
+		errs = append(errs, errors.New("invitations.log_invite_links is not allowed in production"))
 	}
 	return errors.Join(errs...)
 }

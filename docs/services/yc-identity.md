@@ -102,7 +102,7 @@ OpenAPI spec stub lives at `/services/yc-identity/api/openapi.yaml`.
 
 ### Phase 2 Implementation Notes
 
-The contract is `services/yc-identity/api/openapi.yaml`. Phase 2 implemented `/visitor` (through the gateway), `/register`, `/login`, `/me`, `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/promote` and `/internal/validate-token`. Later phases added `/refresh`, `/logout`, `/password/reset-request` and `/reset-confirm`, `/oauth/{provider}/start` and `/callback`, `DELETE /me`, `DELETE /admin/users/{id}` (ADR-025) and `/internal/service-token` (ADR-021). Demote and suspend are not built (yc-platform v1.1 Phase 12, ADR-030).
+The contract is `services/yc-identity/api/openapi.yaml`. Phase 2 implemented `/visitor` (through the gateway), `/register`, `/login`, `/me`, `GET /admin/users`, `GET /admin/users/{id}`, `POST /admin/users/{id}/promote` and `/internal/validate-token`. Later phases added `/refresh`, `/logout`, `/password/reset-request` and `/reset-confirm`, `/oauth/{provider}/start` and `/callback`, `DELETE /me`, `DELETE /admin/users/{id}` (ADR-025) and `/internal/service-token` (ADR-021). Phase 12 (ADR-030) adds `/sysadmin/invitations`, anonymous `POST /invitations/accept`, and `POST /admin/users/{id}/suspend|reactivate|demote`.
 
 - **Passwords** are hashed with Argon2id (`password.argon2`: time 2, 64 MiB, 2 threads by default; weaker settings are rejected at start-up).
 - **Registration** turns the calling visitor into a customer in place: the user ID is kept, so the visitor's cart and history follow, and the visitor token stops validating. A caller without a visitor gets a new customer. Emails are unique per tenant.
@@ -114,7 +114,7 @@ The contract is `services/yc-identity/api/openapi.yaml`. Phase 2 implemented `/v
 
 ### Phase 3 Implementation Notes
 
-Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confirm`, `/oauth/{provider}/start`, `/oauth/{provider}/callback` and `/internal/service-token` (migration `004_sessions_oauth_reset`). Demote, suspend, delete and `/internal/users/{id}` come later.
+Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confirm`, `/oauth/{provider}/start`, `/oauth/{provider}/callback` and `/internal/service-token` (migration `004_sessions_oauth_reset`). Demote and suspend landed in Phase 12; `/internal/users/{id}` is still later.
 
 - **Refresh tokens** are opaque random strings stored by SHA-256 hash, one row per token in a *family* (one login). `/refresh` rotates: the presented token is marked replaced and a new one issued in the same family. Presenting a replaced or revoked token revokes the whole family (theft detection). Visitors get no refresh token.
 - **Logout** revokes the caller's access token (its `jti`, checked by `/internal/validate-token`) and, when given, the refresh token's family. yc-gateway may accept the access token for up to its validation cache TTL.
@@ -134,6 +134,15 @@ Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confir
 - **Deletion** (ADR-025 rules 1 and 2) is `DELETE /me` for customers and `DELETE /admin/users/{id}` for system admins (customers and shop admins; a system admin is 409), both 204. Before deleting, yc-identity asks yc-orders `GET /internal/customer-orders?user_id=` (`internal_calls`); unfinished orders or open returns are 409, no answer is 503. Deleting an already deleted user is 404.
 - **What changes:** the user's email, phone, display name and password hash are cleared and the status becomes `deleted`; OAuth links, password reset tokens and sessions are removed; `pseudonym_map` records the random UUID pseudonym, who asked and when. `identity.user.deleted.v1` (with the pseudonym, role and `requested_by`) and yc-identity's own `platform.gdpr.cascade_completed.v1` (`anonymized`) are published in the same transaction. Tracking the cascade is yc-audit's (ADR-005), not yc-identity's.
 - **Service clients** now also include `yc-shipping`, which asks yc-orders for a deleted customer's orders.
+
+### Phase 12 Implementation Notes
+
+Admin invitations and platform team (ADR-030), migration `007_invitations`.
+
+- **Invitations** (`/sysadmin/invitations`, system_admin on the platform host): create (Idempotency-Key required), list, resend, revoke. Role pairing: `system_admin` only on `_platform`, `shop_admin` only on a shop. An email that is already an admin of that tenant is 409. Tokens are 32 random bytes stored by SHA-256 (`invitations.ttl` default 72h); only the latest token is valid. Create and resend publish `identity.user.invited.v1` and email `admin_invite` via yc-message with `invitations.accept_url` (`{host}`, `{token}`). Host is `accept_host` from the body, else `platform_hosts[0]` for `_platform`, else the shop's primary hostname projected into `shop_hosts` from `platform.tenant.provisioned.v1` / `updated.v1`.
+- **Accept** (`POST /invitations/accept`, anonymous): same error for unknown/used/expired tokens; failures throttled like login. New invitees set a password; existing customers keep their `user_id` and must supply their current password. Publishes `identity.user.invitation_accepted.v1` (includes email). Consuming `platform.tenant.provisioned.v1` with `primary_admin_email` creates the first shop-admin invite as the envelope actor.
+- **Suspend / reactivate / demote** (`POST /admin/users/{id}/suspend|reactivate|demote`, system_admin): cannot suspend yourself or the last active system admin; suspend revokes refresh families; demote is `shop_admin` → `customer` only. Publishes `suspended.v1`, `reactivated.v1`, `demoted.v1`.
+- **Gateway registration:** `/sysadmin/invitations` via KeepRegistered; accept stays on the gateway static chain.
 
 ## Database Schema
 
@@ -218,12 +227,16 @@ Migrations managed via `golang-migrate`, in `/services/yc-identity/migrations/`.
 | `identity.visitor.created.v1` | Visitor token issued |
 | `identity.user.registered.v1` | New customer registration |
 | `identity.user.promoted.v1` | Role changed upward |
-| `identity.user.demoted.v1` | Role changed downward |
+| `identity.user.demoted.v1` | Shop admin demoted to customer (ADR-030) |
+| `identity.user.invited.v1` | Invitation created or resent (ADR-030) |
+| `identity.user.invitation_accepted.v1` | Invitation accepted (ADR-030) |
+| `identity.user.invitation_revoked.v1` | Pending invitation revoked (ADR-030) |
 | `identity.user.logged_in.v1` | Successful login |
 | `identity.user.login_failed.v1` | Failed login (for brute-force detection) |
 | `identity.user.password_reset_requested.v1` | Reset flow started |
 | `identity.user.password_changed.v1` | Password successfully changed |
-| `identity.user.suspended.v1` | Admin-suspended |
+| `identity.user.suspended.v1` | Admin-suspended (ADR-030) |
+| `identity.user.reactivated.v1` | Suspended user reactivated (ADR-030) |
 | `identity.user.deleted.v1` | Deletion triggered — kicks off GDPR cascade |
 | `identity.oauth_linked.v1` | OAuth provider linked to user |
 | `identity.oauth_unlinked.v1` | OAuth provider unlinked |
@@ -233,7 +246,7 @@ Migrations managed via `golang-migrate`, in `/services/yc-identity/migrations/`.
 | Event | Action |
 |---|---|
 | `platform.gdpr.cascade_completed.v1` | Track cascade completion per deleted user |
-| `platform.tenant.provisioned.v1` | Prepare tenant-scoped state (if needed) |
+| `platform.tenant.provisioned.v1` | When `primary_admin_email` is set, create the first shop-admin invitation (ADR-030) |
 | `platform.tenant.deleted.v1` | Mark all tenant users as deleted; initiate per-user cascade |
 
 ## Configuration

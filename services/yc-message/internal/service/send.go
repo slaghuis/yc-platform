@@ -27,7 +27,10 @@ type SendRequest struct {
 
 // platformSendTypes are the messages Send accepts for the platform tenant:
 // those for system admins, who belong to no shop.
-var platformSendTypes = map[domain.Type]bool{domain.TypePasswordReset: true}
+var platformSendTypes = map[domain.Type]bool{
+	domain.TypePasswordReset: true,
+	domain.TypeAdminInvite:   true,
+}
 
 // Send queues a message for another service, such as a password reset
 // from yc-identity, whose context must not travel on the event bus.

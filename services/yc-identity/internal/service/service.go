@@ -43,13 +43,23 @@ type Config struct {
 	// ResetURL is the shop's reset page; "{host}" is the shop's host and
 	// "{token}" the reset token.
 	ResetURL string
-	// Messages emails reset links. Nil leaves them undelivered.
+	// AcceptURL is the accept-invite page; "{host}" and "{token}" are
+	// substituted (ADR-030 rule 4).
+	AcceptURL string
+	// InviteTTL is how long an invitation token stays valid (default 72h).
+	InviteTTL time.Duration
+	// PlatformHosts are yc-gateway's platform hosts; [0] is used for
+	// _platform invite links.
+	PlatformHosts []string
+	// Messages emails reset and invite links. Nil leaves them undelivered.
 	Messages Messages
 	// Orders refuses deletions while orders are unfinished. Nil skips the
 	// check (development without internal calls).
 	Orders Orders
 	// LogResetLinks logs reset tokens. Development only.
 	LogResetLinks bool
+	// LogInviteLinks logs invite tokens. Development only.
+	LogInviteLinks bool
 	// LoginMaxFailures failed sign-ins for one email in a shop refuse the
 	// rest of the LoginFailureWindow; 0 turns the limit off.
 	LoginMaxFailures   int
@@ -59,6 +69,7 @@ type Config struct {
 // Messages is yc-message's send API.
 type Messages interface {
 	SendPasswordReset(ctx context.Context, reference, userID, email, resetURL, expiresAt string) error
+	SendAdminInvite(ctx context.Context, reference, email, inviteURL, expiresAt, role string) error
 }
 
 // OAuthProvider is an enabled provider and the callback page it redirects
@@ -72,19 +83,21 @@ type OAuthProvider struct {
 // OAuth sign-in, password reset, token validation, service tokens and user
 // administration.
 type Service struct {
-	db         *pgxpool.Pool
-	bus        Publisher
-	signer     *token.Signer
-	hasher     *password.Hasher
-	users      repository.Users
-	sessions   repository.Sessions
-	oauth      repository.OAuth
-	resets     repository.PasswordResets
-	pseudonyms repository.Pseudonyms
-	failures   repository.LoginFailures
-	clients    map[string][sha256.Size]byte
-	cfg        Config
-	now        func() time.Time
+	db          *pgxpool.Pool
+	bus         Publisher
+	signer      *token.Signer
+	hasher      *password.Hasher
+	users       repository.Users
+	sessions    repository.Sessions
+	oauth       repository.OAuth
+	resets      repository.PasswordResets
+	pseudonyms  repository.Pseudonyms
+	failures    repository.LoginFailures
+	invitations repository.Invitations
+	shopHosts   repository.ShopHosts
+	clients     map[string][sha256.Size]byte
+	cfg         Config
+	now         func() time.Time
 }
 
 // New returns a Service.

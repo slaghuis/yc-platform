@@ -73,6 +73,28 @@ var Rules = map[string]Rule{
 	events.TypeIdentityUserPromotedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
 		return "user:" + str(p, "user_id"), fmt.Sprintf("Role changed from %s to %s", str(p, "from_role"), str(p, "to_role"))
 	}},
+	events.TypeIdentityUserDemotedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		return "user:" + str(p, "user_id"), fmt.Sprintf("Role changed from %s to %s", str(p, "from_role"), str(p, "to_role"))
+	}},
+	events.TypeIdentityUserInvitedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		return "invitation:" + str(p, "invitation_id"), fmt.Sprintf("Invited %s as %s", str(p, "email"), str(p, "role"))
+	}},
+	events.TypeIdentityUserInvitationAcceptedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		extra := ""
+		if p["upgraded_customer"] == true {
+			extra = " (upgraded customer)"
+		}
+		return "user:" + str(p, "user_id"), fmt.Sprintf("Accepted %s invitation%s", str(p, "role"), extra)
+	}},
+	events.TypeIdentityUserInvitationRevokedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		return "invitation:" + str(p, "invitation_id"), fmt.Sprintf("Revoked %s invitation for %s", str(p, "role"), str(p, "email"))
+	}},
+	events.TypeIdentityUserSuspendedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		return "user:" + str(p, "user_id"), fmt.Sprintf("Suspended %s", str(p, "role"))
+	}},
+	events.TypeIdentityUserReactivatedV1: {CategoryRoleChange, func(p map[string]any) (string, string) {
+		return "user:" + str(p, "user_id"), fmt.Sprintf("Reactivated %s", str(p, "role"))
+	}},
 	events.TypePlatformTenantProvisionedV1: {CategoryTenantLifecycle, func(p map[string]any) (string, string) {
 		return "tenant:" + str(p, "tenant_id"), fmt.Sprintf("Shop %q provisioned", str(p, "name"))
 	}},

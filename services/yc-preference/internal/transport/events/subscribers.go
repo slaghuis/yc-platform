@@ -61,6 +61,24 @@ func Subscriptions(h Handlers) []Subscription {
 		},
 		{
 			Opts: eventbus.SubscribeOpts{
+				Subject:     "yc.*." + ycevents.TypeIdentityUserInvitationAcceptedV1,
+				DurableName: "yc-preference-invitation-accepted",
+			},
+			Handler: func(ctx context.Context, evt eventbus.ConsumedEvent) error {
+				var p ycevents.IdentityUserInvitationAcceptedV1
+				if err := decode(evt, &p); err != nil {
+					return err
+				}
+				// Upgraded customers already have preference defaults from registration.
+				// System admins live on _platform; yc-preference is shop-scoped.
+				if p.UpgradedCustomer || p.Role == ycevents.IdentityUserInvitationAcceptedV1RoleSystemAdmin {
+					return nil
+				}
+				return poisonInvalid(h.SeedUser(ctx, p.TenantID, p.UserID, p.Email))
+			},
+		},
+		{
+			Opts: eventbus.SubscribeOpts{
 				Subject:     "yc.*." + ycevents.TypeMessageVerificationConfirmedV1,
 				DurableName: "yc-preference-verification-confirmed",
 			},
