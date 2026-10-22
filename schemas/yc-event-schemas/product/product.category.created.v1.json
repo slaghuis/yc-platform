@@ -26,11 +26,6 @@
     "sort_order": {
       "type": "integer"
     },
-    "image_id": {
-      "type": "string",
-      "format": "uuid",
-      "description": "yc-image id of the category icon, when one is set."
-    },
     "created_at": {
       "type": "string",
       "format": "date-time"

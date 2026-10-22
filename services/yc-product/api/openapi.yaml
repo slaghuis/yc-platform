@@ -314,7 +314,7 @@ paths:
       summary: Create a category
       description: |
         image_id is an optional yc-image id for the category icon. The file is
-        not checked. Publishes product.category.created.v1.
+        not checked. Publishes product.category.created.v2.
       operationId: createCategory
       requestBody:
         required: true
@@ -335,7 +335,7 @@ paths:
       summary: Replace a category's fields
       description: |
         Omitting image_id clears the icon. The parent may not be the category
-        or one of its descendants. Publishes product.category.updated.v1.
+        or one of its descendants. Publishes product.category.updated.v2.
       operationId: updateCategory
       parameters:
         - $ref: '#/components/parameters/ID'

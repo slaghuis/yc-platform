@@ -63,8 +63,10 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `product.variant.removed.v1` | yc-product | — | Variant axis removed |
 | `product.image_attached.v1` | yc-product | — | Image linked to product/SKU |
 | `product.image_detached.v1` | yc-product | — | Image unlinked |
-| `product.category.created.v1` | yc-product | — | Category created |
-| `product.category.updated.v1` | yc-product | — | Category updated |
+| `product.category.created.v1` | yc-product | — | Category created (superseded by v2) |
+| `product.category.updated.v1` | yc-product | — | Category updated (superseded by v2) |
+| `product.category.created.v2` | yc-product | — | Category created, including the optional icon |
+| `product.category.updated.v2` | yc-product | — | Category updated, including the optional icon |
 | `product.category.deleted.v1` | yc-product | — | Category deleted |
 | `product.banner.created.v1` | yc-product | — | Banner created |
 | `product.banner.updated.v1` | yc-product | — | Banner updated |

@@ -342,8 +342,10 @@ CREATE POLICY tenant_isolation ON products
 | `product.variant.removed.v1` | Variant axis removed |
 | `product.image_attached.v1` | Image linked to product/SKU |
 | `product.image_detached.v1` | Image unlinked |
-| `product.category.created.v1` | Category created |
-| `product.category.updated.v1` | Category updated |
+| `product.category.created.v1` | Category created. Superseded by v2; no new publishes |
+| `product.category.updated.v1` | Category updated. Superseded by v2; no new publishes |
+| `product.category.created.v2` | Category created, including the optional icon |
+| `product.category.updated.v2` | Category updated, including the optional icon |
 | `product.category.deleted.v1` | Category deleted. Its banner is deleted too |
 | `product.banner.created.v1` | Banner created |
 | `product.banner.updated.v1` | Banner's category, text or images replaced |

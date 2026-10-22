@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.category.updated.v2.json",
+  "title": "product.category.updated.v2",
+  "description": "A shop admin changed a category. Carries the category's new state, including the optional icon.",
+  "type": "object",
+  "required": ["category_id", "name", "slug", "sort_order", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "category_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "parent_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "sort_order": {
+      "type": "integer"
+    },
+    "image_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "yc-image id of the category icon, when one is set."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

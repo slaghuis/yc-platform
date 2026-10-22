@@ -21,7 +21,7 @@ func (s *Service) CreateCategory(ctx context.Context, in domain.CategoryInput) (
 		if c, err = s.cat.CreateCategory(ctx, tx, tenantID, in); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryCreatedV1, events.ProductCategoryCreatedV1{
+		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryCreatedV2, events.ProductCategoryCreatedV2{
 			CategoryID: c.ID, ParentID: optional(c.ParentID), Name: c.Name, Slug: c.Slug,
 			SortOrder: int64(c.SortOrder), ImageID: optional(c.ImageID), CreatedAt: s.now().UTC(),
 		})
@@ -53,7 +53,7 @@ func (s *Service) UpdateCategory(ctx context.Context, id string, in domain.Categ
 		if c, err = s.cat.UpdateCategory(ctx, tx, id, in); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryUpdatedV1, events.ProductCategoryUpdatedV1{
+		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryUpdatedV2, events.ProductCategoryUpdatedV2{
 			CategoryID: c.ID, ParentID: optional(c.ParentID), Name: c.Name, Slug: c.Slug,
 			SortOrder: int64(c.SortOrder), ImageID: optional(c.ImageID), UpdatedAt: s.now().UTC(),
 		})
