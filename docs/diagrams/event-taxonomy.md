@@ -66,6 +66,10 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `product.category.created.v1` | yc-product | — | Category created |
 | `product.category.updated.v1` | yc-product | — | Category updated |
 | `product.category.deleted.v1` | yc-product | — | Category deleted |
+| `product.banner.created.v1` | yc-product | — | Banner created |
+| `product.banner.updated.v1` | yc-product | — | Banner updated |
+| `product.banner.deleted.v1` | yc-product | — | Banner deleted, or removed with its category |
+| `product.banners.reordered.v1` | yc-product | — | Banner display order changed |
 
 ## Pricing Domain
 

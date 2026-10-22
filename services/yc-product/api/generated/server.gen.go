@@ -91,17 +91,52 @@ type AttachImageRequest struct {
 	SortOrder *int               `json:"sort_order,omitempty"`
 }
 
+// Banner defines model for Banner.
+type Banner struct {
+	BackgroundImageID openapi_types.UUID `json:"background_image_id"`
+	BannerID          openapi_types.UUID `json:"banner_id"`
+	CategoryID        openapi_types.UUID `json:"category_id"`
+
+	// CategoryName The category name at read time.
+	CategoryName string             `json:"category_name"`
+	LargeImageID openapi_types.UUID `json:"large_image_id"`
+	SortOrder    int                `json:"sort_order"`
+	Text         string             `json:"text"`
+}
+
+// BannerInput defines model for BannerInput.
+type BannerInput struct {
+	// BackgroundImageID yc-image id of the background. Resolve with GET /images/{id}.
+	BackgroundImageID openapi_types.UUID `json:"background_image_id"`
+	CategoryID        openapi_types.UUID `json:"category_id"`
+
+	// LargeImageID yc-image id of the large image. It is not the category icon. Resolve with GET /images/{id}.
+	LargeImageID openapi_types.UUID `json:"large_image_id"`
+	Text         string             `json:"text"`
+}
+
+// BannerOrder defines model for BannerOrder.
+type BannerOrder struct {
+	// Ids Every banner of the shop, once, in the new display order.
+	Ids []openapi_types.UUID `json:"ids"`
+}
+
 // Category defines model for Category.
 type Category struct {
-	CategoryID openapi_types.UUID  `json:"category_id"`
-	Name       string              `json:"name"`
-	ParentID   *openapi_types.UUID `json:"parent_id,omitempty"`
-	Slug       string              `json:"slug"`
-	SortOrder  int                 `json:"sort_order"`
+	CategoryID openapi_types.UUID `json:"category_id"`
+
+	// ImageID yc-image id of the category icon. Resolve with GET /images/{id}.
+	ImageID   *openapi_types.UUID `json:"image_id,omitempty"`
+	Name      string              `json:"name"`
+	ParentID  *openapi_types.UUID `json:"parent_id,omitempty"`
+	Slug      string              `json:"slug"`
+	SortOrder int                 `json:"sort_order"`
 }
 
 // CategoryInput defines model for CategoryInput.
 type CategoryInput struct {
+	// ImageID yc-image id of the category icon. Resolve with GET /images/{id}.
+	ImageID   *openapi_types.UUID `json:"image_id,omitempty"`
 	Name      string              `json:"name"`
 	ParentID  *openapi_types.UUID `json:"parent_id,omitempty"`
 	Slug      string              `json:"slug"`
@@ -110,12 +145,15 @@ type CategoryInput struct {
 
 // CategoryNode defines model for CategoryNode.
 type CategoryNode struct {
-	CategoryID openapi_types.UUID  `json:"category_id"`
-	Children   []CategoryNode      `json:"children"`
-	Name       string              `json:"name"`
-	ParentID   *openapi_types.UUID `json:"parent_id,omitempty"`
-	Slug       string              `json:"slug"`
-	SortOrder  int                 `json:"sort_order"`
+	CategoryID openapi_types.UUID `json:"category_id"`
+	Children   []CategoryNode     `json:"children"`
+
+	// ImageID yc-image id of the category icon. Resolve with GET /images/{id}.
+	ImageID   *openapi_types.UUID `json:"image_id,omitempty"`
+	Name      string              `json:"name"`
+	ParentID  *openapi_types.UUID `json:"parent_id,omitempty"`
+	Slug      string              `json:"slug"`
+	SortOrder int                 `json:"sort_order"`
 }
 
 // Contact Free-form contact fields, e.g. email, phone.
@@ -414,6 +452,15 @@ type BrowseProductsParams struct {
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// CreateBannerJSONRequestBody defines body for CreateBanner for application/json ContentType.
+type CreateBannerJSONRequestBody = BannerInput
+
+// ReorderBannersJSONRequestBody defines body for ReorderBanners for application/json ContentType.
+type ReorderBannersJSONRequestBody = BannerOrder
+
+// UpdateBannerJSONRequestBody defines body for UpdateBanner for application/json ContentType.
+type UpdateBannerJSONRequestBody = BannerInput
+
 // CreateCategoryJSONRequestBody defines body for CreateCategory for application/json ContentType.
 type CreateCategoryJSONRequestBody = CategoryInput
 
@@ -446,6 +493,18 @@ type UpdateSupplierJSONRequestBody = UpdateSupplierRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CreateBanner Create a banner
+	// (POST /admin/banners)
+	CreateBanner(w http.ResponseWriter, r *http.Request)
+	// ReorderBanners Reorder the shop's banners
+	// (PUT /admin/banners/order)
+	ReorderBanners(w http.ResponseWriter, r *http.Request)
+	// DeleteBanner Delete a banner
+	// (DELETE /admin/banners/{id})
+	DeleteBanner(w http.ResponseWriter, r *http.Request, id ID)
+	// UpdateBanner Replace a banner's category, text and images
+	// (PUT /admin/banners/{id})
+	UpdateBanner(w http.ResponseWriter, r *http.Request, id ID)
 	// CreateCategory Create a category
 	// (POST /admin/categories)
 	CreateCategory(w http.ResponseWriter, r *http.Request)
@@ -497,6 +556,9 @@ type ServerInterface interface {
 	// UpdateSupplier Replace a supplier's fields
 	// (PUT /admin/suppliers/{id})
 	UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID)
+	// ListBanners The shop's banners
+	// (GET /banners)
+	ListBanners(w http.ResponseWriter, r *http.Request)
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(w http.ResponseWriter, r *http.Request)
@@ -520,6 +582,30 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// CreateBanner Create a banner
+// (POST /admin/banners)
+func (_ Unimplemented) CreateBanner(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReorderBanners Reorder the shop's banners
+// (PUT /admin/banners/order)
+func (_ Unimplemented) ReorderBanners(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteBanner Delete a banner
+// (DELETE /admin/banners/{id})
+func (_ Unimplemented) DeleteBanner(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateBanner Replace a banner's category, text and images
+// (PUT /admin/banners/{id})
+func (_ Unimplemented) UpdateBanner(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // CreateCategory Create a category
 // (POST /admin/categories)
@@ -623,6 +709,12 @@ func (_ Unimplemented) UpdateSupplier(w http.ResponseWriter, r *http.Request, id
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListBanners The shop's banners
+// (GET /banners)
+func (_ Unimplemented) ListBanners(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetCategoryTree The category tree
 // (GET /categories)
 func (_ Unimplemented) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
@@ -667,6 +759,86 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// CreateBanner operation middleware
+func (siw *ServerInterfaceWrapper) CreateBanner(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBanner(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReorderBanners operation middleware
+func (siw *ServerInterfaceWrapper) ReorderBanners(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReorderBanners(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBanner operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBanner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBanner(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBanner operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBanner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBanner(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // CreateCategory operation middleware
 func (siw *ServerInterfaceWrapper) CreateCategory(w http.ResponseWriter, r *http.Request) {
@@ -1103,6 +1275,20 @@ func (siw *ServerInterfaceWrapper) UpdateSupplier(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListBanners operation middleware
+func (siw *ServerInterfaceWrapper) ListBanners(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBanners(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetCategoryTree operation middleware
 func (siw *ServerInterfaceWrapper) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
 
@@ -1466,6 +1652,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/categories", wrapper.GetCategoryTree)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/banners", wrapper.ListBanners)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/suppliers", wrapper.ListPublicSuppliers)
 	})
 	r.Group(func(r chi.Router) {
@@ -1505,6 +1694,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/admin/categories/{id}", wrapper.UpdateCategory)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/banners", wrapper.CreateBanner)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/banners/order", wrapper.ReorderBanners)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/admin/banners/{id}", wrapper.DeleteBanner)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/banners/{id}", wrapper.UpdateBanner)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/skus/batch", wrapper.GetSKUsBatch)
 	})
 	r.Group(func(r chi.Router) {
@@ -1527,6 +1728,189 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type CreateBannerRequestObject struct {
+	Body *CreateBannerJSONRequestBody
+}
+
+type CreateBannerResponseObject interface {
+	VisitCreateBannerResponse(w http.ResponseWriter) error
+}
+
+type CreateBanner201JSONResponse Banner
+
+func (response CreateBanner201JSONResponse) VisitCreateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBanner400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateBanner400ApplicationProblemPlusJSONResponse) VisitCreateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBanner409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateBanner409ApplicationProblemPlusJSONResponse) VisitCreateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderBannersRequestObject struct {
+	Body *ReorderBannersJSONRequestBody
+}
+
+type ReorderBannersResponseObject interface {
+	VisitReorderBannersResponse(w http.ResponseWriter) error
+}
+
+type ReorderBanners204Response struct {
+}
+
+func (response ReorderBanners204Response) VisitReorderBannersResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ReorderBanners400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderBanners400ApplicationProblemPlusJSONResponse) VisitReorderBannersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteBannerRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type DeleteBannerResponseObject interface {
+	VisitDeleteBannerResponse(w http.ResponseWriter) error
+}
+
+type DeleteBanner204Response struct {
+}
+
+func (response DeleteBanner204Response) VisitDeleteBannerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteBanner404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteBanner404ApplicationProblemPlusJSONResponse) VisitDeleteBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBannerRequestObject struct {
+	ID   ID `json:"id"`
+	Body *UpdateBannerJSONRequestBody
+}
+
+type UpdateBannerResponseObject interface {
+	VisitUpdateBannerResponse(w http.ResponseWriter) error
+}
+
+type UpdateBanner200JSONResponse Banner
+
+func (response UpdateBanner200JSONResponse) VisitUpdateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBanner400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateBanner400ApplicationProblemPlusJSONResponse) VisitUpdateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBanner404ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateBanner404ApplicationProblemPlusJSONResponse) VisitUpdateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBanner409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateBanner409ApplicationProblemPlusJSONResponse) VisitUpdateBannerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type CreateCategoryRequestObject struct {
 	Body *CreateCategoryJSONRequestBody
@@ -2362,6 +2746,29 @@ func (response UpdateSupplier404ApplicationProblemPlusJSONResponse) VisitUpdateS
 	return err
 }
 
+type ListBannersRequestObject struct {
+}
+
+type ListBannersResponseObject interface {
+	VisitListBannersResponse(w http.ResponseWriter) error
+}
+
+type ListBanners200JSONResponse struct {
+	Items []Banner `json:"items"`
+}
+
+func (response ListBanners200JSONResponse) VisitListBannersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetCategoryTreeRequestObject struct {
 }
 
@@ -2562,6 +2969,18 @@ func (response ListPublicSuppliers200JSONResponse) VisitListPublicSuppliersRespo
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// CreateBanner Create a banner
+	// (POST /admin/banners)
+	CreateBanner(ctx context.Context, request CreateBannerRequestObject) (CreateBannerResponseObject, error)
+	// ReorderBanners Reorder the shop's banners
+	// (PUT /admin/banners/order)
+	ReorderBanners(ctx context.Context, request ReorderBannersRequestObject) (ReorderBannersResponseObject, error)
+	// DeleteBanner Delete a banner
+	// (DELETE /admin/banners/{id})
+	DeleteBanner(ctx context.Context, request DeleteBannerRequestObject) (DeleteBannerResponseObject, error)
+	// UpdateBanner Replace a banner's category, text and images
+	// (PUT /admin/banners/{id})
+	UpdateBanner(ctx context.Context, request UpdateBannerRequestObject) (UpdateBannerResponseObject, error)
 	// CreateCategory Create a category
 	// (POST /admin/categories)
 	CreateCategory(ctx context.Context, request CreateCategoryRequestObject) (CreateCategoryResponseObject, error)
@@ -2613,6 +3032,9 @@ type StrictServerInterface interface {
 	// UpdateSupplier Replace a supplier's fields
 	// (PUT /admin/suppliers/{id})
 	UpdateSupplier(ctx context.Context, request UpdateSupplierRequestObject) (UpdateSupplierResponseObject, error)
+	// ListBanners The shop's banners
+	// (GET /banners)
+	ListBanners(ctx context.Context, request ListBannersRequestObject) (ListBannersResponseObject, error)
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(ctx context.Context, request GetCategoryTreeRequestObject) (GetCategoryTreeResponseObject, error)
@@ -2670,6 +3092,127 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// CreateBanner operation middleware
+func (sh *strictHandler) CreateBanner(w http.ResponseWriter, r *http.Request) {
+	var request CreateBannerRequestObject
+
+	var body CreateBannerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBanner(ctx, request.(CreateBannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBanner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBannerResponseObject); ok {
+		if err := validResponse.VisitCreateBannerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReorderBanners operation middleware
+func (sh *strictHandler) ReorderBanners(w http.ResponseWriter, r *http.Request) {
+	var request ReorderBannersRequestObject
+
+	var body ReorderBannersJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReorderBanners(ctx, request.(ReorderBannersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReorderBanners")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReorderBannersResponseObject); ok {
+		if err := validResponse.VisitReorderBannersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteBanner operation middleware
+func (sh *strictHandler) DeleteBanner(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteBannerRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteBanner(ctx, request.(DeleteBannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteBanner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteBannerResponseObject); ok {
+		if err := validResponse.VisitDeleteBannerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateBanner operation middleware
+func (sh *strictHandler) UpdateBanner(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateBannerRequestObject
+
+	request.ID = id
+
+	var body UpdateBannerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateBanner(ctx, request.(UpdateBannerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateBanner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateBannerResponseObject); ok {
+		if err := validResponse.VisitUpdateBannerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // CreateCategory operation middleware
@@ -3172,6 +3715,30 @@ func (sh *strictHandler) UpdateSupplier(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateSupplierResponseObject); ok {
 		if err := validResponse.VisitUpdateSupplierResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListBanners operation middleware
+func (sh *strictHandler) ListBanners(w http.ResponseWriter, r *http.Request) {
+	var request ListBannersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBanners(ctx, request.(ListBannersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBanners")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBannersResponseObject); ok {
+		if err := validResponse.VisitListBannersResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

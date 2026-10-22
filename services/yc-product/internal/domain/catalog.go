@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 )
 
@@ -39,6 +41,7 @@ const (
 	MaxSKUCodeLen     = 64
 	MaxSlugLen        = 100
 	MaxCategoryName   = 100
+	MaxBannerText     = 280
 	MaxAttributes     = 50
 	MaxContactFields  = 20
 	MaxQueryLen       = 200
@@ -302,6 +305,7 @@ type Category struct {
 	Name      string
 	Slug      string
 	SortOrder int
+	ImageID   string // "" when the category has no icon
 }
 
 // CategoryInput is the settable part of a Category.
@@ -310,6 +314,7 @@ type CategoryInput struct {
 	Name      string
 	Slug      string
 	SortOrder int
+	ImageID   string // "" clears the icon
 }
 
 // Validate normalises in and reports invalid fields.
@@ -319,6 +324,76 @@ func (in *CategoryInput) Validate() error {
 	checkText(v, "name", in.Name, MaxCategoryName, true)
 	if !slugRe.MatchString(in.Slug) || len(in.Slug) > MaxSlugLen {
 		v.Field("slug", "invalid", "Lower case letters and digits separated by single hyphens")
+	}
+	if in.ImageID != "" {
+		if _, err := uuid.Parse(in.ImageID); err != nil {
+			v.Field("image_id", "invalid", "Must be a UUID")
+		}
+	}
+	if v.HasErrors() {
+		return v.Build()
+	}
+	return nil
+}
+
+// Banner presents one category: a short text and two yc-image ids. The
+// category name is read from the category. A shop has at most one banner
+// per category.
+type Banner struct {
+	ID                string
+	CategoryID        string
+	CategoryName      string
+	Text              string
+	BackgroundImageID string
+	LargeImageID      string
+	SortOrder         int
+}
+
+// BannerInput is the settable part of a Banner. Updates replace every field
+// and leave the order unchanged.
+type BannerInput struct {
+	CategoryID        string
+	Text              string
+	BackgroundImageID string
+	LargeImageID      string
+}
+
+// Validate normalises in and reports invalid fields. It does not compare the
+// large image with the category icon; that needs the category.
+func (in *BannerInput) Validate() error {
+	v := ycerrors.Validation()
+	if _, err := uuid.Parse(in.CategoryID); err != nil {
+		v.Field("category_id", "invalid", "Must be a UUID")
+	}
+	in.Text = strings.TrimSpace(in.Text)
+	checkText(v, "text", in.Text, MaxBannerText, true)
+	if _, err := uuid.Parse(in.BackgroundImageID); err != nil {
+		v.Field("background_image_id", "invalid", "Must be a UUID")
+	}
+	if _, err := uuid.Parse(in.LargeImageID); err != nil {
+		v.Field("large_image_id", "invalid", "Must be a UUID")
+	}
+	if v.HasErrors() {
+		return v.Build()
+	}
+	return nil
+}
+
+// ValidateBannerOrder reports ids that are not UUIDs or are repeated. The
+// caller checks that the list is exactly the shop's banners.
+func ValidateBannerOrder(ids []string) error {
+	v := ycerrors.Validation()
+	seen := map[string]bool{}
+	for i, id := range ids {
+		field := fmt.Sprintf("ids[%d]", i)
+		if _, err := uuid.Parse(id); err != nil {
+			v.Field(field, "invalid", "Must be a UUID")
+			continue
+		}
+		if seen[id] {
+			v.Field(field, "duplicate", "Each banner is listed once")
+		}
+		seen[id] = true
 	}
 	if v.HasErrors() {
 		return v.Build()

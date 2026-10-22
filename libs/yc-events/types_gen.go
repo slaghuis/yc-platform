@@ -115,6 +115,10 @@ const (
 	TypePricingTaxClassCreatedV1             = "pricing.tax_class.created.v1"
 	TypePricingTaxClassDeletedV1             = "pricing.tax_class.deleted.v1"
 	TypePricingTaxClassUpdatedV1             = "pricing.tax_class.updated.v1"
+	TypeProductBannerCreatedV1               = "product.banner.created.v1"
+	TypeProductBannerDeletedV1               = "product.banner.deleted.v1"
+	TypeProductBannerUpdatedV1               = "product.banner.updated.v1"
+	TypeProductBannersReorderedV1            = "product.banners.reordered.v1"
 	TypeProductCategoryCreatedV1             = "product.category.created.v1"
 	TypeProductCategoryDeletedV1             = "product.category.deleted.v1"
 	TypeProductCategoryUpdatedV1             = "product.category.updated.v1"
@@ -255,6 +259,10 @@ var EventTypes = []string{
 	TypePricingTaxClassCreatedV1,
 	TypePricingTaxClassDeletedV1,
 	TypePricingTaxClassUpdatedV1,
+	TypeProductBannerCreatedV1,
+	TypeProductBannerDeletedV1,
+	TypeProductBannerUpdatedV1,
+	TypeProductBannersReorderedV1,
 	TypeProductCategoryCreatedV1,
 	TypeProductCategoryDeletedV1,
 	TypeProductCategoryUpdatedV1,
@@ -2343,16 +2351,75 @@ type PricingTaxClassUpdatedV1 struct {
 // EventType returns pricing.tax_class.updated.v1.
 func (PricingTaxClassUpdatedV1) EventType() string { return TypePricingTaxClassUpdatedV1 }
 
+// ProductBannerCreatedV1 is the payload of product.banner.created.v1.
+//
+// A shop admin created a banner for a category.
+type ProductBannerCreatedV1 struct {
+	BannerID   string `json:"banner_id"`
+	CategoryID string `json:"category_id"`
+	Text       string `json:"text"`
+	// yc-image id of the banner background.
+	BackgroundImageID string `json:"background_image_id"`
+	// yc-image id of the large banner image. It is not the category icon.
+	LargeImageID string    `json:"large_image_id"`
+	SortOrder    int64     `json:"sort_order"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// EventType returns product.banner.created.v1.
+func (ProductBannerCreatedV1) EventType() string { return TypeProductBannerCreatedV1 }
+
+// ProductBannerDeletedV1 is the payload of product.banner.deleted.v1.
+//
+// A banner was removed, either by the shop admin or because its category was deleted.
+type ProductBannerDeletedV1 struct {
+	BannerID  string    `json:"banner_id"`
+	DeletedAt time.Time `json:"deleted_at"`
+}
+
+// EventType returns product.banner.deleted.v1.
+func (ProductBannerDeletedV1) EventType() string { return TypeProductBannerDeletedV1 }
+
+// ProductBannerUpdatedV1 is the payload of product.banner.updated.v1.
+//
+// A shop admin replaced a banner's category, text or images. Carries the banner's new state.
+type ProductBannerUpdatedV1 struct {
+	BannerID          string    `json:"banner_id"`
+	CategoryID        string    `json:"category_id"`
+	Text              string    `json:"text"`
+	BackgroundImageID string    `json:"background_image_id"`
+	LargeImageID      string    `json:"large_image_id"`
+	SortOrder         int64     `json:"sort_order"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// EventType returns product.banner.updated.v1.
+func (ProductBannerUpdatedV1) EventType() string { return TypeProductBannerUpdatedV1 }
+
+// ProductBannersReorderedV1 is the payload of product.banners.reordered.v1.
+//
+// A shop admin set the display order of the shop's banners.
+type ProductBannersReorderedV1 struct {
+	// Every banner of the shop, in the new display order.
+	BannerIds   []string  `json:"banner_ids"`
+	ReorderedAt time.Time `json:"reordered_at"`
+}
+
+// EventType returns product.banners.reordered.v1.
+func (ProductBannersReorderedV1) EventType() string { return TypeProductBannersReorderedV1 }
+
 // ProductCategoryCreatedV1 is the payload of product.category.created.v1.
 //
 // A shop admin created a category.
 type ProductCategoryCreatedV1 struct {
-	CategoryID string    `json:"category_id"`
-	ParentID   *string   `json:"parent_id,omitempty"`
-	Name       string    `json:"name"`
-	Slug       string    `json:"slug"`
-	SortOrder  int64     `json:"sort_order"`
-	CreatedAt  time.Time `json:"created_at"`
+	CategoryID string  `json:"category_id"`
+	ParentID   *string `json:"parent_id,omitempty"`
+	Name       string  `json:"name"`
+	Slug       string  `json:"slug"`
+	SortOrder  int64   `json:"sort_order"`
+	// yc-image id of the category icon, when one is set.
+	ImageID   *string   `json:"image_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // EventType returns product.category.created.v1.
@@ -2373,12 +2440,14 @@ func (ProductCategoryDeletedV1) EventType() string { return TypeProductCategoryD
 //
 // A shop admin changed a category. Carries the category's new state.
 type ProductCategoryUpdatedV1 struct {
-	CategoryID string    `json:"category_id"`
-	ParentID   *string   `json:"parent_id,omitempty"`
-	Name       string    `json:"name"`
-	Slug       string    `json:"slug"`
-	SortOrder  int64     `json:"sort_order"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	CategoryID string  `json:"category_id"`
+	ParentID   *string `json:"parent_id,omitempty"`
+	Name       string  `json:"name"`
+	Slug       string  `json:"slug"`
+	SortOrder  int64   `json:"sort_order"`
+	// yc-image id of the category icon, when one is set.
+	ImageID   *string   `json:"image_id,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // EventType returns product.category.updated.v1.

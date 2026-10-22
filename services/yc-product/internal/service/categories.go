@@ -23,7 +23,7 @@ func (s *Service) CreateCategory(ctx context.Context, in domain.CategoryInput) (
 		}
 		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryCreatedV1, events.ProductCategoryCreatedV1{
 			CategoryID: c.ID, ParentID: optional(c.ParentID), Name: c.Name, Slug: c.Slug,
-			SortOrder: int64(c.SortOrder), CreatedAt: s.now().UTC(),
+			SortOrder: int64(c.SortOrder), ImageID: optional(c.ImageID), CreatedAt: s.now().UTC(),
 		})
 	})
 	return c, err
@@ -55,7 +55,7 @@ func (s *Service) UpdateCategory(ctx context.Context, id string, in domain.Categ
 		}
 		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryUpdatedV1, events.ProductCategoryUpdatedV1{
 			CategoryID: c.ID, ParentID: optional(c.ParentID), Name: c.Name, Slug: c.Slug,
-			SortOrder: int64(c.SortOrder), UpdatedAt: s.now().UTC(),
+			SortOrder: int64(c.SortOrder), ImageID: optional(c.ImageID), UpdatedAt: s.now().UTC(),
 		})
 	})
 	return c, err
@@ -65,6 +65,10 @@ func (s *Service) UpdateCategory(ctx context.Context, id string, in domain.Categ
 // leave it.
 func (s *Service) DeleteCategory(ctx context.Context, id string) error {
 	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		banners, err := s.cat.BannerIDsByCategory(ctx, tx, id)
+		if err != nil {
+			return err
+		}
 		products, err := s.cat.DeleteCategory(ctx, tx, id)
 		if err != nil {
 			return err
@@ -72,9 +76,20 @@ func (s *Service) DeleteCategory(ctx context.Context, id string) error {
 		if err := s.cat.RefreshProjection(ctx, tx, products...); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, tenantID, events.TypeProductCategoryDeletedV1, events.ProductCategoryDeletedV1{
-			CategoryID: id, DeletedAt: s.now().UTC(),
-		})
+		now := s.now().UTC()
+		if err := s.publish(ctx, tx, tenantID, events.TypeProductCategoryDeletedV1, events.ProductCategoryDeletedV1{
+			CategoryID: id, DeletedAt: now,
+		}); err != nil {
+			return err
+		}
+		for _, bannerID := range banners {
+			if err := s.publish(ctx, tx, tenantID, events.TypeProductBannerDeletedV1, events.ProductBannerDeletedV1{
+				BannerID: bannerID, DeletedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

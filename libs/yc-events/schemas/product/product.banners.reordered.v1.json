@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.banners.reordered.v1.json",
+  "title": "product.banners.reordered.v1",
+  "description": "A shop admin set the display order of the shop's banners.",
+  "type": "object",
+  "required": ["banner_ids", "reordered_at"],
+  "additionalProperties": false,
+  "properties": {
+    "banner_ids": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" },
+      "description": "Every banner of the shop, in the new display order."
+    },
+    "reordered_at": { "type": "string", "format": "date-time" }
+  }
+}

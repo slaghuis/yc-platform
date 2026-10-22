@@ -2,7 +2,7 @@
 
 ## Overview
 
-`yc-product` is the catalog service. It owns suppliers, products, variants, SKUs, categories, and the faceted search that drives discovery. It is deliberately **PII-free**: popularity and personalization inputs come via events from yc-orders, yc-review, yc-cart, and yc-preference — assembled into search projections.
+`yc-product` is the catalog service. It owns suppliers, products, variants, SKUs, categories, banners, and the faceted search that drives discovery. It is deliberately **PII-free**: popularity and personalization inputs come via events from yc-orders, yc-review, yc-cart, and yc-preference — assembled into search projections.
 
 ## Location in Monorepo
 
@@ -16,7 +16,7 @@
 2. Maintain a catalog of products per supplier
 3. Maintain variants per product (color, size, etc.)
 4. Maintain SKUs (product + variant combination)
-5. Maintain a category hierarchy per tenant
+5. Maintain a category hierarchy per tenant, and an ordered set of banners that present those categories
 6. Attach images (by `image_id` from yc-image) to products and SKUs
 7. Expose CRUD APIs for suppliers, products and SKUs to the shop admin
 8. Provide a faceted search API, contextualized by actor role
@@ -42,8 +42,9 @@ Supplier
   └── Product
         └── ...
 
-Category (hierarchical, DAG allowed)
-  └── Product (many-to-many)
+Category (hierarchical)
+  ├── Product (many-to-many)
+  └── Banner (at most one per category)
 ```
 
 - A **Product** is a conceptual item ("Acme T-Shirt")
@@ -100,7 +101,8 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 | GET | `/products` | Faceted search; returns product list | any |
 | GET | `/products/{id}` | Get product with variants and SKUs | any |
 | GET | `/skus/{id}` | Get SKU details | any |
-| GET | `/categories` | Get category tree | any |
+| GET | `/categories` | Get category tree, including each category's icon `image_id` | any |
+| GET | `/banners` | Ordered banners: category id and name, text, two image ids | any |
 | GET | `/suppliers` | List suppliers (minimal fields for public) | any |
 
 ### Shop Admin Endpoints
@@ -116,9 +118,13 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 | DELETE | `/admin/skus/{id}` | Soft-delete SKU | shop_admin |
 | POST | `/admin/products/{id}/images` | Attach image | shop_admin |
 | DELETE | `/admin/products/{id}/images/{image_id}` | Detach image | shop_admin |
-| POST | `/admin/categories` | Create category | shop_admin |
-| PUT | `/admin/categories/{id}` | Update category | shop_admin |
-| DELETE | `/admin/categories/{id}` | Delete category | shop_admin |
+| POST | `/admin/categories` | Create category. Optional `image_id` is the icon | shop_admin |
+| PUT | `/admin/categories/{id}` | Update category. Omitting `image_id` clears the icon | shop_admin |
+| DELETE | `/admin/categories/{id}` | Delete category. Removes its banner | shop_admin |
+| POST | `/admin/banners` | Create a banner for one category | shop_admin |
+| PUT | `/admin/banners/order` | Reorder every banner of the shop | shop_admin |
+| PUT | `/admin/banners/{id}` | Replace a banner's category, text and images | shop_admin |
+| DELETE | `/admin/banners/{id}` | Delete a banner | shop_admin |
 | GET | `/admin/suppliers` | List suppliers (full records, including inactive) | shop_admin |
 | GET | `/admin/suppliers/{id}` | Get a supplier | shop_admin |
 | POST | `/admin/suppliers` | Create supplier | shop_admin |
@@ -168,6 +174,12 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **Popularity and favourites** come from `order.placed.v1`, which replaces `cart.item.added.v1` (no longer subscribed): each SKU of an order gains 1 popularity point, and a customer's order (not a guest's) records its products in `customer_favourites` (per customer and product: order count and last order time; resolved from the SKUs). `GET /products?favourites=true` (customers only; 400 otherwise) keeps the customer's ordered products, and `facets.favourites.product_count` counts those still active, regardless of the other filters. Likes are not favourites (ADR-024 rule 5).
 - **Ratings and likes** are per product in `product_review_stats` (`rating_count`, `rating_sum`, `like_count`, `version`), from the `product_stats` carried by `review.submitted/edited/approved/rejected/deleted.v1` and `review.like.added/removed.v1`; a lower or equal version is ignored (ADR-024 rule 4). The unused per-SKU `avg_rating`, `rating_count` and `like_count` columns were dropped. Every product summary has `reviews` (`rating_count`, `rating_average` when rated, `like_count`), and `sort=rating` orders by the average (to three decimals), unrated products last, ties newest first.
 - **`identity.user.deleted.v1`** deletes the customer's favourites (GDPR cascade, ADR-025).
+
+### Banners
+
+A banner presents one category. It stores a short text (at most 280 characters) and two yc-image ids: a background and a large image. The large image must not be the category's icon. yc-product does not check that the files still exist. The category name is read from the category when the banner is returned.
+
+A shop has at most one banner per category. Create places the new banner last. `PUT /admin/banners/order` takes every banner id of the shop, once, in the new order. `GET /banners` returns that order, with `banner_id`, `category_id`, `category_name`, `text`, `background_image_id`, `large_image_id` and `sort_order`. `GET /categories` does not carry banner fields. Deleting a category deletes its banner. A click uses the existing `GET /products?category={id}`.
 
 ## Database Schema
 
@@ -234,7 +246,19 @@ CREATE TABLE categories (
     name            TEXT NOT NULL,
     slug            TEXT NOT NULL,
     sort_order      INT NOT NULL DEFAULT 0,
+    image_id        UUID,                      -- optional yc-image id of the icon
     UNIQUE (tenant_id, slug)
+);
+
+CREATE TABLE banners (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           TEXT NOT NULL,
+    category_id         UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    text                TEXT NOT NULL,
+    background_image_id UUID NOT NULL,         -- yc-image
+    large_image_id      UUID NOT NULL,         -- yc-image; not the category icon
+    sort_order          INT NOT NULL DEFAULT 0,
+    UNIQUE (tenant_id, category_id)
 );
 
 CREATE TABLE product_categories (
@@ -320,7 +344,11 @@ CREATE POLICY tenant_isolation ON products
 | `product.image_detached.v1` | Image unlinked |
 | `product.category.created.v1` | Category created |
 | `product.category.updated.v1` | Category updated |
-| `product.category.deleted.v1` | Category deleted |
+| `product.category.deleted.v1` | Category deleted. Its banner is deleted too |
+| `product.banner.created.v1` | Banner created |
+| `product.banner.updated.v1` | Banner's category, text or images replaced |
+| `product.banner.deleted.v1` | Banner deleted, including when its category is deleted |
+| `product.banners.reordered.v1` | Banner display order changed |
 
 ## Subscribed Events
 

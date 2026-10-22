@@ -3,8 +3,8 @@ info:
   title: yc-product
   version: 0.1.0
   description: |
-    Catalog: suppliers, products, variants, SKUs, categories and product
-    images (docs/services/yc-product.md). Phase 2 subset.
+    Catalog: suppliers, products, variants, SKUs, categories, banners and
+    product images (docs/services/yc-product.md). Phase 2 subset.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -90,6 +90,7 @@ paths:
   /categories:
     get:
       summary: The category tree
+      description: Each node may include image_id, the category icon. Resolve it with yc-image GET /images/{id}.
       operationId: getCategoryTree
       responses:
         '200':
@@ -103,6 +104,28 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/CategoryNode' }
+
+  /banners:
+    get:
+      summary: The shop's banners
+      description: |
+        The shop admin's order. Each item is one category: its current name,
+        a short text, and two yc-image ids. Resolve each image with
+        GET /images/{id}. A click opens GET /products?category={category_id}.
+        A banner whose category was deleted is not returned.
+      operationId: listBanners
+      responses:
+        '200':
+          description: Banners in display order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Banner' }
 
   /suppliers:
     get:
@@ -289,7 +312,9 @@ paths:
   /admin/categories:
     post:
       summary: Create a category
-      description: Publishes product.category.created.v1.
+      description: |
+        image_id is an optional yc-image id for the category icon. The file is
+        not checked. Publishes product.category.created.v1.
       operationId: createCategory
       requestBody:
         required: true
@@ -308,7 +333,9 @@ paths:
   /admin/categories/{id}:
     put:
       summary: Replace a category's fields
-      description: The parent may not be the category or one of its descendants. Publishes product.category.updated.v1.
+      description: |
+        Omitting image_id clears the icon. The parent may not be the category
+        or one of its descendants. Publishes product.category.updated.v1.
       operationId: updateCategory
       parameters:
         - $ref: '#/components/parameters/ID'
@@ -328,7 +355,9 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
     delete:
       summary: Delete a category without subcategories
-      description: Products leave the category. Publishes product.category.deleted.v1.
+      description: |
+        Products leave the category. A banner for the category is removed.
+        Publishes product.category.deleted.v1 and product.banner.deleted.v1.
       operationId: deleteCategory
       parameters:
         - $ref: '#/components/parameters/ID'
@@ -336,6 +365,77 @@ paths:
         '204': { description: Deleted. }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/banners:
+    post:
+      summary: Create a banner
+      description: |
+        One banner per category. Both image ids are yc-image ids and are not
+        checked. The large image must not be the category icon. The new banner
+        is placed last. Publishes product.banner.created.v1.
+      operationId: createBanner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BannerInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Banner' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/banners/order:
+    put:
+      summary: Reorder the shop's banners
+      description: |
+        ids lists every banner of the shop, once, in the new display order.
+        Publishes product.banners.reordered.v1.
+      operationId: reorderBanners
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BannerOrder' }
+      responses:
+        '204': { description: Reordered. }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /admin/banners/{id}:
+    put:
+      summary: Replace a banner's category, text and images
+      description: |
+        Order is unchanged. The large image must not be the category icon.
+        Publishes product.banner.updated.v1.
+      operationId: updateBanner
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BannerInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Banner' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a banner
+      description: Publishes product.banner.deleted.v1.
+      operationId: deleteBanner
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
 
   /internal/skus/batch:
     get:
@@ -739,6 +839,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 100 }
         slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 100 }
         sort_order: { type: integer }
+        image_id: { type: string, format: uuid, description: 'yc-image id of the category icon. Resolve with GET /images/{id}.' }
     Category:
       type: object
       required: [category_id, name, slug, sort_order]
@@ -748,6 +849,7 @@ components:
         name: { type: string }
         slug: { type: string }
         sort_order: { type: integer }
+        image_id: { type: string, format: uuid, description: 'yc-image id of the category icon. Resolve with GET /images/{id}.' }
     CategoryNode:
       type: object
       required: [category_id, name, slug, sort_order, children]
@@ -757,9 +859,40 @@ components:
         name: { type: string }
         slug: { type: string }
         sort_order: { type: integer }
+        image_id: { type: string, format: uuid, description: 'yc-image id of the category icon. Resolve with GET /images/{id}.' }
         children:
           type: array
           items: { $ref: '#/components/schemas/CategoryNode' }
+
+    BannerInput:
+      type: object
+      required: [category_id, text, background_image_id, large_image_id]
+      additionalProperties: false
+      properties:
+        category_id: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 280 }
+        background_image_id: { type: string, format: uuid, description: 'yc-image id of the background. Resolve with GET /images/{id}.' }
+        large_image_id: { type: string, format: uuid, description: 'yc-image id of the large image. It is not the category icon. Resolve with GET /images/{id}.' }
+    Banner:
+      type: object
+      required: [banner_id, category_id, category_name, text, background_image_id, large_image_id, sort_order]
+      properties:
+        banner_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        category_name: { type: string, description: 'The category name at read time.' }
+        text: { type: string }
+        background_image_id: { type: string, format: uuid }
+        large_image_id: { type: string, format: uuid }
+        sort_order: { type: integer }
+    BannerOrder:
+      type: object
+      required: [ids]
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          description: Every banner of the shop, once, in the new display order.
+          items: { type: string, format: uuid }
 
     PageInfo:
       type: object

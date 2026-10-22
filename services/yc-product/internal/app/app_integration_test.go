@@ -171,12 +171,114 @@ func TestProduct(t *testing.T) {
 			map[string]any{"name": "Bad", "slug": "Not A Slug"}, nil))
 		assert.Equal(t, http.StatusConflict, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
 			map[string]any{"name": "Apparel", "slug": "apparel", "parent_id": tshirts.CategoryID}, nil), "cycle")
+		assert.Equal(t, http.StatusForbidden, sys.do("POST", "/admin/categories",
+			map[string]any{"name": "X", "slug": "x"}, nil))
+
+		icon := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+		replaced := uuid.MustParse("22222222-2222-4222-8222-222222222222")
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
+			map[string]any{"name": "Apparel", "slug": "apparel", "image_id": icon}, &apparel))
+		require.NotNil(t, apparel.ImageID)
+		assert.Equal(t, icon, *apparel.ImageID)
+		assert.Equal(t, http.StatusBadRequest, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
+			map[string]any{"name": "Apparel", "slug": "apparel", "image_id": "not-a-uuid"}, nil))
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
+			map[string]any{"name": "Apparel", "slug": "apparel", "image_id": replaced}, &apparel))
+		assert.Equal(t, replaced, *apparel.ImageID)
+		var cleared api.Category
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
+			map[string]any{"name": "Apparel", "slug": "apparel"}, &cleared), "omitting image_id clears the icon")
+		assert.Nil(t, cleared.ImageID)
+
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/categories/"+tshirts.CategoryID.String(),
+			map[string]any{"name": "T-Shirts", "slug": "t-shirts", "parent_id": apparel.CategoryID, "image_id": icon}, &tshirts))
 
 		var tree struct{ Items []api.CategoryNode }
 		require.Equal(t, http.StatusOK, visitor.do("GET", "/categories", nil, &tree))
 		require.Len(t, tree.Items, 1)
+		assert.Nil(t, tree.Items[0].ImageID)
 		require.Len(t, tree.Items[0].Children, 1)
 		assert.Equal(t, "t-shirts", tree.Items[0].Children[0].Slug)
+		require.NotNil(t, tree.Items[0].Children[0].ImageID)
+		assert.Equal(t, icon, *tree.Items[0].Children[0].ImageID)
+	})
+
+	t.Run("shop admin curates banners", func(t *testing.T) {
+		bg := uuid.MustParse("33333333-3333-4333-8333-333333333333")
+		large := uuid.MustParse("44444444-4444-4444-8444-444444444444")
+		icon := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+		body := func(category uuid.UUID, text string, picture uuid.UUID) map[string]any {
+			return map[string]any{
+				"category_id": category, "text": text,
+				"background_image_id": bg, "large_image_id": picture,
+			}
+		}
+		assert.Equal(t, http.StatusForbidden, visitor.do("POST", "/admin/banners", body(apparel.CategoryID, "New", large), nil))
+		assert.Equal(t, http.StatusForbidden, sys.do("POST", "/admin/banners", body(apparel.CategoryID, "New", large), nil))
+
+		var first, second api.Banner
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/banners", body(apparel.CategoryID, "New in", large), &first))
+		assert.Equal(t, "Apparel", first.CategoryName)
+		assert.Equal(t, 0, first.SortOrder)
+		assert.Equal(t, http.StatusConflict, admin.do("POST", "/admin/banners", body(apparel.CategoryID, "Again", large), nil),
+			"one banner per category")
+		assert.Equal(t, http.StatusBadRequest, admin.do("POST", "/admin/banners", body(tshirts.CategoryID, "Tees", icon), nil),
+			"the large image is not the category icon")
+		assert.Equal(t, http.StatusBadRequest, admin.do("POST", "/admin/banners",
+			body(uuid.MustParse("99999999-9999-4999-8999-999999999999"), "Missing", large), nil))
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/banners", body(tshirts.CategoryID, "Tees", large), &second))
+		assert.Equal(t, "T-Shirts", second.CategoryName)
+		assert.Equal(t, 2, eventsOf("shop-a", "product.banner.created.v1"))
+
+		var listed struct{ Items []api.Banner }
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/banners", nil, &listed))
+		require.Len(t, listed.Items, 2)
+		assert.Equal(t, []uuid.UUID{first.BannerID, second.BannerID}, []uuid.UUID{listed.Items[0].BannerID, listed.Items[1].BannerID})
+		require.Equal(t, http.StatusOK, otherShop.do("GET", "/banners", nil, &listed))
+		assert.Empty(t, listed.Items)
+
+		var tree map[string]any
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/categories", nil, &tree))
+		raw, err := json.Marshal(tree)
+		require.NoError(t, err)
+		assert.NotContains(t, string(raw), "background_image_id")
+
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/categories/"+apparel.CategoryID.String(),
+			map[string]any{"name": "Clothing", "slug": "apparel"}, nil))
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/banners/"+first.BannerID.String(), body(apparel.CategoryID, "Just in", large), &first))
+		assert.Equal(t, "Just in", first.Text)
+		assert.Equal(t, "Clothing", first.CategoryName)
+		assert.Equal(t, 0, first.SortOrder, "replacing a banner keeps its place")
+		assert.Equal(t, http.StatusBadRequest, admin.do("PUT", "/admin/banners/"+second.BannerID.String(), body(tshirts.CategoryID, "Tees", icon), nil))
+		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-b", "shop_admin").do("PUT", "/admin/banners/"+first.BannerID.String(),
+			body(apparel.CategoryID, "Taken", large), nil))
+
+		require.Equal(t, http.StatusNoContent, admin.do("PUT", "/admin/banners/order",
+			map[string]any{"ids": []string{second.BannerID.String(), first.BannerID.String()}}, nil))
+		assert.Equal(t, http.StatusBadRequest, admin.do("PUT", "/admin/banners/order",
+			map[string]any{"ids": []string{second.BannerID.String()}}, nil), "the list must be complete")
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/banners", nil, &listed))
+		require.Len(t, listed.Items, 2)
+		assert.Equal(t, second.BannerID, listed.Items[0].BannerID)
+		assert.Equal(t, 1, eventsOf("shop-a", "product.banners.reordered.v1"))
+
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/banners/"+first.BannerID.String(), nil, nil))
+		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-b", "shop_admin").do("DELETE", "/admin/banners/"+second.BannerID.String(), nil, nil))
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/banners", nil, &listed))
+		require.Len(t, listed.Items, 1)
+		assert.Equal(t, second.BannerID, listed.Items[0].BannerID)
+
+		var hats api.Category
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/categories",
+			map[string]any{"name": "Hats", "slug": "hats"}, &hats))
+		var gone api.Banner
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/banners", body(hats.CategoryID, "Caps", large), &gone))
+		deleted := eventsOf("shop-a", "product.banner.deleted.v1")
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/categories/"+hats.CategoryID.String(), nil, nil))
+		assert.Equal(t, deleted+1, eventsOf("shop-a", "product.banner.deleted.v1"), "deleting the category removes its banner")
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/banners", nil, &listed))
+		require.Len(t, listed.Items, 1)
+		assert.NotEqual(t, hats.CategoryID, listed.Items[0].CategoryID)
 	})
 
 	t.Run("shop admin creates a product with variants and SKUs", func(t *testing.T) {
