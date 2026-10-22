@@ -1,0 +1,27 @@
+# Optional override when frontend GHCR images are not yet available.
+# Usage (with the usual demo files):
+#   docker compose --env-file deploy/demo/.env.demo \
+#     -f docker-compose.yml -f deploy/demo/compose.demo.yml \
+#     -f deploy/demo/compose.stubs.yml \
+#     --profile app --profile frontends up -d
+#
+# Drop this file from the compose command once real admin/shop images exist.
+
+services:
+  yc-platform-admin:
+    profiles: [frontends]
+    image: caddy:2.10-alpine
+    pull_policy: if_not_present
+    restart: unless-stopped
+    volumes:
+      - ./deploy/demo/stubs/Caddyfile.admin:/etc/caddy/Caddyfile:ro
+    depends_on: !reset []
+
+  yc-platform-shop:
+    profiles: [frontends]
+    image: caddy:2.10-alpine
+    pull_policy: if_not_present
+    restart: unless-stopped
+    volumes:
+      - ./deploy/demo/stubs/Caddyfile.shop:/etc/caddy/Caddyfile:ro
+    depends_on: !reset []

@@ -37,19 +37,13 @@ func New(db *pgxpool.Pool, bus Publisher) *Service {
 	return &Service{db: db, bus: bus, now: time.Now}
 }
 
-// CreateSupplier creates a supplier for tenantID (system admins only).
-func (s *Service) CreateSupplier(ctx context.Context, tenantID string, in domain.SupplierInput) (domain.Supplier, error) {
-	if err := requireSystemAdmin(ctx); err != nil {
-		return domain.Supplier{}, err
-	}
-	if err := validateShopTenant(tenantID); err != nil {
-		return domain.Supplier{}, err
-	}
+// CreateSupplier creates a supplier in the caller's shop.
+func (s *Service) CreateSupplier(ctx context.Context, in domain.SupplierInput) (domain.Supplier, error) {
 	if err := in.Validate(); err != nil {
 		return domain.Supplier{}, err
 	}
 	var sup domain.Supplier
-	err := dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		var err error
 		if sup, err = s.cat.CreateSupplier(ctx, tx, tenantID, in); err != nil {
 			return err
@@ -61,13 +55,10 @@ func (s *Service) CreateSupplier(ctx context.Context, tenantID string, in domain
 	return sup, err
 }
 
-// ListSuppliers lists suppliers of tenantID, or of every shop when "".
-func (s *Service) ListSuppliers(ctx context.Context, tenantID string, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error) {
-	if err := requireSystemAdmin(ctx); err != nil {
-		return nil, nil, err
-	}
+// ListSuppliers lists the caller's shop's suppliers, newest first.
+func (s *Service) ListSuppliers(ctx context.Context, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error) {
 	var out []domain.Supplier
-	err := dbkit.WithPlatformTx(ctx, s.db, func(tx pgx.Tx) error {
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		var err error
 		out, err = s.cat.ListSuppliers(ctx, tx, tenantID, after, limit+1)
 		return err
@@ -84,13 +75,10 @@ func (s *Service) ListSuppliers(ctx context.Context, tenantID string, after *rep
 	return out, next, nil
 }
 
-// GetSupplier returns any shop's supplier (system admins only).
+// GetSupplier returns a supplier in the caller's shop.
 func (s *Service) GetSupplier(ctx context.Context, id string) (domain.Supplier, error) {
-	if err := requireSystemAdmin(ctx); err != nil {
-		return domain.Supplier{}, err
-	}
 	var sup domain.Supplier
-	err := dbkit.WithPlatformTx(ctx, s.db, func(tx pgx.Tx) error {
+	err := s.inShop(ctx, func(tx pgx.Tx, _ string) error {
 		var err error
 		sup, err = s.cat.GetSupplier(ctx, tx, id, false)
 		return err
@@ -98,39 +86,31 @@ func (s *Service) GetSupplier(ctx context.Context, id string) (domain.Supplier, 
 	return sup, err
 }
 
-// UpdateSupplier replaces a supplier's fields in its own shop.
+// UpdateSupplier replaces a supplier's fields in the caller's shop.
 func (s *Service) UpdateSupplier(ctx context.Context, id string, in domain.SupplierInput) (domain.Supplier, error) {
 	if err := in.Validate(); err != nil {
 		return domain.Supplier{}, err
 	}
-	found, err := s.GetSupplier(ctx, id)
-	if err != nil {
-		return domain.Supplier{}, err
-	}
 	var sup domain.Supplier
-	err = dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		var err error
 		if sup, err = s.cat.UpdateSupplier(ctx, tx, id, in); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, sup.TenantID, events.TypeProductSupplierUpdatedV1, events.ProductSupplierUpdatedV1{
+		return s.publish(ctx, tx, tenantID, events.TypeProductSupplierUpdatedV1, events.ProductSupplierUpdatedV1{
 			SupplierID: sup.ID, Name: sup.Name, Status: string(sup.Status), UpdatedAt: sup.UpdatedAt.UTC(),
 		})
 	})
 	return sup, err
 }
 
-// DeleteSupplier deletes a supplier no product references.
+// DeleteSupplier deletes a supplier in the caller's shop that no product references.
 func (s *Service) DeleteSupplier(ctx context.Context, id string) error {
-	found, err := s.GetSupplier(ctx, id)
-	if err != nil {
-		return err
-	}
-	return dbkit.WithTenantTx(ctx, s.db, found.TenantID, func(tx pgx.Tx) error {
+	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		if err := s.cat.DeleteSupplier(ctx, tx, id); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, found.TenantID, events.TypeProductSupplierDeletedV1, events.ProductSupplierDeletedV1{
+		return s.publish(ctx, tx, tenantID, events.TypeProductSupplierDeletedV1, events.ProductSupplierDeletedV1{
 			SupplierID: id, DeletedAt: s.now().UTC(),
 		})
 	})
@@ -161,8 +141,8 @@ func (s *Service) read(ctx context.Context, fn dbkit.TxFunc) error {
 	}
 }
 
-// inShop runs fn in the caller's shop for /admin/ mutations. System admins
-// use /sysadmin/ and name the shop instead.
+// inShop runs fn in the caller's shop for /admin/ calls. A system admin is
+// refused: /admin/ acts on the caller's own shop.
 func (s *Service) inShop(ctx context.Context, fn func(tx pgx.Tx, tenantID string) error) error {
 	a, _ := authctx.FromContext(ctx)
 	if a.ActorType != authctx.ActorShopAdmin {
@@ -182,14 +162,6 @@ func (s *Service) publish(ctx context.Context, tx pgx.Tx, tenantID, eventType st
 		Actor:     eventbus.Actor{Type: string(a.ActorType), ID: a.ActorID, AccessTokenJTI: a.AccessTokenJTI},
 		Payload:   payload,
 	})
-}
-
-func requireSystemAdmin(ctx context.Context) error {
-	a, _ := authctx.FromContext(ctx)
-	if a.ActorType != authctx.ActorSystemAdmin {
-		return ycerrors.Forbidden("System admins only").WithInternal("actor_type %s", a.ActorType)
-	}
-	return nil
 }
 
 func validateShopTenant(tenantID string) error {

@@ -1,0 +1,4 @@
+# Temporary stand-in until ghcr.io/slaghuis/yc-platform-admin is published.
+:3000 {
+	respond "Yellow Commerce console — frontend image not deployed yet (yc-platform-admin)." 200
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.banner.deleted.v1.json",
+  "title": "product.banner.deleted.v1",
+  "description": "A banner was removed, either by the shop admin or because its category was deleted.",
+  "type": "object",
+  "required": ["banner_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "banner_id": { "type": "string", "format": "uuid" },
+    "deleted_at": { "type": "string", "format": "date-time" }
+  }
+}

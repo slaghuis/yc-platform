@@ -19,20 +19,8 @@ build:
 integration:
   enabled: false
 
-deploy:
-  manifests: ./deploy/k8s
-  environments:
-    staging:
-      kube_context: k3d-dev
-      namespace: yc-platform-staging
-    production:
-      kube_context: prod
-      namespace: yc-platform
-
-approval:
-  telegram_mcp_url: http://localhost:8765
-  required_for: [staging, production]
-  timeout_seconds: 3600
+# Deploy: ADR-031 demo is SSH + Docker Compose (`deploy/demo/deploy.sh`).
+# No pipeline-lib target yet; do not point at missing deploy/k8s manifests.
 
 notify:
   on_failure: true

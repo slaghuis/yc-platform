@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,6 +67,29 @@ func TestSKUInputValidate(t *testing.T) {
 	require.NoError(t, ok.Validate())
 	assert.Equal(t, "TS-1", ok.Code)
 	assert.NotNil(t, ok.VariantValues)
+}
+
+func TestBannerInputValidate(t *testing.T) {
+	in := domain.BannerInput{
+		CategoryID:        "11111111-1111-4111-8111-111111111111",
+		Text:              "  New in  ",
+		BackgroundImageID: "22222222-2222-4222-8222-222222222222",
+		LargeImageID:      "33333333-3333-4333-8333-333333333333",
+	}
+	require.NoError(t, in.Validate())
+	assert.Equal(t, "New in", in.Text)
+
+	bad := domain.BannerInput{CategoryID: "nope", Text: " ", BackgroundImageID: "x", LargeImageID: "y"}
+	assert.Equal(t, []string{
+		"category_id:invalid", "text:required", "background_image_id:invalid", "large_image_id:invalid",
+	}, fields(t, bad.Validate()))
+
+	too := in
+	too.Text = strings.Repeat("a", domain.MaxBannerText+1)
+	assert.Equal(t, []string{"text:too_long"}, fields(t, too.Validate()))
+
+	assert.Equal(t, []string{"ids[1]:duplicate"}, fields(t, domain.ValidateBannerOrder([]string{in.CategoryID, in.CategoryID})))
+	require.NoError(t, domain.ValidateBannerOrder(nil))
 }
 
 func TestBuildTree(t *testing.T) {

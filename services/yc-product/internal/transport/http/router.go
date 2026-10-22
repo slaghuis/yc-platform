@@ -18,8 +18,8 @@ import (
 
 // Catalog is the service the handlers call.
 type Catalog interface {
-	CreateSupplier(ctx context.Context, tenantID string, in domain.SupplierInput) (domain.Supplier, error)
-	ListSuppliers(ctx context.Context, tenantID string, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error)
+	CreateSupplier(ctx context.Context, in domain.SupplierInput) (domain.Supplier, error)
+	ListSuppliers(ctx context.Context, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error)
 	GetSupplier(ctx context.Context, id string) (domain.Supplier, error)
 	UpdateSupplier(ctx context.Context, id string, in domain.SupplierInput) (domain.Supplier, error)
 	DeleteSupplier(ctx context.Context, id string) error
@@ -43,6 +43,12 @@ type Catalog interface {
 	UpdateCategory(ctx context.Context, id string, in domain.CategoryInput) (domain.Category, error)
 	DeleteCategory(ctx context.Context, id string) error
 	CategoryTree(ctx context.Context) ([]*domain.CategoryNode, error)
+
+	CreateBanner(ctx context.Context, in domain.BannerInput) (domain.Banner, error)
+	UpdateBanner(ctx context.Context, id string, in domain.BannerInput) (domain.Banner, error)
+	DeleteBanner(ctx context.Context, id string) error
+	ReorderBanners(ctx context.Context, ids []string) error
+	Banners(ctx context.Context) ([]domain.Banner, error)
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -69,11 +75,13 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/products", Methods: get},
 		{Prefix: "/skus", Methods: get},
 		{Prefix: "/categories", Methods: get},
+		{Prefix: "/banners", Methods: get},
 		{Prefix: "/suppliers", Methods: get},
 		{Prefix: "/admin/products", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/skus", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/categories", Roles: []string{string(authctx.ActorShopAdmin)}},
-		{Prefix: "/sysadmin/suppliers", Roles: []string{string(authctx.ActorSystemAdmin)}},
+		{Prefix: "/admin/banners", Roles: []string{string(authctx.ActorShopAdmin)}},
+		{Prefix: "/admin/suppliers", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/internal/skus", Methods: get},
 	}
 }
@@ -113,7 +121,7 @@ var _ api.StrictServerInterface = handlers{}
 
 func (h handlers) CreateSupplier(ctx context.Context, req api.CreateSupplierRequestObject) (api.CreateSupplierResponseObject, error) {
 	in := domain.SupplierInput{Name: req.Body.Name, Contact: deref(req.Body.Contact), Status: status(req.Body.Status)}
-	s, err := h.svc.CreateSupplier(ctx, req.Body.TenantID, in)
+	s, err := h.svc.CreateSupplier(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +133,7 @@ func (h handlers) ListSuppliers(ctx context.Context, req api.ListSuppliersReques
 	if err != nil {
 		return nil, err
 	}
-	sups, next, err := h.svc.ListSuppliers(ctx, deref(req.Params.TenantID), after, page.Size)
+	sups, next, err := h.svc.ListSuppliers(ctx, after, page.Size)
 	if err != nil {
 		return nil, err
 	}
@@ -321,6 +329,48 @@ func (h handlers) DeleteCategory(ctx context.Context, req api.DeleteCategoryRequ
 	return api.DeleteCategory204Response{}, nil
 }
 
+func (h handlers) CreateBanner(ctx context.Context, req api.CreateBannerRequestObject) (api.CreateBannerResponseObject, error) {
+	b, err := h.svc.CreateBanner(ctx, bannerInput(req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateBanner201JSONResponse(banner(b)), nil
+}
+
+func (h handlers) UpdateBanner(ctx context.Context, req api.UpdateBannerRequestObject) (api.UpdateBannerResponseObject, error) {
+	b, err := h.svc.UpdateBanner(ctx, req.ID.String(), bannerInput(req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.UpdateBanner200JSONResponse(banner(b)), nil
+}
+
+func (h handlers) DeleteBanner(ctx context.Context, req api.DeleteBannerRequestObject) (api.DeleteBannerResponseObject, error) {
+	if err := h.svc.DeleteBanner(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.DeleteBanner204Response{}, nil
+}
+
+func (h handlers) ReorderBanners(ctx context.Context, req api.ReorderBannersRequestObject) (api.ReorderBannersResponseObject, error) {
+	if err := h.svc.ReorderBanners(ctx, uuidStrings(req.Body.Ids)); err != nil {
+		return nil, err
+	}
+	return api.ReorderBanners204Response{}, nil
+}
+
+func (h handlers) ListBanners(ctx context.Context, _ api.ListBannersRequestObject) (api.ListBannersResponseObject, error) {
+	banners, err := h.svc.Banners(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]api.Banner, len(banners))
+	for i, b := range banners {
+		items[i] = banner(b)
+	}
+	return api.ListBanners200JSONResponse{Items: items}, nil
+}
+
 func (h handlers) GetCategoryTree(ctx context.Context, _ api.GetCategoryTreeRequestObject) (api.GetCategoryTreeResponseObject, error) {
 	roots, err := h.svc.CategoryTree(ctx)
 	if err != nil {
@@ -394,10 +444,28 @@ func dimensions(d *domain.Dimensions) *api.Dimensions {
 	return &api.Dimensions{Length: d.LengthMM, Width: d.WidthMM, Height: d.HeightMM}
 }
 
+func bannerInput(b *api.BannerInput) domain.BannerInput {
+	return domain.BannerInput{
+		CategoryID: b.CategoryID.String(), Text: b.Text,
+		BackgroundImageID: b.BackgroundImageID.String(), LargeImageID: b.LargeImageID.String(),
+	}
+}
+
+func banner(b domain.Banner) api.Banner {
+	return api.Banner{
+		BannerID: parseUUID(b.ID), CategoryID: parseUUID(b.CategoryID), CategoryName: b.CategoryName,
+		Text: b.Text, BackgroundImageID: parseUUID(b.BackgroundImageID), LargeImageID: parseUUID(b.LargeImageID),
+		SortOrder: b.SortOrder,
+	}
+}
+
 func categoryInput(b *api.CategoryInput) domain.CategoryInput {
 	in := domain.CategoryInput{Name: b.Name, Slug: b.Slug, SortOrder: deref(b.SortOrder)}
 	if b.ParentID != nil {
 		in.ParentID = b.ParentID.String()
+	}
+	if b.ImageID != nil {
+		in.ImageID = b.ImageID.String()
 	}
 	return in
 }
@@ -463,7 +531,8 @@ func image(img domain.Image) api.ProductImage {
 
 func category(c domain.Category) api.Category {
 	return api.Category{
-		CategoryID: parseUUID(c.ID), ParentID: optionalUUID(c.ParentID), Name: c.Name, Slug: c.Slug, SortOrder: c.SortOrder,
+		CategoryID: parseUUID(c.ID), ParentID: optionalUUID(c.ParentID), Name: c.Name, Slug: c.Slug,
+		SortOrder: c.SortOrder, ImageID: optionalUUID(c.ImageID),
 	}
 }
 
@@ -472,7 +541,7 @@ func categoryNodes(ns []*domain.CategoryNode) []api.CategoryNode {
 	for i, n := range ns {
 		out[i] = api.CategoryNode{
 			CategoryID: parseUUID(n.ID), ParentID: optionalUUID(n.ParentID), Name: n.Name, Slug: n.Slug,
-			SortOrder: n.SortOrder, Children: categoryNodes(n.Children),
+			SortOrder: n.SortOrder, ImageID: optionalUUID(n.ImageID), Children: categoryNodes(n.Children),
 		}
 	}
 	return out

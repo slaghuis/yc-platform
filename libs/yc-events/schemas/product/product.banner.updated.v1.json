@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.banner.updated.v1.json",
+  "title": "product.banner.updated.v1",
+  "description": "A shop admin replaced a banner's category, text or images. Carries the banner's new state.",
+  "type": "object",
+  "required": ["banner_id", "category_id", "text", "background_image_id", "large_image_id", "sort_order", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "banner_id": { "type": "string", "format": "uuid" },
+    "category_id": { "type": "string", "format": "uuid" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+    "background_image_id": { "type": "string", "format": "uuid" },
+    "large_image_id": { "type": "string", "format": "uuid" },
+    "sort_order": { "type": "integer" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

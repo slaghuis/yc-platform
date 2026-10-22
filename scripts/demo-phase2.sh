@@ -94,18 +94,13 @@ provision() {
 }
 
 system_admin() {
-    step "1. A system admin seeds a supplier"
+    step "1. A system admin logs in"
     docker exec -e YC_BOOTSTRAP_ADMIN_PASSWORD="$SYSADMIN_PASSWORD" yc-identity \
         /app/service bootstrap-admin --email "$SYSADMIN_EMAIL" | sed 's/^/    /'
     call "$ADMIN_HOST" - POST /login "{\"email\":\"$SYSADMIN_EMAIL\",\"password\":\"$SYSADMIN_PASSWORD\"}"
     expect 200 "system admin login on $ADMIN_HOST"
     SYS=$(jq -r .access_token <<<"$BODY")
     ok "logged in on $ADMIN_HOST as $(jq -r '"\(.role) in \(.tenant_id)"' <<<"$BODY")"
-
-    call "$ADMIN_HOST" "$SYS" POST /sysadmin/suppliers "{\"tenant_id\":\"$TENANT\",\"name\":\"Acme Textiles $RUN\"}"
-    expect 201 "create supplier"
-    SUPPLIER=$(jq -r .supplier_id <<<"$BODY")
-    ok "supplier Acme Textiles $RUN ($SUPPLIER) for $TENANT"
 }
 
 shop_admin() {
@@ -133,7 +128,12 @@ shop_admin() {
 }
 
 catalog() {
-    step "2. The shop admin creates products, variants and SKUs"
+    step "2. The shop admin creates the supplier, products, variants and SKUs"
+    call "$SHOP_HOST" "$ADMIN" POST /admin/suppliers "{\"name\":\"Acme Textiles $RUN\"}"
+    expect 201 "create supplier"
+    SUPPLIER=$(jq -r .supplier_id <<<"$BODY")
+    ok "supplier Acme Textiles $RUN ($SUPPLIER)"
+
     call "$SHOP_HOST" "$ADMIN" PUT /admin/pricing-config '{"store_currency":"ZAR","tax_inclusive":true,"default_jurisdiction":"ZA"}'
     expect 200 "pricing config"
     local vat='{"display_name":"Standard VAT","rules":[{"jurisdiction":"ZA","rule_name":"VAT","rate":"0.15","base":"line_total","sort_order":0}]}'
@@ -359,7 +359,7 @@ roles() {
     call "$SHOP_HOST" "jar:$jar" POST /register "{\"email\":\"shopper+$RUN@demo-shop.test\",\"password\":\"shopper-password\"}"
     expect 201 "register a shopper"
     check 403 "customer reads the pricing config" -- "$SHOP_HOST" "$(jq -r .access_token <<<"$BODY")" GET /admin/pricing-config ""
-    check 403 "shop admin creates a supplier" -- "$SHOP_HOST" "$ADMIN" POST /sysadmin/suppliers "{\"tenant_id\":\"$TENANT\",\"name\":\"x\"}"
+    check 403 "system admin creates a supplier" -- "$ADMIN_HOST" "$SYS" POST /admin/suppliers '{"name":"x"}'
     check 401 "no token on the admin host" -- "$ADMIN_HOST" - GET /admin/users ""
     check 401 403 "system admin token on the shop host" -- "$SHOP_HOST" "$SYS" GET /admin/pricing-config ""
 }

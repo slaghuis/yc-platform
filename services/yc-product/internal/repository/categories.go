@@ -11,20 +11,20 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-product/internal/domain"
 )
 
-const categoryColumns = `id, COALESCE(parent_id::text, ''), name, slug, sort_order`
+const categoryColumns = `id, COALESCE(parent_id::text, ''), name, slug, sort_order, COALESCE(image_id::text, '')`
 
 func scanCategory(row pgx.Row) (domain.Category, error) {
 	var c domain.Category
-	err := row.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.SortOrder)
+	err := row.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.SortOrder, &c.ImageID)
 	return c, err
 }
 
 // CreateCategory inserts a category for tenantID.
 func (Catalog) CreateCategory(ctx context.Context, tx pgx.Tx, tenantID string, in domain.CategoryInput) (domain.Category, error) {
 	c, err := scanCategory(tx.QueryRow(ctx, `
-		INSERT INTO categories (tenant_id, parent_id, name, slug, sort_order)
-		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5) RETURNING `+categoryColumns,
-		tenantID, in.ParentID, in.Name, in.Slug, in.SortOrder))
+		INSERT INTO categories (tenant_id, parent_id, name, slug, sort_order, image_id)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, NULLIF($6, '')::uuid) RETURNING `+categoryColumns,
+		tenantID, in.ParentID, in.Name, in.Slug, in.SortOrder, in.ImageID))
 	if err != nil {
 		return domain.Category{}, categoryWriteError(err, in.Slug)
 	}
@@ -47,9 +47,10 @@ func (Catalog) GetCategory(ctx context.Context, tx pgx.Tx, id string) (domain.Ca
 // new parent is not the category or a descendant.
 func (Catalog) UpdateCategory(ctx context.Context, tx pgx.Tx, id string, in domain.CategoryInput) (domain.Category, error) {
 	c, err := scanCategory(tx.QueryRow(ctx, `
-		UPDATE categories SET parent_id = NULLIF($2, '')::uuid, name = $3, slug = $4, sort_order = $5, updated_at = NOW()
+		UPDATE categories SET parent_id = NULLIF($2, '')::uuid, name = $3, slug = $4, sort_order = $5,
+			image_id = NULLIF($6, '')::uuid, updated_at = NOW()
 		WHERE id = $1 RETURNING `+categoryColumns,
-		id, in.ParentID, in.Name, in.Slug, in.SortOrder))
+		id, in.ParentID, in.Name, in.Slug, in.SortOrder, in.ImageID))
 	if dbkit.IsNoRows(err) {
 		return domain.Category{}, ycerrors.NotFound("Category", id)
 	}

@@ -1,0 +1,29 @@
+# Public edge for the HostAfrica demo (ADR-027, ADR-031).
+# Caddy obtains certificates automatically. Only this container publishes
+# ports 80 and 443.
+
+{
+	email {$YC_DEMO_ACME_EMAIL}
+}
+
+yellowcommerce.co.za, www.yellowcommerce.co.za {
+	encode gzip
+	reverse_proxy yc-platform-admin:3000
+}
+
+demo.yellowcommerce.co.za {
+	encode gzip
+	handle /webhooks/* {
+		reverse_proxy yc-gateway:8080
+	}
+	handle {
+		reverse_proxy yc-platform-shop:3000
+	}
+}
+
+# Public anonymous-read image CDN (ADR-027 rule 15). SeaweedFS S3 API is
+# on 8333 inside the Compose network.
+images.yellowcommerce.co.za {
+	encode gzip
+	reverse_proxy seaweedfs:8333
+}
