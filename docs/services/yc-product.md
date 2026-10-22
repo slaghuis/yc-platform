@@ -18,7 +18,7 @@
 4. Maintain SKUs (product + variant combination)
 5. Maintain a category hierarchy per tenant
 6. Attach images (by `image_id` from yc-image) to products and SKUs
-7. Expose CRUD APIs for suppliers (system_admin), products/SKUs (shop_admin, system_admin)
+7. Expose CRUD APIs for suppliers, products and SKUs to the shop admin
 8. Provide a faceted search API, contextualized by actor role
 9. Maintain a search projection that incorporates popularity (from orders), favorites (from orders per customer), reviews, and price range
 10. Emit lifecycle events for every mutation
@@ -119,14 +119,11 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 | POST | `/admin/categories` | Create category | shop_admin |
 | PUT | `/admin/categories/{id}` | Update category | shop_admin |
 | DELETE | `/admin/categories/{id}` | Delete category | shop_admin |
-
-### System Admin Endpoints
-
-| Method | Path | Description | Auth |
-|---|---|---|---|
-| POST | `/sysadmin/suppliers` | Create supplier | system_admin |
-| PUT | `/sysadmin/suppliers/{id}` | Update supplier | system_admin |
-| DELETE | `/sysadmin/suppliers/{id}` | Delete supplier | system_admin |
+| GET | `/admin/suppliers` | List suppliers (full records, including inactive) | shop_admin |
+| GET | `/admin/suppliers/{id}` | Get a supplier | shop_admin |
+| POST | `/admin/suppliers` | Create supplier | shop_admin |
+| PUT | `/admin/suppliers/{id}` | Update supplier | shop_admin |
+| DELETE | `/admin/suppliers/{id}` | Delete supplier | shop_admin |
 
 ### Internal Endpoints
 
@@ -139,7 +136,7 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 
 The contract is `services/yc-product/api/openapi.yaml`. Differences from the tables above:
 
-- **Suppliers** are managed at `/sysadmin/suppliers` (create, list, get, update, delete). A system admin logs in on the platform host and names the shop in the body (`{"tenant_id": "shop-a", ...}`); the write runs in that shop's tenant and the event carries its `tenant_id`. A supplier referenced by any product (deleted products included) cannot be deleted (409).
+- **Suppliers** are managed at `/admin/suppliers` (list, get, create, update, delete) by the shop admin, in the caller's shop. List and get return the full record, including inactive suppliers and contact details. The public `GET /suppliers` stays id and name of active suppliers. A supplier referenced by any product (deleted products included) cannot be deleted (409).
 - **/admin/** endpoints act on the caller's own shop and require `shop_admin`; a system admin's `_platform` token gets 403 there.
 - **Variant axes** can be added only before the product has SKUs (409 afterwards): an existing SKU would have no value on the new axis. A SKU names exactly one allowed value on every axis, and no two live SKUs of a product share a combination. `product.variant.removed.v1` is not implemented.
 - **Soft deletes** set `status = 'deleted'`; a deleted SKU releases its `sku_code`. Deleting a product deletes its SKUs and lists them in `product.deleted.v1`.

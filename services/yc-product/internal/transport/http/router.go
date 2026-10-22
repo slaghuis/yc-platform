@@ -18,8 +18,8 @@ import (
 
 // Catalog is the service the handlers call.
 type Catalog interface {
-	CreateSupplier(ctx context.Context, tenantID string, in domain.SupplierInput) (domain.Supplier, error)
-	ListSuppliers(ctx context.Context, tenantID string, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error)
+	CreateSupplier(ctx context.Context, in domain.SupplierInput) (domain.Supplier, error)
+	ListSuppliers(ctx context.Context, after *repository.Cursor, limit int) ([]domain.Supplier, *repository.Cursor, error)
 	GetSupplier(ctx context.Context, id string) (domain.Supplier, error)
 	UpdateSupplier(ctx context.Context, id string, in domain.SupplierInput) (domain.Supplier, error)
 	DeleteSupplier(ctx context.Context, id string) error
@@ -73,7 +73,7 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/admin/products", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/skus", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/categories", Roles: []string{string(authctx.ActorShopAdmin)}},
-		{Prefix: "/sysadmin/suppliers", Roles: []string{string(authctx.ActorSystemAdmin)}},
+		{Prefix: "/admin/suppliers", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/internal/skus", Methods: get},
 	}
 }
@@ -113,7 +113,7 @@ var _ api.StrictServerInterface = handlers{}
 
 func (h handlers) CreateSupplier(ctx context.Context, req api.CreateSupplierRequestObject) (api.CreateSupplierResponseObject, error) {
 	in := domain.SupplierInput{Name: req.Body.Name, Contact: deref(req.Body.Contact), Status: status(req.Body.Status)}
-	s, err := h.svc.CreateSupplier(ctx, req.Body.TenantID, in)
+	s, err := h.svc.CreateSupplier(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (h handlers) ListSuppliers(ctx context.Context, req api.ListSuppliersReques
 	if err != nil {
 		return nil, err
 	}
-	sups, next, err := h.svc.ListSuppliers(ctx, deref(req.Params.TenantID), after, page.Size)
+	sups, next, err := h.svc.ListSuppliers(ctx, after, page.Size)
 	if err != nil {
 		return nil, err
 	}

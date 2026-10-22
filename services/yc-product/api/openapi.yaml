@@ -9,8 +9,7 @@ info:
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
     (api-conventions.md §9). /admin/ requires shop_admin and acts on the
-    caller's shop; /sysadmin/ requires system_admin, who names the shop
-    explicitly. Prices are not part of the catalog: clients pass SKU IDs to
+    caller's shop. Prices are not part of the catalog: clients pass SKU IDs to
     yc-pricing's POST /prices/evaluate. Errors are application/problem+json
     (error-handling.md).
 
@@ -366,9 +365,9 @@ paths:
               schema: { $ref: '#/components/schemas/SKUBatch' }
         '400': { $ref: '#/components/responses/Problem' }
 
-  /sysadmin/suppliers:
+  /admin/suppliers:
     post:
-      summary: Create a supplier for a shop
+      summary: Create a supplier in the caller's shop
       description: Publishes product.supplier.created.v1 in the shop's tenant.
       operationId: createSupplier
       requestBody:
@@ -384,10 +383,10 @@ paths:
               schema: { $ref: '#/components/schemas/Supplier' }
         '400': { $ref: '#/components/responses/Problem' }
     get:
-      summary: List suppliers, optionally of one shop
+      summary: List the caller's suppliers
+      description: Full records, newest first, including inactive suppliers.
       operationId: listSuppliers
       parameters:
-        - { name: tenant_id, in: query, schema: { type: string } }
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/Cursor'
       responses:
@@ -398,9 +397,9 @@ paths:
               schema: { $ref: '#/components/schemas/SupplierList' }
         '400': { $ref: '#/components/responses/Problem' }
 
-  /sysadmin/suppliers/{id}:
+  /admin/suppliers/{id}:
     get:
-      summary: Get a supplier
+      summary: Get a supplier in the caller's shop
       operationId: getSupplier
       parameters:
         - $ref: '#/components/parameters/ID'
@@ -484,10 +483,9 @@ components:
         name: { type: string }
     CreateSupplierRequest:
       type: object
-      required: [tenant_id, name]
+      required: [name]
       additionalProperties: false
       properties:
-        tenant_id: { type: string }
         name: { type: string, minLength: 1, maxLength: 200 }
         contact: { $ref: '#/components/schemas/Contact' }
         status: { $ref: '#/components/schemas/Status' }

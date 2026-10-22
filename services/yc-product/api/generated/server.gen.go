@@ -124,10 +124,9 @@ type Contact map[string]string
 // CreateSupplierRequest defines model for CreateSupplierRequest.
 type CreateSupplierRequest struct {
 	// Contact Free-form contact fields, e.g. email, phone.
-	Contact  *Contact `json:"contact,omitempty"`
-	Name     string   `json:"name"`
-	Status   *Status  `json:"status,omitempty"`
-	TenantID string   `json:"tenant_id"`
+	Contact *Contact `json:"contact,omitempty"`
+	Name    string   `json:"name"`
+	Status  *Status  `json:"status,omitempty"`
 }
 
 // Dimensions Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
@@ -382,6 +381,12 @@ type ID = openapi_types.UUID
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// ListSuppliersParams defines parameters for ListSuppliers.
+type ListSuppliersParams struct {
+	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // GetSKUsBatchParams defines parameters for GetSKUsBatch.
 type GetSKUsBatchParams struct {
 	Ids []openapi_types.UUID `form:"ids" json:"ids"`
@@ -405,13 +410,6 @@ type BrowseProductsParams struct {
 	// unrated products last. Base prices are net or gross per the
 	// shop's tax setting (ADR-016).
 	Sort     *Sort     `form:"sort,omitempty" json:"sort,omitempty"`
-	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
-	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
-}
-
-// ListSuppliersParams defines parameters for ListSuppliers.
-type ListSuppliersParams struct {
-	TenantID *string   `form:"tenant_id,omitempty" json:"tenant_id,omitempty"`
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
@@ -484,6 +482,21 @@ type ServerInterface interface {
 	// UpdateSKU Replace a SKU's fields
 	// (PUT /admin/skus/{id})
 	UpdateSKU(w http.ResponseWriter, r *http.Request, id ID)
+	// ListSuppliers List the caller's suppliers
+	// (GET /admin/suppliers)
+	ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams)
+	// CreateSupplier Create a supplier in the caller's shop
+	// (POST /admin/suppliers)
+	CreateSupplier(w http.ResponseWriter, r *http.Request)
+	// DeleteSupplier Delete a supplier no product references
+	// (DELETE /admin/suppliers/{id})
+	DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID)
+	// GetSupplier Get a supplier in the caller's shop
+	// (GET /admin/suppliers/{id})
+	GetSupplier(w http.ResponseWriter, r *http.Request, id ID)
+	// UpdateSupplier Replace a supplier's fields
+	// (PUT /admin/suppliers/{id})
+	UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID)
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(w http.ResponseWriter, r *http.Request)
@@ -502,21 +515,6 @@ type ServerInterface interface {
 	// ListPublicSuppliers Active suppliers of the shop (public fields)
 	// (GET /suppliers)
 	ListPublicSuppliers(w http.ResponseWriter, r *http.Request)
-	// ListSuppliers List suppliers, optionally of one shop
-	// (GET /sysadmin/suppliers)
-	ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams)
-	// CreateSupplier Create a supplier for a shop
-	// (POST /sysadmin/suppliers)
-	CreateSupplier(w http.ResponseWriter, r *http.Request)
-	// DeleteSupplier Delete a supplier no product references
-	// (DELETE /sysadmin/suppliers/{id})
-	DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID)
-	// GetSupplier Get a supplier
-	// (GET /sysadmin/suppliers/{id})
-	GetSupplier(w http.ResponseWriter, r *http.Request, id ID)
-	// UpdateSupplier Replace a supplier's fields
-	// (PUT /sysadmin/suppliers/{id})
-	UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -595,6 +593,36 @@ func (_ Unimplemented) UpdateSKU(w http.ResponseWriter, r *http.Request, id ID) 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListSuppliers List the caller's suppliers
+// (GET /admin/suppliers)
+func (_ Unimplemented) ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateSupplier Create a supplier in the caller's shop
+// (POST /admin/suppliers)
+func (_ Unimplemented) CreateSupplier(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteSupplier Delete a supplier no product references
+// (DELETE /admin/suppliers/{id})
+func (_ Unimplemented) DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSupplier Get a supplier in the caller's shop
+// (GET /admin/suppliers/{id})
+func (_ Unimplemented) GetSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateSupplier Replace a supplier's fields
+// (PUT /admin/suppliers/{id})
+func (_ Unimplemented) UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetCategoryTree The category tree
 // (GET /categories)
 func (_ Unimplemented) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
@@ -628,36 +656,6 @@ func (_ Unimplemented) GetSKU(w http.ResponseWriter, r *http.Request, id ID) {
 // ListPublicSuppliers Active suppliers of the shop (public fields)
 // (GET /suppliers)
 func (_ Unimplemented) ListPublicSuppliers(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// ListSuppliers List suppliers, optionally of one shop
-// (GET /sysadmin/suppliers)
-func (_ Unimplemented) ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// CreateSupplier Create a supplier for a shop
-// (POST /sysadmin/suppliers)
-func (_ Unimplemented) CreateSupplier(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// DeleteSupplier Delete a supplier no product references
-// (DELETE /sysadmin/suppliers/{id})
-func (_ Unimplemented) DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// GetSupplier Get a supplier
-// (GET /sysadmin/suppliers/{id})
-func (_ Unimplemented) GetSupplier(w http.ResponseWriter, r *http.Request, id ID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// UpdateSupplier Replace a supplier's fields
-// (PUT /sysadmin/suppliers/{id})
-func (_ Unimplemented) UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -967,6 +965,144 @@ func (siw *ServerInterfaceWrapper) UpdateSKU(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// ListSuppliers operation middleware
+func (siw *ServerInterfaceWrapper) ListSuppliers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSuppliersParams
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSuppliers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSupplier operation middleware
+func (siw *ServerInterfaceWrapper) CreateSupplier(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSupplier(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSupplier operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSupplier(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSupplier(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSupplier operation middleware
+func (siw *ServerInterfaceWrapper) GetSupplier(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSupplier(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSupplier operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSupplier(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSupplier(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetCategoryTree operation middleware
 func (siw *ServerInterfaceWrapper) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
 
@@ -1204,157 +1340,6 @@ func (siw *ServerInterfaceWrapper) ListPublicSuppliers(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
-// ListSuppliers operation middleware
-func (siw *ServerInterfaceWrapper) ListSuppliers(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListSuppliersParams
-
-	// ------------- Optional query parameter "tenant_id" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "tenant_id", r.URL.Query(), &params.TenantID, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tenant_id"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tenant_id", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "page_size" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "cursor" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListSuppliers(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateSupplier operation middleware
-func (siw *ServerInterfaceWrapper) CreateSupplier(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateSupplier(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteSupplier operation middleware
-func (siw *ServerInterfaceWrapper) DeleteSupplier(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteSupplier(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetSupplier operation middleware
-func (siw *ServerInterfaceWrapper) GetSupplier(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetSupplier(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateSupplier operation middleware
-func (siw *ServerInterfaceWrapper) UpdateSupplier(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateSupplier(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1523,19 +1508,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/internal/skus/batch", wrapper.GetSKUsBatch)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/sysadmin/suppliers", wrapper.ListSuppliers)
+		r.Get(options.BaseURL+"/admin/suppliers", wrapper.ListSuppliers)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/sysadmin/suppliers", wrapper.CreateSupplier)
+		r.Post(options.BaseURL+"/admin/suppliers", wrapper.CreateSupplier)
 	})
 	r.Group(func(r chi.Router) {
-		r.Delete(options.BaseURL+"/sysadmin/suppliers/{id}", wrapper.DeleteSupplier)
+		r.Delete(options.BaseURL+"/admin/suppliers/{id}", wrapper.DeleteSupplier)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/sysadmin/suppliers/{id}", wrapper.GetSupplier)
+		r.Get(options.BaseURL+"/admin/suppliers/{id}", wrapper.GetSupplier)
 	})
 	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/sysadmin/suppliers/{id}", wrapper.UpdateSupplier)
+		r.Put(options.BaseURL+"/admin/suppliers/{id}", wrapper.UpdateSupplier)
 	})
 
 	return r
@@ -2164,204 +2149,6 @@ func (response UpdateSKU409ApplicationProblemPlusJSONResponse) VisitUpdateSKURes
 	return err
 }
 
-type GetCategoryTreeRequestObject struct {
-}
-
-type GetCategoryTreeResponseObject interface {
-	VisitGetCategoryTreeResponse(w http.ResponseWriter) error
-}
-
-type GetCategoryTree200JSONResponse struct {
-	Items []CategoryNode `json:"items"`
-}
-
-func (response GetCategoryTree200JSONResponse) VisitGetCategoryTreeResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetSKUsBatchRequestObject struct {
-	Params GetSKUsBatchParams
-}
-
-type GetSKUsBatchResponseObject interface {
-	VisitGetSKUsBatchResponse(w http.ResponseWriter) error
-}
-
-type GetSKUsBatch200JSONResponse SKUBatch
-
-func (response GetSKUsBatch200JSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetSKUsBatch400ApplicationProblemPlusJSONResponse struct {
-	ProblemApplicationProblemPlusJSONResponse
-}
-
-func (response GetSKUsBatch400ApplicationProblemPlusJSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BrowseProductsRequestObject struct {
-	Params BrowseProductsParams
-}
-
-type BrowseProductsResponseObject interface {
-	VisitBrowseProductsResponse(w http.ResponseWriter) error
-}
-
-type BrowseProducts200JSONResponse ProductList
-
-func (response BrowseProducts200JSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BrowseProducts400ApplicationProblemPlusJSONResponse struct {
-	ProblemApplicationProblemPlusJSONResponse
-}
-
-func (response BrowseProducts400ApplicationProblemPlusJSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetProductRequestObject struct {
-	ID ID `json:"id"`
-}
-
-type GetProductResponseObject interface {
-	VisitGetProductResponse(w http.ResponseWriter) error
-}
-
-type GetProduct200JSONResponse Product
-
-func (response GetProduct200JSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetProduct404ApplicationProblemPlusJSONResponse struct {
-	ProblemApplicationProblemPlusJSONResponse
-}
-
-func (response GetProduct404ApplicationProblemPlusJSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetSKURequestObject struct {
-	ID ID `json:"id"`
-}
-
-type GetSKUResponseObject interface {
-	VisitGetSKUResponse(w http.ResponseWriter) error
-}
-
-type GetSKU200JSONResponse SKU
-
-func (response GetSKU200JSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetSKU404ApplicationProblemPlusJSONResponse struct {
-	ProblemApplicationProblemPlusJSONResponse
-}
-
-func (response GetSKU404ApplicationProblemPlusJSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListPublicSuppliersRequestObject struct {
-}
-
-type ListPublicSuppliersResponseObject interface {
-	VisitListPublicSuppliersResponse(w http.ResponseWriter) error
-}
-
-type ListPublicSuppliers200JSONResponse struct {
-	Items []SupplierSummary `json:"items"`
-}
-
-func (response ListPublicSuppliers200JSONResponse) VisitListPublicSuppliersResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type ListSuppliersRequestObject struct {
 	Params ListSuppliersParams
 }
@@ -2575,6 +2362,204 @@ func (response UpdateSupplier404ApplicationProblemPlusJSONResponse) VisitUpdateS
 	return err
 }
 
+type GetCategoryTreeRequestObject struct {
+}
+
+type GetCategoryTreeResponseObject interface {
+	VisitGetCategoryTreeResponse(w http.ResponseWriter) error
+}
+
+type GetCategoryTree200JSONResponse struct {
+	Items []CategoryNode `json:"items"`
+}
+
+func (response GetCategoryTree200JSONResponse) VisitGetCategoryTreeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSKUsBatchRequestObject struct {
+	Params GetSKUsBatchParams
+}
+
+type GetSKUsBatchResponseObject interface {
+	VisitGetSKUsBatchResponse(w http.ResponseWriter) error
+}
+
+type GetSKUsBatch200JSONResponse SKUBatch
+
+func (response GetSKUsBatch200JSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSKUsBatch400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSKUsBatch400ApplicationProblemPlusJSONResponse) VisitGetSKUsBatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BrowseProductsRequestObject struct {
+	Params BrowseProductsParams
+}
+
+type BrowseProductsResponseObject interface {
+	VisitBrowseProductsResponse(w http.ResponseWriter) error
+}
+
+type BrowseProducts200JSONResponse ProductList
+
+func (response BrowseProducts200JSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BrowseProducts400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response BrowseProducts400ApplicationProblemPlusJSONResponse) VisitBrowseProductsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProductRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type GetProductResponseObject interface {
+	VisitGetProductResponse(w http.ResponseWriter) error
+}
+
+type GetProduct200JSONResponse Product
+
+func (response GetProduct200JSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProduct404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetProduct404ApplicationProblemPlusJSONResponse) VisitGetProductResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSKURequestObject struct {
+	ID ID `json:"id"`
+}
+
+type GetSKUResponseObject interface {
+	VisitGetSKUResponse(w http.ResponseWriter) error
+}
+
+type GetSKU200JSONResponse SKU
+
+func (response GetSKU200JSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSKU404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSKU404ApplicationProblemPlusJSONResponse) VisitGetSKUResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPublicSuppliersRequestObject struct {
+}
+
+type ListPublicSuppliersResponseObject interface {
+	VisitListPublicSuppliersResponse(w http.ResponseWriter) error
+}
+
+type ListPublicSuppliers200JSONResponse struct {
+	Items []SupplierSummary `json:"items"`
+}
+
+func (response ListPublicSuppliers200JSONResponse) VisitListPublicSuppliersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// CreateCategory Create a category
@@ -2613,6 +2598,21 @@ type StrictServerInterface interface {
 	// UpdateSKU Replace a SKU's fields
 	// (PUT /admin/skus/{id})
 	UpdateSKU(ctx context.Context, request UpdateSKURequestObject) (UpdateSKUResponseObject, error)
+	// ListSuppliers List the caller's suppliers
+	// (GET /admin/suppliers)
+	ListSuppliers(ctx context.Context, request ListSuppliersRequestObject) (ListSuppliersResponseObject, error)
+	// CreateSupplier Create a supplier in the caller's shop
+	// (POST /admin/suppliers)
+	CreateSupplier(ctx context.Context, request CreateSupplierRequestObject) (CreateSupplierResponseObject, error)
+	// DeleteSupplier Delete a supplier no product references
+	// (DELETE /admin/suppliers/{id})
+	DeleteSupplier(ctx context.Context, request DeleteSupplierRequestObject) (DeleteSupplierResponseObject, error)
+	// GetSupplier Get a supplier in the caller's shop
+	// (GET /admin/suppliers/{id})
+	GetSupplier(ctx context.Context, request GetSupplierRequestObject) (GetSupplierResponseObject, error)
+	// UpdateSupplier Replace a supplier's fields
+	// (PUT /admin/suppliers/{id})
+	UpdateSupplier(ctx context.Context, request UpdateSupplierRequestObject) (UpdateSupplierResponseObject, error)
 	// GetCategoryTree The category tree
 	// (GET /categories)
 	GetCategoryTree(ctx context.Context, request GetCategoryTreeRequestObject) (GetCategoryTreeResponseObject, error)
@@ -2631,21 +2631,6 @@ type StrictServerInterface interface {
 	// ListPublicSuppliers Active suppliers of the shop (public fields)
 	// (GET /suppliers)
 	ListPublicSuppliers(ctx context.Context, request ListPublicSuppliersRequestObject) (ListPublicSuppliersResponseObject, error)
-	// ListSuppliers List suppliers, optionally of one shop
-	// (GET /sysadmin/suppliers)
-	ListSuppliers(ctx context.Context, request ListSuppliersRequestObject) (ListSuppliersResponseObject, error)
-	// CreateSupplier Create a supplier for a shop
-	// (POST /sysadmin/suppliers)
-	CreateSupplier(ctx context.Context, request CreateSupplierRequestObject) (CreateSupplierResponseObject, error)
-	// DeleteSupplier Delete a supplier no product references
-	// (DELETE /sysadmin/suppliers/{id})
-	DeleteSupplier(ctx context.Context, request DeleteSupplierRequestObject) (DeleteSupplierResponseObject, error)
-	// GetSupplier Get a supplier
-	// (GET /sysadmin/suppliers/{id})
-	GetSupplier(ctx context.Context, request GetSupplierRequestObject) (GetSupplierResponseObject, error)
-	// UpdateSupplier Replace a supplier's fields
-	// (PUT /sysadmin/suppliers/{id})
-	UpdateSupplier(ctx context.Context, request UpdateSupplierRequestObject) (UpdateSupplierResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -3052,6 +3037,148 @@ func (sh *strictHandler) UpdateSKU(w http.ResponseWriter, r *http.Request, id ID
 	}
 }
 
+// ListSuppliers operation middleware
+func (sh *strictHandler) ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams) {
+	var request ListSuppliersRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSuppliers(ctx, request.(ListSuppliersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSuppliers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSuppliersResponseObject); ok {
+		if err := validResponse.VisitListSuppliersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSupplier operation middleware
+func (sh *strictHandler) CreateSupplier(w http.ResponseWriter, r *http.Request) {
+	var request CreateSupplierRequestObject
+
+	var body CreateSupplierJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSupplier(ctx, request.(CreateSupplierRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSupplier")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSupplierResponseObject); ok {
+		if err := validResponse.VisitCreateSupplierResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSupplier operation middleware
+func (sh *strictHandler) DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteSupplierRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSupplier(ctx, request.(DeleteSupplierRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSupplier")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSupplierResponseObject); ok {
+		if err := validResponse.VisitDeleteSupplierResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSupplier operation middleware
+func (sh *strictHandler) GetSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetSupplierRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSupplier(ctx, request.(GetSupplierRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSupplier")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSupplierResponseObject); ok {
+		if err := validResponse.VisitGetSupplierResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSupplier operation middleware
+func (sh *strictHandler) UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateSupplierRequestObject
+
+	request.ID = id
+
+	var body UpdateSupplierJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSupplier(ctx, request.(UpdateSupplierRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSupplier")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateSupplierResponseObject); ok {
+		if err := validResponse.VisitUpdateSupplierResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetCategoryTree operation middleware
 func (sh *strictHandler) GetCategoryTree(w http.ResponseWriter, r *http.Request) {
 	var request GetCategoryTreeRequestObject
@@ -3197,148 +3324,6 @@ func (sh *strictHandler) ListPublicSuppliers(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListPublicSuppliersResponseObject); ok {
 		if err := validResponse.VisitListPublicSuppliersResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListSuppliers operation middleware
-func (sh *strictHandler) ListSuppliers(w http.ResponseWriter, r *http.Request, params ListSuppliersParams) {
-	var request ListSuppliersRequestObject
-
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListSuppliers(ctx, request.(ListSuppliersRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListSuppliers")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListSuppliersResponseObject); ok {
-		if err := validResponse.VisitListSuppliersResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// CreateSupplier operation middleware
-func (sh *strictHandler) CreateSupplier(w http.ResponseWriter, r *http.Request) {
-	var request CreateSupplierRequestObject
-
-	var body CreateSupplierJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateSupplier(ctx, request.(CreateSupplierRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateSupplier")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateSupplierResponseObject); ok {
-		if err := validResponse.VisitCreateSupplierResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteSupplier operation middleware
-func (sh *strictHandler) DeleteSupplier(w http.ResponseWriter, r *http.Request, id ID) {
-	var request DeleteSupplierRequestObject
-
-	request.ID = id
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteSupplier(ctx, request.(DeleteSupplierRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteSupplier")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(DeleteSupplierResponseObject); ok {
-		if err := validResponse.VisitDeleteSupplierResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetSupplier operation middleware
-func (sh *strictHandler) GetSupplier(w http.ResponseWriter, r *http.Request, id ID) {
-	var request GetSupplierRequestObject
-
-	request.ID = id
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetSupplier(ctx, request.(GetSupplierRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetSupplier")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetSupplierResponseObject); ok {
-		if err := validResponse.VisitGetSupplierResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// UpdateSupplier operation middleware
-func (sh *strictHandler) UpdateSupplier(w http.ResponseWriter, r *http.Request, id ID) {
-	var request UpdateSupplierRequestObject
-
-	request.ID = id
-
-	var body UpdateSupplierJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UpdateSupplier(ctx, request.(UpdateSupplierRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UpdateSupplier")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UpdateSupplierResponseObject); ok {
-		if err := validResponse.VisitUpdateSupplierResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

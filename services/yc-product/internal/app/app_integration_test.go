@@ -114,28 +114,44 @@ func TestProduct(t *testing.T) {
 	var shirt api.Product
 	var red, blue api.SKU
 
-	t.Run("system admin creates a supplier for a shop", func(t *testing.T) {
-		require.Equal(t, http.StatusCreated, sys.do("POST", "/sysadmin/suppliers", map[string]any{
-			"tenant_id": "shop-a", "name": "Acme Textiles", "contact": map[string]string{"email": "sales@acme.test"},
+	t.Run("shop admin manages suppliers", func(t *testing.T) {
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/suppliers", map[string]any{
+			"name": "Acme Textiles", "contact": map[string]string{"email": "sales@acme.test"},
 		}, &sup))
 		assert.Equal(t, "shop-a", sup.TenantID)
 		assert.Equal(t, api.Status("active"), sup.Status)
+		assert.Equal(t, "sales@acme.test", sup.Contact["email"])
 		assert.Equal(t, 1, eventsOf("shop-a", "product.supplier.created.v1"))
 
-		assert.Equal(t, http.StatusBadRequest, sys.do("POST", "/sysadmin/suppliers",
-			map[string]any{"tenant_id": "_platform", "name": "X"}, nil))
-		assert.Equal(t, http.StatusForbidden, admin.do("POST", "/sysadmin/suppliers",
-			map[string]any{"tenant_id": "shop-a", "name": "X"}, nil))
+		assert.Equal(t, http.StatusForbidden, sys.do("POST", "/admin/suppliers", map[string]any{"name": "X"}, nil))
+		assert.Equal(t, http.StatusForbidden, sys.do("GET", "/admin/suppliers", nil, nil))
+		assert.Equal(t, http.StatusBadRequest, as(t, srv, "_platform", "shop_admin").do("POST", "/admin/suppliers",
+			map[string]any{"name": "X"}, nil), "a platform tenant is not a shop")
+		other := as(t, srv, "shop-b", "shop_admin")
+		assert.Equal(t, http.StatusNotFound, other.do("GET", "/admin/suppliers/"+sup.SupplierID.String(), nil, nil))
+		assert.Equal(t, http.StatusNotFound, sys.do("POST", "/sysadmin/suppliers", map[string]any{"name": "X"}, nil))
 
+		var dormant api.Supplier
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/suppliers",
+			map[string]any{"name": "Dormant Mill", "status": "inactive"}, &dormant))
 		var list api.SupplierList
-		require.Equal(t, http.StatusOK, sys.do("GET", "/sysadmin/suppliers?tenant_id=shop-a", nil, &list))
-		require.Len(t, list.Items, 1)
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/suppliers", nil, &list))
+		require.Len(t, list.Items, 2)
+		assert.Equal(t, dormant.SupplierID, list.Items[0].SupplierID, "newest first, inactive included")
+		require.Equal(t, http.StatusOK, other.do("GET", "/admin/suppliers", nil, &list))
+		assert.Empty(t, list.Items)
+
+		var got api.Supplier
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/suppliers/"+sup.SupplierID.String(), nil, &got))
+		assert.Equal(t, sup.SupplierID, got.SupplierID)
 
 		var renamed api.Supplier
-		require.Equal(t, http.StatusOK, sys.do("PUT", "/sysadmin/suppliers/"+sup.SupplierID.String(),
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/suppliers/"+sup.SupplierID.String(),
 			map[string]any{"name": "Acme Textiles Ltd", "status": "active"}, &renamed))
 		assert.Equal(t, "Acme Textiles Ltd", renamed.Name)
 		assert.Equal(t, 1, eventsOf("shop-a", "product.supplier.updated.v1"))
+		assert.Equal(t, http.StatusNotFound, other.do("PUT", "/admin/suppliers/"+sup.SupplierID.String(),
+			map[string]any{"name": "Taken", "status": "active"}, nil))
 
 		var public struct{ Items []api.SupplierSummary }
 		require.Equal(t, http.StatusOK, visitor.do("GET", "/suppliers", nil, &public))
@@ -551,8 +567,9 @@ func TestProduct(t *testing.T) {
 		assert.Len(t, skuIDs, 2)
 		assert.Equal(t, http.StatusNotFound, visitor.do("GET", "/products/"+shirt.ProductID.String(), nil, nil))
 
-		assert.Equal(t, http.StatusConflict, sys.do("DELETE", "/sysadmin/suppliers/"+sup.SupplierID.String(), nil, nil),
+		assert.Equal(t, http.StatusConflict, admin.do("DELETE", "/admin/suppliers/"+sup.SupplierID.String(), nil, nil),
 			"products still reference the supplier")
+		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-b", "shop_admin").do("DELETE", "/admin/suppliers/"+sup.SupplierID.String(), nil, nil))
 		assert.Equal(t, http.StatusConflict, admin.do("DELETE", "/admin/categories/"+apparel.CategoryID.String(), nil, nil),
 			"has subcategories")
 		assert.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/categories/"+tshirts.CategoryID.String(), nil, nil))

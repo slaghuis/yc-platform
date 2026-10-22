@@ -50,7 +50,7 @@ var (
 	taxClassRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 )
 
-// Supplier supplies a shop's products. System admins manage suppliers.
+// Supplier supplies a shop's products. Shop admins manage suppliers.
 type Supplier struct {
 	ID        string
 	TenantID  string
