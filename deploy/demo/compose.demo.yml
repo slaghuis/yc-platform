@@ -261,13 +261,18 @@ services:
       YC_TENANT__HTTP__SHUTDOWN_DELAY: "0s"
 
   # Frontend BFFs (separate repos; images on GHCR).
+  # Frontends call the gateway's public listener on the Compose network
+  # (yc-gateway:8080). :8091 is the service-token /internal listener only —
+  # POST /login and console APIs are not routed there (404 Not found).
   yc-platform-admin:
     profiles: [frontends]
     image: ${ADMIN_IMAGE}:${ADMIN_VERSION:-${VERSION}}
     pull_policy: always
     restart: unless-stopped
     environment:
-      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_GATEWAY_URL: http://yc-gateway:8080
+      YC_PLATFORM_HOST: yellowcommerce.co.za
+      YC_PUBLIC_BASE_URL: https://yellowcommerce.co.za
       SESSION_SECRET: ${ADMIN_SESSION_SECRET}
       NODE_ENV: production
     depends_on:
@@ -279,7 +284,10 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_GATEWAY_URL: http://yc-gateway:8080
+      # ADR-027: BFF must present the public shop hostname to yc-gateway.
+      YC_SHOP_HOST: ${YC_SHOP_HOST:-demo.yellowcommerce.co.za}
+      YC_PUBLIC_BASE_URL: ${YC_PUBLIC_BASE_URL_SHOP:-https://demo.yellowcommerce.co.za}
       SESSION_SECRET: ${SHOP_SESSION_SECRET}
       NODE_ENV: production
     depends_on:
