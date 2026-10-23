@@ -226,7 +226,7 @@ Everything else stays in `backlog-v2.md`. The service-token-for-route-registrati
 
 | Decision | Needed by | Owner |
 |---|---|---|
-| The fictitious customer: name, product range, brand | S1 (placeholder brand until then) | Product owner |
+| The fictitious customer: name, product range, brand | **Done** — Wisefood (premium frozen meals); see yc-platform-shop `docs/brand-decision-wisefood.md` | Product owner |
 | Hosting provider (ADR-031) — HostAfrica, `demo.yellowcommerce.co.za` | Done (Phase 13) | Platform owner |
 | Transactional mail provider (ADR-031; MailHog until then) | Before external announce | Platform owner |
 | Product marketing beyond what v1 supports (promotions, campaigns) | After v1.1; see yc-platform-shop requirements | Product owner |
