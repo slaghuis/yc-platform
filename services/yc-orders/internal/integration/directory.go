@@ -44,6 +44,9 @@ func (i *Identity) UserBilling(ctx context.Context, userID string) (BillingAddre
 	err := i.client.Call(ctx, http.MethodGet, "/internal/users/"+url.PathEscape(userID)+"/billing",
 		httpkit.CallOptions{Attempts: 2}, nil, &out)
 	if err != nil {
+		if httpkit.UpstreamStatus(err) == http.StatusNotFound {
+			return BillingAddress{}, false, nil
+		}
 		if e, ok := ycerrors.As(err); ok && e.Code == ycerrors.CodeNotFound {
 			return BillingAddress{}, false, nil
 		}
