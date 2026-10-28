@@ -307,7 +307,11 @@ components:
     ShippingInput:
       type: object
       additionalProperties: false
-      description: A delivery address to quote, an option of the current address, or both.
+      description: |
+        A delivery address to quote, an option of the current address, or both.
+        Customers may pass delivery_address_id from their book, or free-form
+        delivery_address which is saved to the book (issue #32). Guests use
+        free-form only. Do not send both id and address.
       properties:
         delivery_address:
           type: object
@@ -315,7 +319,11 @@ components:
           description: |
             Free-form (ADR-015); yc-shipping matches its country_code and
             fields to the shop's zones. Replaces an earlier address and its
-            options.
+            options. For customers, saved to the address book (max 5).
+        delivery_address_id:
+          type: string
+          format: uuid
+          description: Customer address-book id (issue #32). Resolves to JSON then quotes.
         shipping_option_id: { type: string, maxLength: 64, description: Defaults to the cheapest option. }
     GuestContact:
       type: object
@@ -498,6 +506,10 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ShippingOption' }
         selected_shipping_option_id: { type: string }
+        delivery_address_id:
+          type: string
+          format: uuid
+          description: Bound customer address-book id when set (issue #32).
         delivery_slot: { $ref: '#/components/schemas/DeliverySlot' }
         totals: { $ref: '#/components/schemas/Totals' }
         tax_inclusive: { type: boolean, description: 'Show gross prices when true, net otherwise.' }
@@ -535,6 +547,7 @@ components:
             user_id: { type: string }
             guest_contact: { $ref: '#/components/schemas/GuestContact' }
             delivery_address: { type: object, additionalProperties: true }
+            delivery_address_id: { type: string, format: uuid }
             compensation_log:
               type: array
               items: { $ref: '#/components/schemas/CompensationEntry' }

@@ -121,6 +121,7 @@ type Order struct {
 	UserType             UserType
 	GuestContact         *GuestContact
 	DeliveryAddress      map[string]any
+	DeliveryAddressID    string // optional book entry id (issue #32); empty for guests
 	BillingAddress       *BillingAddress
 	SellerInvoice        *SellerInvoice
 	DeliverySlot         *DeliverySlot

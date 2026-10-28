@@ -20,7 +20,8 @@ import (
 type Orders struct{}
 
 const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_id, user_type, guest_contact,
-	delivery_address, billing_address, seller_invoice, delivery_slot, requires_shipping, status, items,
+	delivery_address, COALESCE(delivery_address_id::text, ''), billing_address, seller_invoice, delivery_slot,
+	requires_shipping, status, items,
 	pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor, total_minor,
 	COALESCE(payment_transaction_id::text, ''), COALESCE(payment_gateway, ''), refunded_minor, created_at,
 	updated_at, placed_at, COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''),
@@ -33,7 +34,8 @@ func scanOrder(r pgx.Row) (domain.Order, error) {
 	var guest, address, billing, seller, slot, items []byte
 	sh := &o.Shipment
 	err := r.Scan(&o.ID, &o.OrderNumber, &o.CheckoutSessionID, &o.UserID, &userType, &guest,
-		&address, &billing, &seller, &slot, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot,
+		&address, &o.DeliveryAddressID, &billing, &seller, &slot, &o.RequiresShipping, &status, &items,
+		&o.PricingSnapshot, &o.ShippingSnapshot,
 		&o.Currency, &o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
 		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt,
 		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt,
@@ -152,13 +154,14 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 		shipping = o.ShippingSnapshot
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders (id, tenant_id, checkout_session_id, user_id, user_type, guest_contact,
-			source_email, delivery_address, billing_address, seller_invoice, delivery_slot, requires_shipping, status,
+			source_email, delivery_address, delivery_address_id, billing_address, seller_invoice, delivery_slot,
+			requires_shipping, status,
 			items, pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor,
 			total_minor, payment_transaction_id, payment_gateway, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-			$20, $21, NULLIF($22, '')::uuid, NULLIF($23, ''), $24, $24)`,
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, NULLIF($9, '')::uuid, $10, $11, $12, $13, $14, $15, $16, $17,
+			$18, $19, $20, $21, $22, NULLIF($23, '')::uuid, NULLIF($24, ''), $25, $25)`,
 		o.ID, tenantID, o.CheckoutSessionID, o.UserID, string(o.UserType), guest,
-		o.SourceEmail(), address, billing, seller, slot, o.RequiresShipping, string(o.Status), items,
+		o.SourceEmail(), address, o.DeliveryAddressID, billing, seller, slot, o.RequiresShipping, string(o.Status), items,
 		[]byte(o.PricingSnapshot), shipping, o.Currency, o.ItemsTotalMinor, o.ShippingMinor, o.TaxTotalMinor,
 		o.TotalMinor, o.PaymentTransactionID, o.PaymentGateway, o.CreatedAt)
 	if err != nil {
@@ -308,3 +311,28 @@ func (r Orders) ListOrders(ctx context.Context, tx pgx.Tx, tenantID string, f Or
 }
 
 func validUUID(s string) bool { return uuid.Validate(s) == nil }
+
+// OpenOrderIDsForAddress returns order ids that reference addressID and are
+// still Status.Open (issue #32 active-order lock).
+func (Orders) OpenOrderIDsForAddress(ctx context.Context, tx pgx.Tx, tenantID, addressID string) ([]string, error) {
+	if !validUUID(addressID) {
+		return nil, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, status FROM orders
+		WHERE tenant_id = $1 AND delivery_address_id = $2::uuid`, tenantID, addressID)
+	if err != nil {
+		return nil, fmt.Errorf("orders for address: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
+			return nil, fmt.Errorf("orders for address: %w", err)
+		}
+		if domain.Status(status).Open() {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}

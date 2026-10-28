@@ -16,6 +16,17 @@ import (
 // maxCustomerIDs bounds the user IDs CustomerOrders looks up at once.
 const maxCustomerIDs = 10
 
+// AddressInUse reports whether addressID is referenced by any Status.Open()
+// order in the caller's tenant (issue #32).
+func (s *Service) AddressInUse(ctx context.Context, addressID string) (inUse bool, orderIDs []string, err error) {
+	err = s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		orderIDs, err = s.repo.OpenOrderIDsForAddress(ctx, tx, tenantID, addressID)
+		return err
+	})
+	return len(orderIDs) > 0, orderIDs, err
+}
+
 // CustomerOrders returns the orders of any of userIDs (a user and its
 // pseudonym) and how many are unfinished: in progress, or with a return
 // awaiting a decision. yc-identity refuses a deletion while any are; for

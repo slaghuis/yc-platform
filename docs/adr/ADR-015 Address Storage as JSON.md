@@ -79,3 +79,9 @@ The frontend is responsible for collecting the superset of fields needed for the
 **Customer and seller billing for tax invoices is an exception:** the platform validates a typed `BillingAddress` / `InvoiceAddress` schema (company name and VAT number optional; street and number, town/city, and postal code required when a billing object is present; suburb optional; `country_code` defaults to `ZA`). That schema is stored on the customer profile (yc-identity), optionally on the tenant as the seller `invoice_address`, and snapshotted onto the order at place time so later edits do not rewrite invoices.
 
 This does not change ADR-015 for delivery, carrier mapping, or tax jurisdiction resolution from `delivery_address.country_code`.
+
+### 2026-10-28 — Customer delivery address book (issue #32)
+
+**Delivery documents remain free-form JSON** under the rules above.
+
+yc-identity may store a **labelled address book** of those JSON documents per customer (soft-CRUD, max five active, edit = soft-retire + insert). Checkout and orders continue to quote and snapshot the JSON; orders also store optional `delivery_address_id` so the book can refuse update/retire while `Status.Open()` orders reference that id. Guests have no book. Billing remains the structured exception from the prior amendment.

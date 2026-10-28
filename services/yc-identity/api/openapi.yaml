@@ -281,6 +281,90 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
 
+  /me/addresses:
+    get:
+      summary: The caller's delivery address book
+      description: |
+        Customers only. Active addresses by default; optional include_deleted
+        for the owner's audit view (issue #32). At most five active entries.
+      operationId: listMyAddresses
+      parameters:
+        - name: include_deleted
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The address book.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddressList' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Add a delivery address
+      operationId: createMyAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryAddressInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /me/addresses/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AddressID'
+    get:
+      summary: One of the caller's delivery addresses
+      operationId: getMyAddress
+      responses:
+        '200':
+          description: The address (including soft-deleted).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Edit a delivery address (soft-retire + insert)
+      description: |
+        Marks the current row deleted and creates a successor. 409 when an
+        open order references the address (Status.Open).
+      operationId: putMyAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryAddressInput' }
+      responses:
+        '200':
+          description: The successor address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Soft-retire a delivery address
+      operationId: deleteMyAddress
+      responses:
+        '204': { description: Retired. }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
   /admin/users:
     get:
       summary: List users
@@ -417,6 +501,43 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  /admin/users/{id}/addresses:
+    parameters:
+      - $ref: '#/components/parameters/UserID'
+    get:
+      summary: A customer's delivery address book (shop_admin, read-only)
+      description: |
+        Tenant-scoped. Active addresses by default (issue #32).
+      operationId: listUserAddresses
+      parameters:
+        - name: include_deleted
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The customer's addresses.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddressList' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/users/{id}/addresses/{address_id}:
+    parameters:
+      - $ref: '#/components/parameters/UserID'
+      - $ref: '#/components/parameters/AddressIDPath'
+    get:
+      summary: One customer delivery address (shop_admin, read-only)
+      operationId: getUserAddress
+      responses:
+        '200':
+          description: The address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
   /sysadmin/invitations:
     get:
       summary: List invitations (system_admin)
@@ -539,6 +660,45 @@ paths:
               schema: { $ref: '#/components/schemas/BillingAddress' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /internal/users/{id}/addresses:
+    parameters:
+      - $ref: '#/components/parameters/UserID'
+    post:
+      summary: Create a delivery address (service)
+      description: |
+        Checkout auto-save / new address at shipping (issue #32). Same
+        validation and max-5 rules as POST /me/addresses.
+      operationId: createUserAddress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryAddressInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/users/{id}/addresses/{address_id}:
+    parameters:
+      - $ref: '#/components/parameters/UserID'
+      - $ref: '#/components/parameters/AddressIDPath'
+    get:
+      summary: An active delivery address (service)
+      description: For yc-checkout when resolving delivery_address_id (issue #32).
+      operationId: getInternalUserAddress
+      responses:
+        '200':
+          description: The active address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryAddress' }
+        '404': { $ref: '#/components/responses/Problem' }
+
   /internal/validate-token:
     post:
       summary: Validate an access token (called by yc-gateway)
@@ -601,6 +761,16 @@ components:
       schema: { type: string, enum: [google, facebook] }
     UserID:
       name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AddressID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AddressIDPath:
+      name: address_id
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -813,6 +983,39 @@ components:
           minLength: 2
           maxLength: 2
           description: ISO 3166-1 alpha-2; defaults to ZA when omitted.
+    DeliveryAddressInput:
+      type: object
+      description: Create or succession-edit body for the delivery address book (issue #32).
+      required: [address]
+      additionalProperties: false
+      properties:
+        label: { type: string, maxLength: 64 }
+        address:
+          type: object
+          additionalProperties: true
+          description: Free-form delivery document (ADR-015).
+        is_default: { type: boolean, description: When true, becomes the customer's default. }
+    DeliveryAddress:
+      type: object
+      required: [id, address, is_default, created_at, updated_at]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        address: { type: object, additionalProperties: true }
+        is_default: { type: boolean }
+        deleted_at: { type: string, format: date-time }
+        replaced_by_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DeliveryAddressList:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryAddress' }
     UserList:
       type: object
       required: [items, page]

@@ -56,6 +56,8 @@ type Participants interface {
 	GetSlot(ctx context.Context, slotID string) (integration.Slot, error)
 	BookSlot(ctx context.Context, slotID, bookingKey string) error
 	ReleaseSlot(ctx context.Context, slotID, bookingKey string) error
+	GetDeliveryAddress(ctx context.Context, userID, addressID string) (integration.DeliveryAddress, error)
+	CreateDeliveryAddress(ctx context.Context, userID string, address map[string]any) (integration.DeliveryAddress, error)
 }
 
 // Settings tune sessions and the saga.

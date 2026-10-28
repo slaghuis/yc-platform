@@ -189,6 +189,14 @@ type AcceptReturnInput struct {
 	RefundShipping *bool `json:"refund_shipping,omitempty"`
 }
 
+// AddressInUse defines model for AddressInUse.
+type AddressInUse struct {
+	InUse bool `json:"in_use"`
+
+	// OrderIds Open orders that reference the address (may be truncated).
+	OrderIds *[]openapi_types.UUID `json:"order_ids,omitempty"`
+}
+
 // BillingAddress Structured SA billing for tax invoices (issue
 type BillingAddress struct {
 	CompanyName     *string `json:"company_name,omitempty"`
@@ -215,6 +223,10 @@ type CreateOrderInput struct {
 
 	// DeliveryAddress Free-form address (ADR-015); required with physical items.
 	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
+
+	// DeliveryAddressID Optional customer address-book id (issue #32). Snapshotted with
+	// delivery_address; guests omit it.
+	DeliveryAddressID *openapi_types.UUID `json:"delivery_address_id,omitempty"`
 
 	// DeliverySlot Chosen delivery window from checkout (issue
 	DeliverySlot    *DeliverySlot    `json:"delivery_slot,omitempty"`
@@ -297,19 +309,22 @@ type Order struct {
 	CheckoutSessionID openapi_types.UUID      `json:"checkout_session_id"`
 	CreatedAt         time.Time               `json:"created_at"`
 	DeliveryAddress   *map[string]interface{} `json:"delivery_address,omitempty"`
-	DeliverySlot      *DeliverySlot           `json:"delivery_slot,omitempty"`
-	GuestContact      *GuestContact           `json:"guest_contact,omitempty"`
-	History           *[]HistoryEntry         `json:"history,omitempty"`
-	Items             []OrderItem             `json:"items"`
-	ItemsTotal        Money                   `json:"items_total"`
-	OrderID           openapi_types.UUID      `json:"order_id"`
-	OrderNumber       *string                 `json:"order_number,omitempty"`
-	Payment           *Payment                `json:"payment,omitempty"`
-	PlacedAt          *time.Time              `json:"placed_at,omitempty"`
-	Refunded          Money                   `json:"refunded"`
-	Refunds           *[]Refund               `json:"refunds,omitempty"`
-	RequiresShipping  bool                    `json:"requires_shipping"`
-	Returns           *[]Return               `json:"returns,omitempty"`
+
+	// DeliveryAddressID Book entry used at checkout (issue
+	DeliveryAddressID *openapi_types.UUID `json:"delivery_address_id,omitempty"`
+	DeliverySlot      *DeliverySlot       `json:"delivery_slot,omitempty"`
+	GuestContact      *GuestContact       `json:"guest_contact,omitempty"`
+	History           *[]HistoryEntry     `json:"history,omitempty"`
+	Items             []OrderItem         `json:"items"`
+	ItemsTotal        Money               `json:"items_total"`
+	OrderID           openapi_types.UUID  `json:"order_id"`
+	OrderNumber       *string             `json:"order_number,omitempty"`
+	Payment           *Payment            `json:"payment,omitempty"`
+	PlacedAt          *time.Time          `json:"placed_at,omitempty"`
+	Refunded          Money               `json:"refunded"`
+	Refunds           *[]Refund           `json:"refunds,omitempty"`
+	RequiresShipping  bool                `json:"requires_shipping"`
+	Returns           *[]Return           `json:"returns,omitempty"`
 
 	// SellerInvoice Shop identity snapshotted at order place (issue
 	SellerInvoice *SellerInvoice `json:"seller_invoice,omitempty"`
@@ -557,6 +572,11 @@ type CreateOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// AddressInUseParams defines parameters for AddressInUse.
+type AddressInUseParams struct {
+	AddressID openapi_types.UUID `form:"address_id" json:"address_id"`
+}
+
 // AbandonOrderParams defines parameters for AbandonOrder.
 type AbandonOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -647,6 +667,9 @@ type ServerInterface interface {
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams)
+	// AddressInUse Whether a delivery address book id is on an open order
+	// (GET /internal/orders/address-in-use)
+	AddressInUse(w http.ResponseWriter, r *http.Request, params AddressInUseParams)
 	// GetInternalOrder Get an order, whatever its status
 	// (GET /internal/orders/{id})
 	GetInternalOrder(w http.ResponseWriter, r *http.Request, id OrderID)
@@ -737,6 +760,12 @@ func (_ Unimplemented) ListCustomerOrders(w http.ResponseWriter, r *http.Request
 // CreateOrder Create a pending order
 // (POST /internal/orders)
 func (_ Unimplemented) CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AddressInUse Whether a delivery address book id is on an open order
+// (GET /internal/orders/address-in-use)
+func (_ Unimplemented) AddressInUse(w http.ResponseWriter, r *http.Request, params AddressInUseParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1174,6 +1203,39 @@ func (siw *ServerInterfaceWrapper) CreateOrder(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateOrder(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddressInUse operation middleware
+func (siw *ServerInterfaceWrapper) AddressInUse(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddressInUseParams
+
+	// ------------- Required query parameter "address_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "address_id", r.URL.Query(), &params.AddressID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "address_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "address_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddressInUse(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1708,6 +1770,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/customer-orders", wrapper.ListCustomerOrders)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/orders/address-in-use", wrapper.AddressInUse)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/orders/{id}/confirm", wrapper.ConfirmOrder)
@@ -2331,6 +2396,44 @@ func (response CreateOrder409ApplicationProblemPlusJSONResponse) VisitCreateOrde
 	return err
 }
 
+type AddressInUseRequestObject struct {
+	Params AddressInUseParams
+}
+
+type AddressInUseResponseObject interface {
+	VisitAddressInUseResponse(w http.ResponseWriter) error
+}
+
+type AddressInUse200JSONResponse AddressInUse
+
+func (response AddressInUse200JSONResponse) VisitAddressInUseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddressInUse400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response AddressInUse400ApplicationProblemPlusJSONResponse) VisitAddressInUseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetInternalOrderRequestObject struct {
 	ID OrderID `json:"id"`
 }
@@ -2824,6 +2927,9 @@ type StrictServerInterface interface {
 	// CreateOrder Create a pending order
 	// (POST /internal/orders)
 	CreateOrder(ctx context.Context, request CreateOrderRequestObject) (CreateOrderResponseObject, error)
+	// AddressInUse Whether a delivery address book id is on an open order
+	// (GET /internal/orders/address-in-use)
+	AddressInUse(ctx context.Context, request AddressInUseRequestObject) (AddressInUseResponseObject, error)
 	// GetInternalOrder Get an order, whatever its status
 	// (GET /internal/orders/{id})
 	GetInternalOrder(ctx context.Context, request GetInternalOrderRequestObject) (GetInternalOrderResponseObject, error)
@@ -3187,6 +3293,32 @@ func (sh *strictHandler) CreateOrder(w http.ResponseWriter, r *http.Request, par
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateOrderResponseObject); ok {
 		if err := validResponse.VisitCreateOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddressInUse operation middleware
+func (sh *strictHandler) AddressInUse(w http.ResponseWriter, r *http.Request, params AddressInUseParams) {
+	var request AddressInUseRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddressInUse(ctx, request.(AddressInUseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddressInUse")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddressInUseResponseObject); ok {
+		if err := validResponse.VisitAddressInUseResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

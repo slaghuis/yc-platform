@@ -215,6 +215,8 @@ func (s *Service) requireQuote(sess domain.Session) error {
 // the named option, or the cheapest, is selected. Without an address the
 // option is chosen from the current address's options. An address the
 // shop does not ship to is 409 and leaves the session as it was.
+// Customers may pass delivery_address_id from their book, or free-form
+// JSON which is saved to the book (issue #32). Guests use JSON only.
 func (s *Service) SelectShipping(ctx context.Context, id string, in domain.ShippingChoice) (domain.Session, error) {
 	sess, err := s.Session(ctx, id)
 	if err != nil {
@@ -226,14 +228,48 @@ func (s *Service) SelectShipping(ctx context.Context, id string, in domain.Shipp
 	if !sess.RequiresShipping {
 		return sess, ycerrors.Validation().Field("delivery_address", "invalid", "Digital-only checkouts are not shipped").Build()
 	}
-	quoted := in.DeliveryAddress != nil
+	if in.DeliveryAddressID != "" && in.DeliveryAddress != nil {
+		return sess, ycerrors.Validation().
+			Field("delivery_address_id", "invalid", "Give either delivery_address_id or delivery_address, not both").
+			Build()
+	}
+
+	addressID := in.DeliveryAddressID
+	address := in.DeliveryAddress
+	if addressID != "" {
+		if sess.UserType != domain.UserCustomer {
+			return sess, ycerrors.Validation().
+				Field("delivery_address_id", "invalid", "Only customers can use a saved delivery address").
+				Build()
+		}
+		book, err := s.p.GetDeliveryAddress(ctx, sess.UserID, addressID)
+		if err != nil {
+			if r, ok := integration.Rejected(err); ok && r.Status == http.StatusNotFound {
+				return sess, ycerrors.NotFound("Address", addressID)
+			}
+			return sess, err
+		}
+		address = book.Address
+	} else if address != nil && sess.UserType == domain.UserCustomer {
+		created, err := s.p.CreateDeliveryAddress(ctx, sess.UserID, address)
+		if err != nil {
+			if r, ok := integration.Rejected(err); ok && r.Status == http.StatusBadRequest {
+				return sess, ycerrors.Validation().Field("delivery_address", "invalid", r.Problem.Detail).Wrap(err)
+			}
+			return sess, err
+		}
+		addressID = created.ID
+		address = created.Address
+	}
+
+	quoted := address != nil
 	var options []domain.ShippingOption
 	switch {
 	case quoted:
-		if v := domain.ValidateAddress(in.DeliveryAddress); len(v) > 0 {
+		if v := domain.ValidateAddress(address); len(v) > 0 {
 			return sess, validationError(v)
 		}
-		if options, err = s.quoteShipping(ctx, sess, in.DeliveryAddress); err != nil {
+		if options, err = s.quoteShipping(ctx, sess, address); err != nil {
 			return sess, err
 		}
 	case in.OptionID == "":
@@ -249,7 +285,7 @@ func (s *Service) SelectShipping(ctx context.Context, id string, in domain.Shipp
 		}
 		ok := false
 		if quoted {
-			ok = sess.ShipTo(in.DeliveryAddress, options, in.OptionID)
+			ok = sess.ShipTo(address, options, in.OptionID, addressID)
 		} else {
 			ok = sess.SelectShipping(in.OptionID)
 		}
@@ -263,6 +299,7 @@ func (s *Service) SelectShipping(ctx context.Context, id string, in domain.Shipp
 		}
 		if err := s.history(ctx, tx, tenantID, sess.ID, "shipping_selected", "", "", map[string]any{
 			"shipping_option_id": sess.ShippingOptionID, "options": len(sess.ShippingOptions), "address_quoted": quoted,
+			"delivery_address_id": sess.DeliveryAddressID,
 		}); err != nil {
 			return err
 		}

@@ -20,6 +20,9 @@ type Orders interface {
 	// OpenOrders counts the user's orders and returns that are not yet
 	// finished. The tenant comes from ctx.
 	OpenOrders(ctx context.Context, userID string) (int, error)
+	// AddressInUse reports whether addressID is on any Status.Open() order
+	// (issue #32). The tenant comes from ctx.
+	AddressInUse(ctx context.Context, addressID string) (bool, error)
 }
 
 // Who asked for a deletion (identity.user.deleted.v1 requested_by).
@@ -100,6 +103,9 @@ func (s *Service) deleteUser(ctx context.Context, tenantID, id, requestedBy stri
 			return err
 		}
 		if err := s.users.Anonymise(ctx, tx, id, now); err != nil {
+			return err
+		}
+		if err := s.addresses.DeleteAll(ctx, tx, id); err != nil {
 			return err
 		}
 		if err := s.billing.Delete(ctx, tx, id); err != nil {

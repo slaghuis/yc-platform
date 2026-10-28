@@ -289,6 +289,33 @@ type CreateInvitationRequest struct {
 // CreateInvitationRequestRole defines model for CreateInvitationRequest.Role.
 type CreateInvitationRequestRole string
 
+// DeliveryAddress defines model for DeliveryAddress.
+type DeliveryAddress struct {
+	Address      map[string]interface{} `json:"address"`
+	CreatedAt    time.Time              `json:"created_at"`
+	DeletedAt    *time.Time             `json:"deleted_at,omitempty"`
+	ID           openapi_types.UUID     `json:"id"`
+	IsDefault    bool                   `json:"is_default"`
+	Label        *string                `json:"label,omitempty"`
+	ReplacedByID *openapi_types.UUID    `json:"replaced_by_id,omitempty"`
+	UpdatedAt    time.Time              `json:"updated_at"`
+}
+
+// DeliveryAddressInput Create or succession-edit body for the delivery address book (issue
+type DeliveryAddressInput struct {
+	// Address Free-form delivery document (ADR-015).
+	Address map[string]interface{} `json:"address"`
+
+	// IsDefault When true
+	IsDefault *bool   `json:"is_default,omitempty"`
+	Label     *string `json:"label,omitempty"`
+}
+
+// DeliveryAddressList defines model for DeliveryAddressList.
+type DeliveryAddressList struct {
+	Items []DeliveryAddress `json:"items"`
+}
+
 // Invitation defines model for Invitation.
 type Invitation struct {
 	AcceptedUserID *openapi_types.UUID `json:"accepted_user_id,omitempty"`
@@ -474,6 +501,12 @@ type UserList struct {
 	Page PageInfo `json:"page"`
 }
 
+// AddressID defines model for AddressID.
+type AddressID = openapi_types.UUID
+
+// AddressIDPath defines model for AddressIDPath.
+type AddressIDPath = openapi_types.UUID
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -498,6 +531,11 @@ type ListUsersParams struct {
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListUserAddressesParams defines parameters for ListUserAddresses.
+type ListUserAddressesParams struct {
+	IncludeDeleted *bool `form:"include_deleted,omitempty" json:"include_deleted,omitempty"`
+}
+
 // IssueServiceTokenJSONBody defines parameters for IssueServiceToken.
 type IssueServiceTokenJSONBody struct {
 	ClientID     string `json:"client_id"`
@@ -507,6 +545,11 @@ type IssueServiceTokenJSONBody struct {
 // ValidateTokenJSONBody defines parameters for ValidateToken.
 type ValidateTokenJSONBody struct {
 	Token string `json:"token"`
+}
+
+// ListMyAddressesParams defines parameters for ListMyAddresses.
+type ListMyAddressesParams struct {
+	IncludeDeleted *bool `form:"include_deleted,omitempty" json:"include_deleted,omitempty"`
 }
 
 // CompleteOAuthParamsProvider defines parameters for CompleteOAuth.
@@ -537,6 +580,9 @@ type SuspendUserJSONRequestBody = SuspendRequest
 // IssueServiceTokenJSONRequestBody defines body for IssueServiceToken for application/json ContentType.
 type IssueServiceTokenJSONRequestBody IssueServiceTokenJSONBody
 
+// CreateUserAddressJSONRequestBody defines body for CreateUserAddress for application/json ContentType.
+type CreateUserAddressJSONRequestBody = DeliveryAddressInput
+
 // ValidateTokenJSONRequestBody defines body for ValidateToken for application/json ContentType.
 type ValidateTokenJSONRequestBody ValidateTokenJSONBody
 
@@ -548,6 +594,12 @@ type LoginJSONRequestBody = LoginRequest
 
 // LogoutJSONRequestBody defines body for Logout for application/json ContentType.
 type LogoutJSONRequestBody = LogoutRequest
+
+// CreateMyAddressJSONRequestBody defines body for CreateMyAddress for application/json ContentType.
+type CreateMyAddressJSONRequestBody = DeliveryAddressInput
+
+// PutMyAddressJSONRequestBody defines body for PutMyAddress for application/json ContentType.
+type PutMyAddressJSONRequestBody = DeliveryAddressInput
 
 // PutMyBillingJSONRequestBody defines body for PutMyBilling for application/json ContentType.
 type PutMyBillingJSONRequestBody = BillingAddress
@@ -584,6 +636,12 @@ type ServerInterface interface {
 	// GetUser Get a user
 	// (GET /admin/users/{id})
 	GetUser(w http.ResponseWriter, r *http.Request, id UserID)
+	// ListUserAddresses A customer's delivery address book (shop_admin, read-only)
+	// (GET /admin/users/{id}/addresses)
+	ListUserAddresses(w http.ResponseWriter, r *http.Request, id UserID, params ListUserAddressesParams)
+	// GetUserAddress One customer delivery address (shop_admin, read-only)
+	// (GET /admin/users/{id}/addresses/{address_id})
+	GetUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath)
 	// DemoteUser Demote a shop_admin to customer (system_admin)
 	// (POST /admin/users/{id}/demote)
 	DemoteUser(w http.ResponseWriter, r *http.Request, id UserID)
@@ -599,6 +657,12 @@ type ServerInterface interface {
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(w http.ResponseWriter, r *http.Request)
+	// CreateUserAddress Create a delivery address (service)
+	// (POST /internal/users/{id}/addresses)
+	CreateUserAddress(w http.ResponseWriter, r *http.Request, id UserID)
+	// GetInternalUserAddress An active delivery address (service)
+	// (GET /internal/users/{id}/addresses/{address_id})
+	GetInternalUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath)
 	// GetUserBilling A customer's billing address (service)
 	// (GET /internal/users/{id}/billing)
 	GetUserBilling(w http.ResponseWriter, r *http.Request, id UserID)
@@ -620,6 +684,21 @@ type ServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// ListMyAddresses The caller's delivery address book
+	// (GET /me/addresses)
+	ListMyAddresses(w http.ResponseWriter, r *http.Request, params ListMyAddressesParams)
+	// CreateMyAddress Add a delivery address
+	// (POST /me/addresses)
+	CreateMyAddress(w http.ResponseWriter, r *http.Request)
+	// DeleteMyAddress Soft-retire a delivery address
+	// (DELETE /me/addresses/{id})
+	DeleteMyAddress(w http.ResponseWriter, r *http.Request, id AddressID)
+	// GetMyAddress One of the caller's delivery addresses
+	// (GET /me/addresses/{id})
+	GetMyAddress(w http.ResponseWriter, r *http.Request, id AddressID)
+	// PutMyAddress Edit a delivery address (soft-retire + insert)
+	// (PUT /me/addresses/{id})
+	PutMyAddress(w http.ResponseWriter, r *http.Request, id AddressID)
 	// DeleteMyBilling Clear the caller's billing address
 	// (DELETE /me/billing)
 	DeleteMyBilling(w http.ResponseWriter, r *http.Request)
@@ -686,6 +765,18 @@ func (_ Unimplemented) GetUser(w http.ResponseWriter, r *http.Request, id UserID
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListUserAddresses A customer's delivery address book (shop_admin, read-only)
+// (GET /admin/users/{id}/addresses)
+func (_ Unimplemented) ListUserAddresses(w http.ResponseWriter, r *http.Request, id UserID, params ListUserAddressesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetUserAddress One customer delivery address (shop_admin, read-only)
+// (GET /admin/users/{id}/addresses/{address_id})
+func (_ Unimplemented) GetUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // DemoteUser Demote a shop_admin to customer (system_admin)
 // (POST /admin/users/{id}/demote)
 func (_ Unimplemented) DemoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
@@ -713,6 +804,18 @@ func (_ Unimplemented) SuspendUser(w http.ResponseWriter, r *http.Request, id Us
 // IssueServiceToken Issue a service token (ADR-021)
 // (POST /internal/service-token)
 func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateUserAddress Create a delivery address (service)
+// (POST /internal/users/{id}/addresses)
+func (_ Unimplemented) CreateUserAddress(w http.ResponseWriter, r *http.Request, id UserID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetInternalUserAddress An active delivery address (service)
+// (GET /internal/users/{id}/addresses/{address_id})
+func (_ Unimplemented) GetInternalUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -755,6 +858,36 @@ func (_ Unimplemented) DeleteMe(w http.ResponseWriter, r *http.Request) {
 // GetMe The caller's own user
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListMyAddresses The caller's delivery address book
+// (GET /me/addresses)
+func (_ Unimplemented) ListMyAddresses(w http.ResponseWriter, r *http.Request, params ListMyAddressesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateMyAddress Add a delivery address
+// (POST /me/addresses)
+func (_ Unimplemented) CreateMyAddress(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteMyAddress Soft-retire a delivery address
+// (DELETE /me/addresses/{id})
+func (_ Unimplemented) DeleteMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetMyAddress One of the caller's delivery addresses
+// (GET /me/addresses/{id})
+func (_ Unimplemented) GetMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutMyAddress Edit a delivery address (soft-retire + insert)
+// (PUT /me/addresses/{id})
+func (_ Unimplemented) PutMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -988,6 +1121,83 @@ func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// ListUserAddresses operation middleware
+func (siw *ServerInterfaceWrapper) ListUserAddresses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListUserAddressesParams
+
+	// ------------- Optional query parameter "include_deleted" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_deleted", r.URL.Query(), &params.IncludeDeleted, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include_deleted"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_deleted", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUserAddresses(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserAddress operation middleware
+func (siw *ServerInterfaceWrapper) GetUserAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "address_id" -------------
+	var addressID AddressIDPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "address_id", chi.URLParam(r, "address_id"), &addressID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserAddress(w, r, id, addressID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DemoteUser operation middleware
 func (siw *ServerInterfaceWrapper) DemoteUser(w http.ResponseWriter, r *http.Request) {
 
@@ -1106,6 +1316,67 @@ func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// CreateUserAddress operation middleware
+func (siw *ServerInterfaceWrapper) CreateUserAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUserAddress(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInternalUserAddress operation middleware
+func (siw *ServerInterfaceWrapper) GetInternalUserAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "address_id" -------------
+	var addressID AddressIDPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "address_id", chi.URLParam(r, "address_id"), &addressID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInternalUserAddress(w, r, id, addressID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserBilling operation middleware
 func (siw *ServerInterfaceWrapper) GetUserBilling(w http.ResponseWriter, r *http.Request) {
 
@@ -1207,6 +1478,131 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMyAddresses operation middleware
+func (siw *ServerInterfaceWrapper) ListMyAddresses(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListMyAddressesParams
+
+	// ------------- Optional query parameter "include_deleted" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_deleted", r.URL.Query(), &params.IncludeDeleted, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include_deleted"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_deleted", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMyAddresses(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMyAddress operation middleware
+func (siw *ServerInterfaceWrapper) CreateMyAddress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMyAddress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMyAddress operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMyAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AddressID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMyAddress(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyAddress operation middleware
+func (siw *ServerInterfaceWrapper) GetMyAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AddressID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyAddress(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutMyAddress operation middleware
+func (siw *ServerInterfaceWrapper) PutMyAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AddressID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutMyAddress(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1705,6 +2101,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/me/billing", wrapper.PutMyBilling)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/addresses", wrapper.ListMyAddresses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/me/addresses", wrapper.CreateMyAddress)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/me/addresses/{id}", wrapper.DeleteMyAddress)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/addresses/{id}", wrapper.GetMyAddress)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/addresses/{id}", wrapper.PutMyAddress)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/users", wrapper.ListUsers)
 	})
 	r.Group(func(r chi.Router) {
@@ -1726,6 +2137,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/admin/users/{id}/demote", wrapper.DemoteUser)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/users/{id}/addresses", wrapper.ListUserAddresses)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/users/{id}/addresses/{address_id}", wrapper.GetUserAddress)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sysadmin/invitations", wrapper.ListInvitations)
 	})
 	r.Group(func(r chi.Router) {
@@ -1742,6 +2159,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/users/{id}/billing", wrapper.GetUserBilling)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/users/{id}/addresses", wrapper.CreateUserAddress)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/users/{id}/addresses/{address_id}", wrapper.GetInternalUserAddress)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/validate-token", wrapper.ValidateToken)
@@ -1908,6 +2331,112 @@ type GetUser404ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetUser404ApplicationProblemPlusJSONResponse) VisitGetUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserAddressesRequestObject struct {
+	ID     UserID `json:"id"`
+	Params ListUserAddressesParams
+}
+
+type ListUserAddressesResponseObject interface {
+	VisitListUserAddressesResponse(w http.ResponseWriter) error
+}
+
+type ListUserAddresses200JSONResponse DeliveryAddressList
+
+func (response ListUserAddresses200JSONResponse) VisitListUserAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserAddresses403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListUserAddresses403ApplicationProblemPlusJSONResponse) VisitListUserAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUserAddresses404ApplicationProblemPlusJSONResponse Problem
+
+func (response ListUserAddresses404ApplicationProblemPlusJSONResponse) VisitListUserAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserAddressRequestObject struct {
+	ID        UserID        `json:"id"`
+	AddressID AddressIDPath `json:"address_id"`
+}
+
+type GetUserAddressResponseObject interface {
+	VisitGetUserAddressResponse(w http.ResponseWriter) error
+}
+
+type GetUserAddress200JSONResponse DeliveryAddress
+
+func (response GetUserAddress200JSONResponse) VisitGetUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserAddress403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetUserAddress403ApplicationProblemPlusJSONResponse) VisitGetUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserAddress404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetUserAddress404ApplicationProblemPlusJSONResponse) VisitGetUserAddressResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -2233,6 +2762,98 @@ func (response IssueServiceToken401ApplicationProblemPlusJSONResponse) VisitIssu
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserAddressRequestObject struct {
+	ID   UserID `json:"id"`
+	Body *CreateUserAddressJSONRequestBody
+}
+
+type CreateUserAddressResponseObject interface {
+	VisitCreateUserAddressResponse(w http.ResponseWriter) error
+}
+
+type CreateUserAddress201JSONResponse DeliveryAddress
+
+func (response CreateUserAddress201JSONResponse) VisitCreateUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserAddress400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateUserAddress400ApplicationProblemPlusJSONResponse) VisitCreateUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateUserAddress404ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateUserAddress404ApplicationProblemPlusJSONResponse) VisitCreateUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalUserAddressRequestObject struct {
+	ID        UserID        `json:"id"`
+	AddressID AddressIDPath `json:"address_id"`
+}
+
+type GetInternalUserAddressResponseObject interface {
+	VisitGetInternalUserAddressResponse(w http.ResponseWriter) error
+}
+
+type GetInternalUserAddress200JSONResponse DeliveryAddress
+
+func (response GetInternalUserAddress200JSONResponse) VisitGetInternalUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalUserAddress404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetInternalUserAddress404ApplicationProblemPlusJSONResponse) VisitGetInternalUserAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2611,6 +3232,359 @@ func (response GetMe404ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyAddressesRequestObject struct {
+	Params ListMyAddressesParams
+}
+
+type ListMyAddressesResponseObject interface {
+	VisitListMyAddressesResponse(w http.ResponseWriter) error
+}
+
+type ListMyAddresses200JSONResponse DeliveryAddressList
+
+func (response ListMyAddresses200JSONResponse) VisitListMyAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyAddresses401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListMyAddresses401ApplicationProblemPlusJSONResponse) VisitListMyAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyAddresses403ApplicationProblemPlusJSONResponse Problem
+
+func (response ListMyAddresses403ApplicationProblemPlusJSONResponse) VisitListMyAddressesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyAddressRequestObject struct {
+	Body *CreateMyAddressJSONRequestBody
+}
+
+type CreateMyAddressResponseObject interface {
+	VisitCreateMyAddressResponse(w http.ResponseWriter) error
+}
+
+type CreateMyAddress201JSONResponse DeliveryAddress
+
+func (response CreateMyAddress201JSONResponse) VisitCreateMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyAddress400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMyAddress400ApplicationProblemPlusJSONResponse) VisitCreateMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyAddress401ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateMyAddress401ApplicationProblemPlusJSONResponse) VisitCreateMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMyAddress403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateMyAddress403ApplicationProblemPlusJSONResponse) VisitCreateMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyAddressRequestObject struct {
+	ID AddressID `json:"id"`
+}
+
+type DeleteMyAddressResponseObject interface {
+	VisitDeleteMyAddressResponse(w http.ResponseWriter) error
+}
+
+type DeleteMyAddress204Response struct {
+}
+
+func (response DeleteMyAddress204Response) VisitDeleteMyAddressResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMyAddress401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteMyAddress401ApplicationProblemPlusJSONResponse) VisitDeleteMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyAddress403ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteMyAddress403ApplicationProblemPlusJSONResponse) VisitDeleteMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyAddress404ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteMyAddress404ApplicationProblemPlusJSONResponse) VisitDeleteMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyAddress409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteMyAddress409ApplicationProblemPlusJSONResponse) VisitDeleteMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyAddressRequestObject struct {
+	ID AddressID `json:"id"`
+}
+
+type GetMyAddressResponseObject interface {
+	VisitGetMyAddressResponse(w http.ResponseWriter) error
+}
+
+type GetMyAddress200JSONResponse DeliveryAddress
+
+func (response GetMyAddress200JSONResponse) VisitGetMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyAddress401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetMyAddress401ApplicationProblemPlusJSONResponse) VisitGetMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyAddress403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMyAddress403ApplicationProblemPlusJSONResponse) VisitGetMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyAddress404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMyAddress404ApplicationProblemPlusJSONResponse) VisitGetMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddressRequestObject struct {
+	ID   AddressID `json:"id"`
+	Body *PutMyAddressJSONRequestBody
+}
+
+type PutMyAddressResponseObject interface {
+	VisitPutMyAddressResponse(w http.ResponseWriter) error
+}
+
+type PutMyAddress200JSONResponse DeliveryAddress
+
+func (response PutMyAddress200JSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddress400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PutMyAddress400ApplicationProblemPlusJSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddress401ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyAddress401ApplicationProblemPlusJSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddress403ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyAddress403ApplicationProblemPlusJSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddress404ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyAddress404ApplicationProblemPlusJSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyAddress409ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyAddress409ApplicationProblemPlusJSONResponse) VisitPutMyAddressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3372,6 +4346,12 @@ type StrictServerInterface interface {
 	// GetUser Get a user
 	// (GET /admin/users/{id})
 	GetUser(ctx context.Context, request GetUserRequestObject) (GetUserResponseObject, error)
+	// ListUserAddresses A customer's delivery address book (shop_admin, read-only)
+	// (GET /admin/users/{id}/addresses)
+	ListUserAddresses(ctx context.Context, request ListUserAddressesRequestObject) (ListUserAddressesResponseObject, error)
+	// GetUserAddress One customer delivery address (shop_admin, read-only)
+	// (GET /admin/users/{id}/addresses/{address_id})
+	GetUserAddress(ctx context.Context, request GetUserAddressRequestObject) (GetUserAddressResponseObject, error)
 	// DemoteUser Demote a shop_admin to customer (system_admin)
 	// (POST /admin/users/{id}/demote)
 	DemoteUser(ctx context.Context, request DemoteUserRequestObject) (DemoteUserResponseObject, error)
@@ -3387,6 +4367,12 @@ type StrictServerInterface interface {
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(ctx context.Context, request IssueServiceTokenRequestObject) (IssueServiceTokenResponseObject, error)
+	// CreateUserAddress Create a delivery address (service)
+	// (POST /internal/users/{id}/addresses)
+	CreateUserAddress(ctx context.Context, request CreateUserAddressRequestObject) (CreateUserAddressResponseObject, error)
+	// GetInternalUserAddress An active delivery address (service)
+	// (GET /internal/users/{id}/addresses/{address_id})
+	GetInternalUserAddress(ctx context.Context, request GetInternalUserAddressRequestObject) (GetInternalUserAddressResponseObject, error)
 	// GetUserBilling A customer's billing address (service)
 	// (GET /internal/users/{id}/billing)
 	GetUserBilling(ctx context.Context, request GetUserBillingRequestObject) (GetUserBillingResponseObject, error)
@@ -3408,6 +4394,21 @@ type StrictServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// ListMyAddresses The caller's delivery address book
+	// (GET /me/addresses)
+	ListMyAddresses(ctx context.Context, request ListMyAddressesRequestObject) (ListMyAddressesResponseObject, error)
+	// CreateMyAddress Add a delivery address
+	// (POST /me/addresses)
+	CreateMyAddress(ctx context.Context, request CreateMyAddressRequestObject) (CreateMyAddressResponseObject, error)
+	// DeleteMyAddress Soft-retire a delivery address
+	// (DELETE /me/addresses/{id})
+	DeleteMyAddress(ctx context.Context, request DeleteMyAddressRequestObject) (DeleteMyAddressResponseObject, error)
+	// GetMyAddress One of the caller's delivery addresses
+	// (GET /me/addresses/{id})
+	GetMyAddress(ctx context.Context, request GetMyAddressRequestObject) (GetMyAddressResponseObject, error)
+	// PutMyAddress Edit a delivery address (soft-retire + insert)
+	// (PUT /me/addresses/{id})
+	PutMyAddress(ctx context.Context, request PutMyAddressRequestObject) (PutMyAddressResponseObject, error)
 	// DeleteMyBilling Clear the caller's billing address
 	// (DELETE /me/billing)
 	DeleteMyBilling(ctx context.Context, request DeleteMyBillingRequestObject) (DeleteMyBillingResponseObject, error)
@@ -3569,6 +4570,60 @@ func (sh *strictHandler) GetUser(w http.ResponseWriter, r *http.Request, id User
 	}
 }
 
+// ListUserAddresses operation middleware
+func (sh *strictHandler) ListUserAddresses(w http.ResponseWriter, r *http.Request, id UserID, params ListUserAddressesParams) {
+	var request ListUserAddressesRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUserAddresses(ctx, request.(ListUserAddressesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUserAddresses")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUserAddressesResponseObject); ok {
+		if err := validResponse.VisitListUserAddressesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUserAddress operation middleware
+func (sh *strictHandler) GetUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath) {
+	var request GetUserAddressRequestObject
+
+	request.ID = id
+	request.AddressID = addressID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUserAddress(ctx, request.(GetUserAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUserAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUserAddressResponseObject); ok {
+		if err := validResponse.VisitGetUserAddressResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DemoteUser operation middleware
 func (sh *strictHandler) DemoteUser(w http.ResponseWriter, r *http.Request, id UserID) {
 	var request DemoteUserRequestObject
@@ -3714,6 +4769,66 @@ func (sh *strictHandler) IssueServiceToken(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(IssueServiceTokenResponseObject); ok {
 		if err := validResponse.VisitIssueServiceTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateUserAddress operation middleware
+func (sh *strictHandler) CreateUserAddress(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request CreateUserAddressRequestObject
+
+	request.ID = id
+
+	var body CreateUserAddressJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateUserAddress(ctx, request.(CreateUserAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateUserAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateUserAddressResponseObject); ok {
+		if err := validResponse.VisitCreateUserAddressResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInternalUserAddress operation middleware
+func (sh *strictHandler) GetInternalUserAddress(w http.ResponseWriter, r *http.Request, id UserID, addressID AddressIDPath) {
+	var request GetInternalUserAddressRequestObject
+
+	request.ID = id
+	request.AddressID = addressID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInternalUserAddress(ctx, request.(GetInternalUserAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInternalUserAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInternalUserAddressResponseObject); ok {
+		if err := validResponse.VisitGetInternalUserAddressResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -3915,6 +5030,148 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMyAddresses operation middleware
+func (sh *strictHandler) ListMyAddresses(w http.ResponseWriter, r *http.Request, params ListMyAddressesParams) {
+	var request ListMyAddressesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMyAddresses(ctx, request.(ListMyAddressesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMyAddresses")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMyAddressesResponseObject); ok {
+		if err := validResponse.VisitListMyAddressesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMyAddress operation middleware
+func (sh *strictHandler) CreateMyAddress(w http.ResponseWriter, r *http.Request) {
+	var request CreateMyAddressRequestObject
+
+	var body CreateMyAddressJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMyAddress(ctx, request.(CreateMyAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMyAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMyAddressResponseObject); ok {
+		if err := validResponse.VisitCreateMyAddressResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMyAddress operation middleware
+func (sh *strictHandler) DeleteMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
+	var request DeleteMyAddressRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMyAddress(ctx, request.(DeleteMyAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMyAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMyAddressResponseObject); ok {
+		if err := validResponse.VisitDeleteMyAddressResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyAddress operation middleware
+func (sh *strictHandler) GetMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
+	var request GetMyAddressRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMyAddress(ctx, request.(GetMyAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyAddressResponseObject); ok {
+		if err := validResponse.VisitGetMyAddressResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutMyAddress operation middleware
+func (sh *strictHandler) PutMyAddress(w http.ResponseWriter, r *http.Request, id AddressID) {
+	var request PutMyAddressRequestObject
+
+	request.ID = id
+
+	var body PutMyAddressJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutMyAddress(ctx, request.(PutMyAddressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutMyAddress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutMyAddressResponseObject); ok {
+		if err := validResponse.VisitPutMyAddressResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

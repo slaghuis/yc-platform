@@ -31,6 +31,7 @@ type Orders interface {
 	Order(ctx context.Context, id string) (service.Detail, error)
 	LatestPurchase(ctx context.Context, userID, productID string) (repository.Purchase, bool, error)
 	CustomerOrders(ctx context.Context, userIDs []string) ([]repository.CustomerOrder, int, error)
+	AddressInUse(ctx context.Context, addressID string) (bool, []string, error)
 	AdminOrder(ctx context.Context, id string) (service.Detail, error)
 	CustomerOrder(ctx context.Context, id, guestToken string) (service.Detail, error)
 	MintGuestAccess(ctx context.Context, id string) (token string, exp time.Time, err error)
@@ -75,6 +76,7 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/internal/orders"},
 		{Prefix: "/internal/purchases", Methods: []string{http.MethodGet}},
 		{Prefix: "/internal/customer-orders", Methods: []string{http.MethodGet}},
+		{Prefix: "/internal/orders/address-in-use", Methods: []string{http.MethodGet}},
 	}
 }
 
@@ -86,6 +88,24 @@ func (h handlers) ListCustomerOrders(ctx context.Context, req api.ListCustomerOr
 	out := api.ListCustomerOrders200JSONResponse{OpenCount: open, Orders: make([]api.CustomerOrder, len(os))}
 	for i, o := range os {
 		out.Orders[i] = api.CustomerOrder{OrderID: mustUUID(o.ID), Status: api.OrderStatus(o.Status), OpenReturn: o.OpenReturn}
+	}
+	return out, nil
+}
+
+func (h handlers) AddressInUse(ctx context.Context, req api.AddressInUseRequestObject) (api.AddressInUseResponseObject, error) {
+	inUse, ids, err := h.svc.AddressInUse(ctx, req.Params.AddressID.String())
+	if err != nil {
+		return nil, err
+	}
+	out := api.AddressInUse200JSONResponse{InUse: inUse}
+	if len(ids) > 0 {
+		parsed := make([]uuid.UUID, 0, len(ids))
+		for _, id := range ids {
+			if u, err := uuid.Parse(id); err == nil {
+				parsed = append(parsed, u)
+			}
+		}
+		out.OrderIds = &parsed
 	}
 	return out, nil
 }
@@ -295,6 +315,9 @@ func (h handlers) CreateOrder(ctx context.Context, req api.CreateOrderRequestObj
 	if b.DeliveryAddress != nil {
 		o.DeliveryAddress = *b.DeliveryAddress
 	}
+	if b.DeliveryAddressID != nil {
+		o.DeliveryAddressID = b.DeliveryAddressID.String()
+	}
 	if b.BillingAddress != nil {
 		ba := billingIn(*b.BillingAddress)
 		o.BillingAddress = &ba
@@ -430,6 +453,11 @@ func order(o domain.Order, history []domain.HistoryEntry) api.Order {
 	if o.DeliveryAddress != nil {
 		addr := o.DeliveryAddress
 		out.DeliveryAddress = &addr
+	}
+	if o.DeliveryAddressID != "" {
+		if id, err := uuid.Parse(o.DeliveryAddressID); err == nil {
+			out.DeliveryAddressID = &id
+		}
 	}
 	if o.BillingAddress != nil {
 		ba := billingOut(*o.BillingAddress)

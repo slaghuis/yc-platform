@@ -155,6 +155,7 @@ type AdminSession struct {
 	ConfirmedAt              *time.Time              `json:"confirmed_at,omitempty"`
 	CreatedAt                time.Time               `json:"created_at"`
 	DeliveryAddress          *map[string]interface{} `json:"delivery_address,omitempty"`
+	DeliveryAddressID        *openapi_types.UUID     `json:"delivery_address_id,omitempty"`
 	DeliverySlot             *DeliverySlot           `json:"delivery_slot,omitempty"`
 	ExpiresAt                time.Time               `json:"expires_at"`
 	Failure                  *Failure                `json:"failure,omitempty"`
@@ -335,22 +336,25 @@ type ReservationState struct {
 
 // Session defines model for Session.
 type Session struct {
-	CartType                 string             `json:"cart_type"`
-	CompletedAt              *time.Time         `json:"completed_at,omitempty"`
-	ConfirmedAt              *time.Time         `json:"confirmed_at,omitempty"`
-	CreatedAt                time.Time          `json:"created_at"`
-	DeliverySlot             *DeliverySlot      `json:"delivery_slot,omitempty"`
-	ExpiresAt                time.Time          `json:"expires_at"`
-	Failure                  *Failure           `json:"failure,omitempty"`
-	Items                    []SessionItem      `json:"items"`
-	Order                    *OrderRef          `json:"order,omitempty"`
-	Payment                  *PaymentState      `json:"payment,omitempty"`
-	RequiresShipping         bool               `json:"requires_shipping"`
-	Reservation              *ReservationState  `json:"reservation,omitempty"`
-	SelectedShippingOptionID *string            `json:"selected_shipping_option_id,omitempty"`
-	SessionID                openapi_types.UUID `json:"session_id"`
-	ShippingOptions          []ShippingOption   `json:"shipping_options"`
-	State                    State              `json:"state"`
+	CartType    string     `json:"cart_type"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+
+	// DeliveryAddressID Bound customer address-book id when set (issue
+	DeliveryAddressID        *openapi_types.UUID `json:"delivery_address_id,omitempty"`
+	DeliverySlot             *DeliverySlot       `json:"delivery_slot,omitempty"`
+	ExpiresAt                time.Time           `json:"expires_at"`
+	Failure                  *Failure            `json:"failure,omitempty"`
+	Items                    []SessionItem       `json:"items"`
+	Order                    *OrderRef           `json:"order,omitempty"`
+	Payment                  *PaymentState       `json:"payment,omitempty"`
+	RequiresShipping         bool                `json:"requires_shipping"`
+	Reservation              *ReservationState   `json:"reservation,omitempty"`
+	SelectedShippingOptionID *string             `json:"selected_shipping_option_id,omitempty"`
+	SessionID                openapi_types.UUID  `json:"session_id"`
+	ShippingOptions          []ShippingOption    `json:"shipping_options"`
+	State                    State               `json:"state"`
 
 	// TaxInclusive Show gross prices when true, net otherwise.
 	TaxInclusive bool            `json:"tax_inclusive"`
@@ -392,11 +396,17 @@ type SessionList struct {
 }
 
 // ShippingInput A delivery address to quote, an option of the current address, or both.
+// Customers may pass delivery_address_id from their book, or free-form
+// delivery_address which is saved to the book (issue #32). Guests use
+// free-form only. Do not send both id and address.
 type ShippingInput struct {
 	// DeliveryAddress Free-form (ADR-015); yc-shipping matches its country_code and
 	// fields to the shop's zones. Replaces an earlier address and its
-	// options.
+	// options. For customers, saved to the address book (max 5).
 	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
+
+	// DeliveryAddressID Customer address-book id (issue
+	DeliveryAddressID *openapi_types.UUID `json:"delivery_address_id,omitempty"`
 
 	// ShippingOptionID Defaults to the cheapest option.
 	ShippingOptionID *string `json:"shipping_option_id,omitempty"`

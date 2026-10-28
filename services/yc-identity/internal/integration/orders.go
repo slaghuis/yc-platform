@@ -28,3 +28,15 @@ func (o *Orders) OpenOrders(ctx context.Context, userID string) (int, error) {
 		httpkit.CallOptions{Attempts: 2}, nil, &out)
 	return out.OpenCount, err
 }
+
+// AddressInUse reports whether addressID is referenced by an open order
+// (issue #32).
+func (o *Orders) AddressInUse(ctx context.Context, addressID string) (bool, error) {
+	var out struct {
+		InUse bool `json:"in_use"`
+	}
+	err := o.client.Call(ctx, http.MethodGet,
+		"/internal/orders/address-in-use?address_id="+url.QueryEscape(addressID),
+		httpkit.CallOptions{Attempts: 2}, nil, &out)
+	return out.InUse, err
+}

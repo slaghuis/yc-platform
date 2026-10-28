@@ -22,7 +22,8 @@ type Sessions struct{}
 const sessionColumns = `id, user_id, user_type, cart_type, COALESCE(cart_id::text, ''), state, items,
 	requires_shipping, has_tracked_items, currency, tax_inclusive, items_total_minor, tax_total_minor,
 	shipping_minor, total_minor, pricing_snapshot, shipping_options, COALESCE(shipping_option_id, ''),
-	guest_contact, delivery_address, billing_address, delivery_slot, COALESCE(confirm_key, ''),
+	guest_contact, delivery_address, COALESCE(delivery_address_id::text, ''), billing_address, delivery_slot,
+	COALESCE(confirm_key, ''),
 	COALESCE(payment_gateway, ''), COALESCE(payment_token, ''), COALESCE(return_url, ''),
 	COALESCE(reservation_id::text, ''), reservation_expires_at, COALESCE(payment_transaction_id::text, ''),
 	COALESCE(payment_status, ''), next_action, COALESCE(order_id::text, ''), COALESCE(order_number, ''),
@@ -38,7 +39,7 @@ func scanSession(r pgx.Row) (domain.Session, error) {
 	err := r.Scan(&s.ID, &s.UserID, &userType, &s.CartType, &s.CartID, &state, &items,
 		&s.RequiresShipping, &s.HasTrackedItems, &s.Currency, &s.TaxInclusive, &s.ItemsTotalMinor, &s.TaxTotalMinor,
 		&s.ShippingMinor, &s.TotalMinor, &s.PricingSnapshot, &shipping, &s.ShippingOptionID,
-		&guest, &address, &billing, &slot, &s.ConfirmKey, &s.PaymentGateway,
+		&guest, &address, &s.DeliveryAddressID, &billing, &slot, &s.ConfirmKey, &s.PaymentGateway,
 		&s.PaymentToken, &s.ReturnURL, &s.ReservationID,
 		&s.ReservationExpiresAt, &s.PaymentTransactionID, &s.PaymentStatus,
 		&nextAction, &s.OrderID, &s.OrderNumber, &failedState,
@@ -180,7 +181,8 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 			failure_detail = $24, end_state = NULLIF($25, ''), compensation_log = $26, attempts = $27,
 			next_attempt_at = $28, lease_owner = NULLIF($29, ''), lease_until = $30, confirmed_at = $31,
 			completed_at = $32, updated_at = $33, payment_variant = $34, hosted_payment = $35,
-			payment_public_key = NULLIF($36, ''), shipping_options = $37
+			payment_public_key = NULLIF($36, ''), shipping_options = $37,
+			delivery_address_id = NULLIF($38, '')::uuid
 		WHERE tenant_id = $1 AND id = $2`,
 		tenantID, s.ID, string(s.State), s.ShippingMinor, s.TotalMinor,
 		s.ShippingOptionID, e.guest, e.address, e.billing, e.slot,
@@ -191,7 +193,7 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 		s.FailureReason, e.detail, string(s.EndState),
 		e.compensation, s.Attempts, s.NextAttemptAt, s.LeaseOwner,
 		s.LeaseUntil, s.ConfirmedAt, s.CompletedAt, s.UpdatedAt, string(s.Variant()),
-		s.HostedPayment, s.PaymentPublicKey, e.shipping)
+		s.HostedPayment, s.PaymentPublicKey, e.shipping, s.DeliveryAddressID)
 	if err != nil {
 		return fmt.Errorf("update session: %w", err)
 	}

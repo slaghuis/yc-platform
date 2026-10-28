@@ -172,6 +172,40 @@ func (*fakeIdentity) UserBilling(context.Context, string) (domain.BillingAddress
 	return domain.BillingAddress{}, ycerrors.NotFound("Billing", userID)
 }
 
+func (*fakeIdentity) ListMyAddresses(context.Context, bool) ([]domain.DeliveryAddress, error) {
+	return nil, nil
+}
+
+func (*fakeIdentity) GetMyAddress(context.Context, string) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{}, ycerrors.NotFound("Address", userID)
+}
+
+func (*fakeIdentity) CreateMyAddress(_ context.Context, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{ID: userID, Address: in.Address, Label: in.Label, IsDefault: true}, nil
+}
+
+func (*fakeIdentity) PutMyAddress(_ context.Context, id string, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{ID: id, Address: in.Address, Label: in.Label}, nil
+}
+
+func (*fakeIdentity) DeleteMyAddress(context.Context, string) error { return nil }
+
+func (*fakeIdentity) ListUserAddresses(context.Context, string, bool) ([]domain.DeliveryAddress, error) {
+	return nil, nil
+}
+
+func (*fakeIdentity) GetUserAddress(context.Context, string, string) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{}, ycerrors.NotFound("Address", userID)
+}
+
+func (*fakeIdentity) UserAddress(context.Context, string, string) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{}, ycerrors.NotFound("Address", userID)
+}
+
+func (*fakeIdentity) CreateUserAddress(_ context.Context, _ string, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error) {
+	return domain.DeliveryAddress{ID: userID, Address: in.Address, Label: in.Label, IsDefault: true}, nil
+}
+
 func (*fakeIdentity) CreateInvitation(_ context.Context, in domain.InviteInput) (domain.Invitation, error) {
 	return domain.Invitation{ID: userID, TenantID: in.TenantID, Email: in.Email, Role: in.Role, Status: domain.InvitationPending}, nil
 }

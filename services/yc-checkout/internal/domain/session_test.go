@@ -27,7 +27,7 @@ func session(userType domain.UserType, physical bool) domain.Session {
 
 func shipped() domain.Session {
 	s := session(domain.UserCustomer, true)
-	s.ShipTo(address, options(), "")
+	s.ShipTo(address, options(), "", "")
 	return s
 }
 
@@ -60,7 +60,7 @@ func TestValidateConfirm(t *testing.T) {
 	slotOpt := options()
 	slotOpt[1].RequiresDeliverySlot = true
 	needSlot := session(domain.UserCustomer, true)
-	needSlot.ShipTo(address, slotOpt, "standard")
+	needSlot.ShipTo(address, slotOpt, "standard", "")
 	assert.Equal(t, []string{"delivery_slot"},
 		fields(needSlot.ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"})),
 		"slot-required rate needs PUT /slot before confirm")
@@ -81,9 +81,9 @@ func TestShipping(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "Standard", o.Name)
 
-	assert.True(t, s.ShipTo(address, options(), "express"))
+	assert.True(t, s.ShipTo(address, options(), "express", ""))
 	assert.Equal(t, int64(2500), s.TotalMinor, "the named option")
-	assert.False(t, s.ShipTo(map[string]any{"country_code": "NA"}, nil, ""), "nowhere to ship")
+	assert.False(t, s.ShipTo(map[string]any{"country_code": "NA"}, nil, "", ""), "nowhere to ship")
 	assert.Equal(t, int64(1000), s.TotalMinor)
 	assert.Empty(t, s.ShippingOptionID)
 }

@@ -76,6 +76,7 @@ Orders capture a point-in-time snapshot. The order record **does not reference l
     "phone_e164": "..."
   },
   "delivery_address": { ... },    // free-form JSON (ADR-015)
+  "delivery_address_id": "...",   // optional book entry id from checkout (issue #32)
   "billing_address": { ... },     // optional structured SA billing snapshot (issue #29)
   "seller_invoice": { ... },      // shop name/email/VAT/address snapshotted at create (issue #29)
   "delivery_slot": { ... },       // optional window from checkout (issue #30); immutable snapshot
@@ -157,7 +158,8 @@ When a visitor's order is complete and the visitor later registers with the same
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE); resolves buyer billing and seller invoice snapshots (issue #29); optional `delivery_slot` snapshot (issue #30) | service |
+| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE); resolves buyer billing and seller invoice snapshots (issue #29); optional `delivery_slot` / `delivery_address_id` snapshots (issues #30 / #32) | service |
+| GET | `/internal/orders/address-in-use?address_id=` | Whether any `Status.Open()` order references the address book id (yc-identity lock, issue #32) | service |
 | POST | `/internal/orders/{id}/confirm` | Payment succeeded: → `received`, publish `order.placed.v1` (yc-checkout, CONFIRMING) | service |
 | POST | `/internal/orders/{id}/abandon` | Checkout compensation: `pending_payment` → `abandoned` | service |
 | GET | `/internal/orders/{id}` | Fetch order | service |

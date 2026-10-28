@@ -42,6 +42,15 @@ type Identity interface {
 	PutMyBilling(ctx context.Context, in domain.BillingAddress) (domain.BillingAddress, error)
 	DeleteMyBilling(ctx context.Context) error
 	UserBilling(ctx context.Context, userID string) (domain.BillingAddress, error)
+	ListMyAddresses(ctx context.Context, includeDeleted bool) ([]domain.DeliveryAddress, error)
+	GetMyAddress(ctx context.Context, id string) (domain.DeliveryAddress, error)
+	CreateMyAddress(ctx context.Context, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error)
+	PutMyAddress(ctx context.Context, id string, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error)
+	DeleteMyAddress(ctx context.Context, id string) error
+	ListUserAddresses(ctx context.Context, userID string, includeDeleted bool) ([]domain.DeliveryAddress, error)
+	GetUserAddress(ctx context.Context, userID, id string) (domain.DeliveryAddress, error)
+	UserAddress(ctx context.Context, userID, id string) (domain.DeliveryAddress, error)
+	CreateUserAddress(ctx context.Context, userID string, in domain.DeliveryAddressInput) (domain.DeliveryAddress, error)
 	CreateInvitation(ctx context.Context, in domain.InviteInput) (domain.Invitation, error)
 	ListInvitations(ctx context.Context, f repository.InvitationFilter, after *repository.InvitationCursor, limit int) ([]domain.Invitation, *repository.InvitationCursor, error)
 	ResendInvitation(ctx context.Context, id string) (domain.Invitation, error)
@@ -55,7 +64,7 @@ func Routes() []httpkit.RegisteredRoute {
 	sysadmin := []string{string(authctx.ActorSystemAdmin)}
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/sysadmin/invitations", Roles: sysadmin},
-		{Prefix: "/internal/users", Methods: []string{http.MethodGet}},
+		{Prefix: "/internal/users", Methods: []string{http.MethodGet, http.MethodPost}},
 	}
 }
 
@@ -416,6 +425,123 @@ func (h handlers) GetUserBilling(ctx context.Context, req api.GetUserBillingRequ
 		return nil, err
 	}
 	return api.GetUserBilling200JSONResponse(billing(b)), nil
+}
+
+func (h handlers) ListMyAddresses(ctx context.Context, req api.ListMyAddressesRequestObject) (api.ListMyAddressesResponseObject, error) {
+	include := req.Params.IncludeDeleted != nil && *req.Params.IncludeDeleted
+	items, err := h.svc.ListMyAddresses(ctx, include)
+	if err != nil {
+		return nil, err
+	}
+	return api.ListMyAddresses200JSONResponse{Items: deliveryAddresses(items)}, nil
+}
+
+func (h handlers) CreateMyAddress(ctx context.Context, req api.CreateMyAddressRequestObject) (api.CreateMyAddressResponseObject, error) {
+	a, err := h.svc.CreateMyAddress(ctx, deliveryAddressIn(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateMyAddress201JSONResponse(deliveryAddress(a)), nil
+}
+
+func (h handlers) GetMyAddress(ctx context.Context, req api.GetMyAddressRequestObject) (api.GetMyAddressResponseObject, error) {
+	a, err := h.svc.GetMyAddress(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetMyAddress200JSONResponse(deliveryAddress(a)), nil
+}
+
+func (h handlers) PutMyAddress(ctx context.Context, req api.PutMyAddressRequestObject) (api.PutMyAddressResponseObject, error) {
+	a, err := h.svc.PutMyAddress(ctx, req.ID.String(), deliveryAddressIn(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.PutMyAddress200JSONResponse(deliveryAddress(a)), nil
+}
+
+func (h handlers) DeleteMyAddress(ctx context.Context, req api.DeleteMyAddressRequestObject) (api.DeleteMyAddressResponseObject, error) {
+	if err := h.svc.DeleteMyAddress(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.DeleteMyAddress204Response{}, nil
+}
+
+func (h handlers) ListUserAddresses(ctx context.Context, req api.ListUserAddressesRequestObject) (api.ListUserAddressesResponseObject, error) {
+	include := req.Params.IncludeDeleted != nil && *req.Params.IncludeDeleted
+	items, err := h.svc.ListUserAddresses(ctx, req.ID.String(), include)
+	if err != nil {
+		return nil, err
+	}
+	return api.ListUserAddresses200JSONResponse{Items: deliveryAddresses(items)}, nil
+}
+
+func (h handlers) GetUserAddress(ctx context.Context, req api.GetUserAddressRequestObject) (api.GetUserAddressResponseObject, error) {
+	a, err := h.svc.GetUserAddress(ctx, req.ID.String(), req.AddressID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetUserAddress200JSONResponse(deliveryAddress(a)), nil
+}
+
+func (h handlers) GetInternalUserAddress(ctx context.Context, req api.GetInternalUserAddressRequestObject) (api.GetInternalUserAddressResponseObject, error) {
+	a, err := h.svc.UserAddress(ctx, req.ID.String(), req.AddressID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetInternalUserAddress200JSONResponse(deliveryAddress(a)), nil
+}
+
+func (h handlers) CreateUserAddress(ctx context.Context, req api.CreateUserAddressRequestObject) (api.CreateUserAddressResponseObject, error) {
+	a, err := h.svc.CreateUserAddress(ctx, req.ID.String(), deliveryAddressIn(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateUserAddress201JSONResponse(deliveryAddress(a)), nil
+}
+
+func deliveryAddresses(items []domain.DeliveryAddress) []api.DeliveryAddress {
+	out := make([]api.DeliveryAddress, len(items))
+	for i, a := range items {
+		out[i] = deliveryAddress(a)
+	}
+	return out
+}
+
+func deliveryAddress(a domain.DeliveryAddress) api.DeliveryAddress {
+	out := api.DeliveryAddress{
+		ID: mustUUID(a.ID), Address: a.Address, IsDefault: a.IsDefault,
+		CreatedAt: a.CreatedAt.UTC(), UpdatedAt: a.UpdatedAt.UTC(),
+	}
+	if a.Label != "" {
+		out.Label = &a.Label
+	}
+	if a.DeletedAt != nil {
+		t := a.DeletedAt.UTC()
+		out.DeletedAt = &t
+	}
+	if a.ReplacedByID != "" {
+		if id, err := uuid.Parse(a.ReplacedByID); err == nil {
+			out.ReplacedByID = &id
+		}
+	}
+	return out
+}
+
+func deliveryAddressIn(b api.DeliveryAddressInput) domain.DeliveryAddressInput {
+	in := domain.DeliveryAddressInput{Address: b.Address}
+	if b.Label != nil {
+		in.Label = *b.Label
+	}
+	if b.IsDefault != nil {
+		in.IsDefault = *b.IsDefault
+	}
+	return in
+}
+
+func mustUUID(s string) uuid.UUID {
+	id, _ := uuid.Parse(s)
+	return id
 }
 
 func billing(b domain.BillingAddress) api.BillingAddress {

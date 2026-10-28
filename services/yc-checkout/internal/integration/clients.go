@@ -376,6 +376,7 @@ type CreateOrder struct {
 	UserType          string          `json:"user_type"`
 	GuestContact      *GuestContact   `json:"guest_contact,omitempty"`
 	DeliveryAddress   map[string]any  `json:"delivery_address,omitempty"`
+	DeliveryAddressID string          `json:"delivery_address_id,omitempty"`
 	BillingAddress    *BillingAddress `json:"billing_address,omitempty"`
 	RequiresShipping  bool            `json:"requires_shipping"`
 	Items             []OrderItem     `json:"items"`
@@ -388,6 +389,14 @@ type CreateOrder struct {
 	ShippingOption    map[string]any  `json:"shipping_option,omitempty"`
 	DeliverySlot      *DeliverySlot   `json:"delivery_slot,omitempty"`
 	Payment           *OrderPayment   `json:"payment,omitempty"`
+}
+
+// DeliveryAddress is one yc-identity book entry (issue #32).
+type DeliveryAddress struct {
+	ID        string         `json:"id"`
+	Label     string         `json:"label,omitempty"`
+	Address   map[string]any `json:"address"`
+	IsDefault bool           `json:"is_default"`
 }
 
 // DeliverySlot is the chosen window snapshotted onto the order (issue #30).
@@ -476,6 +485,22 @@ type ShippingQuote struct {
 func (c *Clients) QuoteShipping(ctx context.Context, req ShippingQuoteRequest) (ShippingQuote, error) {
 	var out ShippingQuote
 	err := c.call(ctx, http.MethodPost, "/internal/quote", "", 0, req, &out)
+	return out, err
+}
+
+// GetDeliveryAddress loads an active book entry (yc-identity).
+func (c *Clients) GetDeliveryAddress(ctx context.Context, userID, addressID string) (DeliveryAddress, error) {
+	var out DeliveryAddress
+	err := c.call(ctx, http.MethodGet,
+		"/internal/users/"+url.PathEscape(userID)+"/addresses/"+url.PathEscape(addressID), "", 0, nil, &out)
+	return out, err
+}
+
+// CreateDeliveryAddress saves a book entry for the customer (yc-identity).
+func (c *Clients) CreateDeliveryAddress(ctx context.Context, userID string, address map[string]any) (DeliveryAddress, error) {
+	var out DeliveryAddress
+	err := c.call(ctx, http.MethodPost, "/internal/users/"+url.PathEscape(userID)+"/addresses", "", 0,
+		map[string]any{"address": address}, &out)
 	return out, err
 }
 

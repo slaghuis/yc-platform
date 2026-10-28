@@ -95,6 +95,9 @@ func (h handlers) SelectShipping(ctx context.Context, req api.SelectShippingRequ
 		if b.DeliveryAddress != nil {
 			in.DeliveryAddress = *b.DeliveryAddress
 		}
+		if b.DeliveryAddressID != nil {
+			in.DeliveryAddressID = b.DeliveryAddressID.String()
+		}
 		if b.ShippingOptionID != nil {
 			in.OptionID = *b.ShippingOptionID
 		}
@@ -270,6 +273,11 @@ func session(s domain.Session, admin bool) api.Session {
 		ExpiresAt: s.ExpiresAt.UTC(), ConfirmedAt: utc(s.ConfirmedAt), CompletedAt: utc(s.CompletedAt),
 		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
 	}
+	if s.DeliveryAddressID != "" {
+		if id, err := uuid.Parse(s.DeliveryAddressID); err == nil {
+			out.DeliveryAddressID = &id
+		}
+	}
 	if ds := s.DeliverySlot; ds != nil && ds.Valid() {
 		slot := api.DeliverySlot{
 			SlotID: ds.SlotID, StartAt: ds.StartAt.UTC(), EndAt: ds.EndAt.UTC(), Timezone: ds.Timezone,
@@ -324,8 +332,8 @@ func adminSession(s domain.Session, history []repository.Event) api.AdminSession
 	out := api.AdminSession{
 		SessionID: b.SessionID, State: b.State, UserType: api.AdminSessionUserType(b.UserType), CartType: b.CartType,
 		Items: b.Items, RequiresShipping: b.RequiresShipping, ShippingOptions: b.ShippingOptions,
-		SelectedShippingOptionID: b.SelectedShippingOptionID, DeliverySlot: b.DeliverySlot,
-		TaxInclusive: b.TaxInclusive, Totals: b.Totals,
+		SelectedShippingOptionID: b.SelectedShippingOptionID, DeliveryAddressID: b.DeliveryAddressID,
+		DeliverySlot: b.DeliverySlot, TaxInclusive: b.TaxInclusive, Totals: b.Totals,
 		Payment: b.Payment, Reservation: b.Reservation, Order: b.Order, Failure: b.Failure,
 		ExpiresAt: b.ExpiresAt, ConfirmedAt: b.ConfirmedAt, CompletedAt: b.CompletedAt,
 		CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,

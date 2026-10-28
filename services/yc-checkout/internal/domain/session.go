@@ -153,10 +153,11 @@ type ShippingOption struct {
 }
 
 // ShippingChoice is the shipping step: a delivery address to quote, an
-// option, or both.
+// option, or both. DeliveryAddressID selects a customer book entry (issue #32).
 type ShippingChoice struct {
-	DeliveryAddress map[string]any
-	OptionID        string
+	DeliveryAddress   map[string]any
+	DeliveryAddressID string
+	OptionID          string
 }
 
 // GuestContact is a visitor's contact details (ADR-010).
@@ -185,28 +186,29 @@ type CompensationEntry struct {
 
 // Session is a checkout session.
 type Session struct {
-	ID               string
-	UserID           string
-	UserType         UserType
-	CartType         string
-	CartID           string
-	State            State
-	Items            []Item
-	RequiresShipping bool
-	HasTrackedItems  bool
-	Currency         string
-	TaxInclusive     bool
-	ItemsTotalMinor  int64
-	TaxTotalMinor    int64
-	ShippingMinor    int64
-	TotalMinor       int64
-	PricingSnapshot  json.RawMessage
-	ShippingOptions  []ShippingOption
-	ShippingOptionID string
-	GuestContact     *GuestContact
-	DeliveryAddress  map[string]any
-	BillingAddress   *BillingAddress
-	DeliverySlot     *DeliverySlot
+	ID                string
+	UserID            string
+	UserType          UserType
+	CartType          string
+	CartID            string
+	State             State
+	Items             []Item
+	RequiresShipping  bool
+	HasTrackedItems   bool
+	Currency          string
+	TaxInclusive      bool
+	ItemsTotalMinor   int64
+	TaxTotalMinor     int64
+	ShippingMinor     int64
+	TotalMinor        int64
+	PricingSnapshot   json.RawMessage
+	ShippingOptions   []ShippingOption
+	ShippingOptionID  string
+	GuestContact      *GuestContact
+	DeliveryAddress   map[string]any
+	DeliveryAddressID string // book entry id (issue #32); empty for guests / one-off until saved
+	BillingAddress    *BillingAddress
+	DeliverySlot      *DeliverySlot
 
 	// PaymentGateway and the rest of the routing are chosen when the
 	// session starts and may change at confirm.
@@ -281,8 +283,8 @@ func (s *Session) SelectShipping(id string) bool {
 // options and choice are replaced. It reports whether optionID is one of
 // the options. A new address or option clears any bound delivery slot
 // (issue #30).
-func (s *Session) ShipTo(address map[string]any, options []ShippingOption, optionID string) bool {
-	s.DeliveryAddress, s.ShippingOptions = address, options
+func (s *Session) ShipTo(address map[string]any, options []ShippingOption, optionID, addressID string) bool {
+	s.DeliveryAddress, s.DeliveryAddressID, s.ShippingOptions = address, addressID, options
 	s.ShippingOptionID, s.ShippingMinor, s.TotalMinor = "", 0, s.ItemsTotalMinor
 	s.DeliverySlot = nil
 	if optionID == "" && len(options) > 0 {
