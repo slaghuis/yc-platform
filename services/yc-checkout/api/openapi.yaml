@@ -267,6 +267,21 @@ components:
       properties:
         email: { type: string, maxLength: 254 }
         phone_e164: { type: string, maxLength: 16, description: 'E.164, e.g. +27831234567.' }
+    BillingAddress:
+      type: object
+      description: |
+        Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
+        Distinct from free-form delivery addresses.
+      required: [street_and_number, town_city, postal_code]
+      additionalProperties: false
+      properties:
+        company_name: { type: string, maxLength: 200 }
+        vat_number: { type: string, maxLength: 16 }
+        street_and_number: { type: string, minLength: 1, maxLength: 200 }
+        suburb: { type: string, maxLength: 200 }
+        town_city: { type: string, minLength: 1, maxLength: 200 }
+        postal_code: { type: string, minLength: 1, maxLength: 200 }
+        country_code: { type: string, minLength: 2, maxLength: 2 }
     ConfirmInput:
       type: object
       additionalProperties: false
@@ -279,6 +294,12 @@ components:
             Optional: physical items ship to the address chosen at the
             shipping step. A different one here is 409; choose shipping
             again.
+        billing_address:
+          $ref: '#/components/schemas/BillingAddress'
+          description: |
+            Optional buyer billing for the order invoice snapshot. When
+            omitted for a customer, yc-orders may copy the saved
+            /me/billing profile (issue #29).
         shipping_option_id: { type: string, maxLength: 64, description: Defaults to the selected option. }
         payment_gateway:
           type: string

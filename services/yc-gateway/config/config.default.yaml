@@ -27,7 +27,7 @@ upstreams:
 # not reuse a static prefix.
 routes:
   - prefix: /me
-    methods: [GET, DELETE]
+    methods: [GET, PUT, DELETE]
     upstream: identity
   - prefix: /register
     methods: [POST]

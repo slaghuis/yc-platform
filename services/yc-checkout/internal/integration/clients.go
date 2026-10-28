@@ -358,6 +358,17 @@ type OrderPayment struct {
 	Gateway       string `json:"gateway"`
 }
 
+// BillingAddress is structured SA billing for the order invoice (issue #29).
+type BillingAddress struct {
+	CompanyName     string `json:"company_name,omitempty"`
+	VATNumber       string `json:"vat_number,omitempty"`
+	StreetAndNumber string `json:"street_and_number"`
+	Suburb          string `json:"suburb,omitempty"`
+	TownCity        string `json:"town_city"`
+	PostalCode      string `json:"postal_code"`
+	CountryCode     string `json:"country_code,omitempty"`
+}
+
 // CreateOrder is the pending_payment order's snapshot.
 type CreateOrder struct {
 	CheckoutSessionID string          `json:"checkout_session_id"`
@@ -365,6 +376,7 @@ type CreateOrder struct {
 	UserType          string          `json:"user_type"`
 	GuestContact      *GuestContact   `json:"guest_contact,omitempty"`
 	DeliveryAddress   map[string]any  `json:"delivery_address,omitempty"`
+	BillingAddress    *BillingAddress `json:"billing_address,omitempty"`
 	RequiresShipping  bool            `json:"requires_shipping"`
 	Items             []OrderItem     `json:"items"`
 	Currency          string          `json:"currency"`

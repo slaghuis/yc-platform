@@ -121,6 +121,8 @@ type Order struct {
 	UserType             UserType
 	GuestContact         *GuestContact
 	DeliveryAddress      map[string]any
+	BillingAddress       *BillingAddress
+	SellerInvoice        *SellerInvoice
 	RequiresShipping     bool
 	Status               Status
 	Items                []Item
@@ -221,6 +223,17 @@ func (o Order) Validate() error {
 	if o.RequiresShipping && len(o.DeliveryAddress) == 0 {
 		v.Field("delivery_address", "required", "A delivery address is required for physical items")
 	}
+	if o.BillingAddress != nil {
+		if err := ValidateBilling(*o.BillingAddress); err != nil {
+			if e, ok := ycerrors.As(err); ok {
+				for _, f := range e.Fields {
+					v.Field(f.Field, f.Code, f.Message)
+				}
+			} else {
+				v.Field("billing_address", "invalid", "Billing address is not valid")
+			}
+		}
+	}
 	if !currencyRE.MatchString(o.Currency) {
 		v.Field("currency", "invalid", "Currency must be an ISO 4217 code")
 	}
@@ -314,6 +327,7 @@ func (o *Order) Pseudonymise(pseudonym string) {
 	o.UserID = pseudonym
 	o.GuestContact = nil
 	o.DeliveryAddress = nil
+	o.BillingAddress = nil
 }
 
 // OrderNumber formats a shop's nth order number, e.g. DEMO-SHOP-000042.

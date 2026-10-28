@@ -20,6 +20,9 @@ type Tenants interface {
 	Get(ctx context.Context, tenantID string) (domain.Tenant, error)
 	List(ctx context.Context, f domain.ListFilter, after *repository.Cursor, limit int) (service.Page[domain.Tenant, repository.Cursor], error)
 	Patch(ctx context.Context, tenantID string, in domain.PatchInput) (domain.Tenant, error)
+	Shop(ctx context.Context) (domain.Tenant, error)
+	PatchShop(ctx context.Context, in domain.ShopPatch) (domain.Tenant, error)
+	InternalTenant(ctx context.Context, tenantID string) (domain.Tenant, error)
 	ReplaceHostnames(ctx context.Context, tenantID string, in domain.HostnamesInput) (domain.Tenant, error)
 	Suspend(ctx context.Context, tenantID, reason string) (domain.Tenant, error)
 	Reinstate(ctx context.Context, tenantID string) (domain.Tenant, error)
@@ -49,6 +52,7 @@ func NewRouter(svc Tenants, idem httpkit.IdempotencyStore, build httpkit.BuildIn
 func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/sysadmin/tenants", Roles: []string{string(authctx.ActorSystemAdmin)}},
+		{Prefix: "/admin/shop", Roles: []string{string(authctx.ActorShopAdmin)}},
 	}
 }
 
@@ -104,11 +108,50 @@ func (h handlers) PatchTenant(ctx context.Context, req api.PatchTenantRequestObj
 		e := string(*req.Body.ContactEmail)
 		in.ContactEmail = &e
 	}
+	if req.Body.VatNumber != nil {
+		in.VATNumber = req.Body.VatNumber
+	}
+	if req.Body.InvoiceAddress != nil {
+		a := invoiceIn(*req.Body.InvoiceAddress)
+		in.InvoiceAddress = &a
+	}
 	t, err := h.svc.Patch(ctx, req.ID, in)
 	if err != nil {
 		return nil, err
 	}
 	return api.PatchTenant200JSONResponse(tenant(t)), nil
+}
+
+func (h handlers) GetShop(ctx context.Context, _ api.GetShopRequestObject) (api.GetShopResponseObject, error) {
+	t, err := h.svc.Shop(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetShop200JSONResponse(shop(t)), nil
+}
+
+func (h handlers) PatchShop(ctx context.Context, req api.PatchShopRequestObject) (api.PatchShopResponseObject, error) {
+	in := domain.ShopPatch{}
+	if req.Body.VatNumber != nil {
+		in.VATNumber = req.Body.VatNumber
+	}
+	if req.Body.InvoiceAddress != nil {
+		a := invoiceIn(*req.Body.InvoiceAddress)
+		in.InvoiceAddress = &a
+	}
+	t, err := h.svc.PatchShop(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.PatchShop200JSONResponse(shop(t)), nil
+}
+
+func (h handlers) GetInternalTenant(ctx context.Context, req api.GetInternalTenantRequestObject) (api.GetInternalTenantResponseObject, error) {
+	t, err := h.svc.InternalTenant(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetInternalTenant200JSONResponse(shop(t)), nil
 }
 
 func (h handlers) ReplaceTenantHostnames(ctx context.Context, req api.ReplaceTenantHostnamesRequestObject) (api.ReplaceTenantHostnamesResponseObject, error) {
@@ -178,6 +221,13 @@ func tenant(t domain.Tenant) api.Tenant {
 		DefaultJurisdiction: t.DefaultJurisdiction, IsTaxInclusive: t.IsTaxInclusive, ContactEmail: t.ContactEmail,
 		Hostnames: t.HostnameNames(), CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC(),
 	}
+	if t.VATNumber != "" {
+		out.VatNumber = &t.VATNumber
+	}
+	if t.InvoiceAddress != nil {
+		a := invoiceOut(*t.InvoiceAddress)
+		out.InvoiceAddress = &a
+	}
 	if p := t.PrimaryHostname(); p != "" {
 		out.PrimaryHostname = &p
 	}
@@ -197,6 +247,45 @@ func tenant(t domain.Tenant) api.Tenant {
 		out.DataPurgedAt = &at
 	}
 	return out
+}
+
+func shop(t domain.Tenant) api.Shop {
+	out := api.Shop{TenantID: t.TenantID, Name: t.Name, ContactEmail: t.ContactEmail}
+	if t.VATNumber != "" {
+		out.VatNumber = &t.VATNumber
+	}
+	if t.InvoiceAddress != nil {
+		a := invoiceOut(*t.InvoiceAddress)
+		out.InvoiceAddress = &a
+	}
+	return out
+}
+
+func invoiceOut(a domain.InvoiceAddress) api.InvoiceAddress {
+	out := api.InvoiceAddress{}
+	if a.StreetAndNumber != "" {
+		out.StreetAndNumber = &a.StreetAndNumber
+	}
+	if a.Suburb != "" {
+		out.Suburb = &a.Suburb
+	}
+	if a.TownCity != "" {
+		out.TownCity = &a.TownCity
+	}
+	if a.PostalCode != "" {
+		out.PostalCode = &a.PostalCode
+	}
+	if a.CountryCode != "" {
+		out.CountryCode = &a.CountryCode
+	}
+	return out
+}
+
+func invoiceIn(a api.InvoiceAddress) domain.InvoiceAddress {
+	return domain.InvoiceAddress{
+		StreetAndNumber: deref(a.StreetAndNumber), Suburb: deref(a.Suburb),
+		TownCity: deref(a.TownCity), PostalCode: deref(a.PostalCode), CountryCode: deref(a.CountryCode),
+	}
 }
 
 func deref[T any](p *T) T {

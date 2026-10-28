@@ -76,6 +76,8 @@ Orders capture a point-in-time snapshot. The order record **does not reference l
     "phone_e164": "..."
   },
   "delivery_address": { ... },    // free-form JSON (ADR-015)
+  "billing_address": { ... },     // optional structured SA billing snapshot (issue #29)
+  "seller_invoice": { ... },      // shop name/email/VAT/address snapshotted at create (issue #29)
   "requires_shipping": true,
   "items": [
     {
@@ -130,6 +132,7 @@ When a visitor's order is complete and the visitor later registers with the same
 |---|---|---|---|
 | GET | `/orders/mine` | List my orders | customer |
 | GET | `/orders/{id}` | Get order detail (`?guest_token=` opens a guest order from email on another device) | customer (owner) or visitor (owner or guest token) |
+| GET | `/orders/{id}/invoice` | Download invoice/tax-invoice PDF (`?guest_token=` for guest email links) | owner, guest token, or shop_admin |
 | POST | `/orders/{id}/cancel-request` | Request cancellation (pre-shipment) (future) | customer (owner) |
 | POST | `/orders/{id}/returns` | Request a return of some or all physical lines (post-delivery) | customer or visitor (owner) |
 | POST | `/orders/claim-guest-orders` | Claim guest orders after registration | customer |
@@ -153,7 +156,7 @@ When a visitor's order is complete and the visitor later registers with the same
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE) | service |
+| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE); resolves buyer billing and seller invoice snapshots (issue #29) | service |
 | POST | `/internal/orders/{id}/confirm` | Payment succeeded: → `received`, publish `order.placed.v1` (yc-checkout, CONFIRMING) | service |
 | POST | `/internal/orders/{id}/abandon` | Checkout compensation: `pending_payment` → `abandoned` | service |
 | GET | `/internal/orders/{id}` | Fetch order | service |

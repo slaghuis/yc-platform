@@ -2,7 +2,7 @@
 
 ## Overview
 
-`yc-tenant` owns the canonical record of every shop and its lifecycle (ADR-029). It exposes `/sysadmin/tenants` for system admins and publishes tenant lifecycle events through its outbox on `_platform`. Every other service keeps its own projection, fed by those events.
+`yc-tenant` owns the canonical record of every shop and its lifecycle (ADR-029). It exposes `/sysadmin/tenants` for system admins and publishes tenant lifecycle events through its outbox on `_platform`. Every other service keeps its own projection, fed by those events. Shop admins manage optional seller invoice identity (`vat_number`, `invoice_address`) on `/admin/shop` (issue #29); yc-orders snapshots that via `GET /internal/tenants/{id}` at order create.
 
 ## Location in Monorepo
 
@@ -54,11 +54,14 @@ All paths are on platform hosts; system admins only.
 | GET | `/sysadmin/tenants` | List; filter by `status`, search `q` by name or hostname; cursor-paginated (ordered by `tenant_id`) |
 | POST | `/sysadmin/tenants` | Create; body as `platform.tenant.provisioned.v1` plus `contact_email`; `Idempotency-Key` required |
 | GET | `/sysadmin/tenants/{id}` | Read |
-| PATCH | `/sysadmin/tenants/{id}` | Change `name`, `contact_email` |
+| PATCH | `/sysadmin/tenants/{id}` | Change `name`, `contact_email`, optional `vat_number` / `invoice_address` |
 | PUT | `/sysadmin/tenants/{id}/hostnames` | Replace hostnames and the primary |
 | POST | `/sysadmin/tenants/{id}/suspend` | `reason` required; `Idempotency-Key` required |
 | POST | `/sysadmin/tenants/{id}/reinstate` | `Idempotency-Key` required |
 | DELETE | `/sysadmin/tenants/{id}` | Only when suspended; body `confirm_tenant_id` must repeat the ID |
+| GET | `/admin/shop` | Own shop invoice identity (shop_admin) |
+| PATCH | `/admin/shop` | Update `vat_number` and/or `invoice_address` (shop_admin) |
+| GET | `/internal/tenants/{id}` | Invoice snapshot for service callers (issue #29) |
 
 Errors: `400` validation, `403` not a system admin, `404` unknown tenant, `409` duplicate `tenant_id`, hostname already used (by another tenant or as a platform host) or invalid state transition, `422` reused `Idempotency-Key` with another body.
 

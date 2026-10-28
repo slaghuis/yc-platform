@@ -3,6 +3,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -33,6 +34,7 @@ type Orders interface {
 	AdminOrder(ctx context.Context, id string) (service.Detail, error)
 	CustomerOrder(ctx context.Context, id, guestToken string) (service.Detail, error)
 	MintGuestAccess(ctx context.Context, id string) (token string, exp time.Time, err error)
+	InvoicePDF(ctx context.Context, id, guestToken string) (filename string, pdf []byte, err error)
 	Mine(ctx context.Context, after *repository.OrderCursor, limit int) ([]domain.Order, error)
 	AdminList(ctx context.Context, status domain.Status, after *repository.OrderCursor, limit int) ([]domain.Order, error)
 	RequestReturn(ctx context.Context, orderID string, items []domain.ReturnItem, reason string) (domain.Return, error)
@@ -66,7 +68,7 @@ func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{
 			Prefix: "/orders", Methods: []string{http.MethodGet, http.MethodPost},
-			Roles: []string{string(authctx.ActorCustomer), string(authctx.ActorVisitor)},
+			Roles: []string{string(authctx.ActorCustomer), string(authctx.ActorVisitor), string(authctx.ActorShopAdmin)},
 		},
 		{Prefix: "/admin/orders", Roles: admin},
 		{Prefix: "/admin/returns", Roles: admin},
@@ -130,6 +132,22 @@ func (h handlers) GetMyOrder(ctx context.Context, req api.GetMyOrderRequestObjec
 		return nil, err
 	}
 	return api.GetMyOrder200JSONResponse(detail(d)), nil
+}
+
+func (h handlers) GetOrderInvoice(ctx context.Context, req api.GetOrderInvoiceRequestObject) (api.GetOrderInvoiceResponseObject, error) {
+	token := ""
+	if req.Params.GuestToken != nil {
+		token = *req.Params.GuestToken
+	}
+	name, pdf, err := h.svc.InvoicePDF(ctx, req.ID.String(), token)
+	if err != nil {
+		return nil, err
+	}
+	disposition := `attachment; filename="` + name + `"`
+	return api.GetOrderInvoice200ApplicationPdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: api.GetOrderInvoice200ResponseHeaders{ContentDisposition: &disposition},
+	}, nil
 }
 
 func (h handlers) MintGuestAccess(ctx context.Context, req api.MintGuestAccessRequestObject) (api.MintGuestAccessResponseObject, error) {
@@ -277,6 +295,10 @@ func (h handlers) CreateOrder(ctx context.Context, req api.CreateOrderRequestObj
 	if b.DeliveryAddress != nil {
 		o.DeliveryAddress = *b.DeliveryAddress
 	}
+	if b.BillingAddress != nil {
+		ba := billingIn(*b.BillingAddress)
+		o.BillingAddress = &ba
+	}
 	if b.ShippingOption != nil {
 		if o.ShippingSnapshot, err = json.Marshal(*b.ShippingOption); err != nil {
 			return nil, err
@@ -399,6 +421,14 @@ func order(o domain.Order, history []domain.HistoryEntry) api.Order {
 		addr := o.DeliveryAddress
 		out.DeliveryAddress = &addr
 	}
+	if o.BillingAddress != nil {
+		ba := billingOut(*o.BillingAddress)
+		out.BillingAddress = &ba
+	}
+	if o.SellerInvoice != nil {
+		si := sellerOut(*o.SellerInvoice)
+		out.SellerInvoice = &si
+	}
 	if o.PaymentGateway != "" || o.PaymentTransactionID != "" {
 		p := api.Payment{Gateway: o.PaymentGateway}
 		if tx, err := uuid.Parse(o.PaymentTransactionID); err == nil {
@@ -511,4 +541,43 @@ func deref[T any](p *T) T {
 		return zero
 	}
 	return *p
+}
+
+func billingIn(b api.BillingAddress) domain.BillingAddress {
+	return domain.BillingAddress{
+		CompanyName: deref(b.CompanyName), VATNumber: deref(b.VatNumber),
+		StreetAndNumber: b.StreetAndNumber, Suburb: deref(b.Suburb),
+		TownCity: b.TownCity, PostalCode: b.PostalCode, CountryCode: deref(b.CountryCode),
+	}
+}
+
+func billingOut(b domain.BillingAddress) api.BillingAddress {
+	out := api.BillingAddress{
+		StreetAndNumber: b.StreetAndNumber, TownCity: b.TownCity, PostalCode: b.PostalCode,
+	}
+	if b.CompanyName != "" {
+		out.CompanyName = &b.CompanyName
+	}
+	if b.VATNumber != "" {
+		out.VatNumber = &b.VATNumber
+	}
+	if b.Suburb != "" {
+		out.Suburb = &b.Suburb
+	}
+	if b.CountryCode != "" {
+		out.CountryCode = &b.CountryCode
+	}
+	return out
+}
+
+func sellerOut(s domain.SellerInvoice) api.SellerInvoice {
+	out := api.SellerInvoice{Name: s.Name, ContactEmail: s.ContactEmail}
+	if s.VATNumber != "" {
+		out.VatNumber = &s.VATNumber
+	}
+	if s.InvoiceAddress != nil {
+		a := billingOut(*s.InvoiceAddress)
+		out.InvoiceAddress = &a
+	}
+	return out
 }

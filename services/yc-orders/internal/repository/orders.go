@@ -20,20 +20,21 @@ import (
 type Orders struct{}
 
 const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_id, user_type, guest_contact,
-	delivery_address, requires_shipping, status, items, pricing_snapshot, shipping_snapshot, currency,
-	items_total_minor, shipping_minor, tax_total_minor, total_minor, COALESCE(payment_transaction_id::text, ''),
-	COALESCE(payment_gateway, ''), refunded_minor, created_at, updated_at, placed_at,
-	COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''), COALESCE(carrier_name, ''),
-	COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at, COALESCE(chargeback_id::text, '')`
+	delivery_address, billing_address, seller_invoice, requires_shipping, status, items, pricing_snapshot,
+	shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor, total_minor,
+	COALESCE(payment_transaction_id::text, ''), COALESCE(payment_gateway, ''), refunded_minor, created_at,
+	updated_at, placed_at, COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''),
+	COALESCE(carrier_name, ''), COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at,
+	COALESCE(chargeback_id::text, '')`
 
 func scanOrder(r pgx.Row) (domain.Order, error) {
 	var o domain.Order
 	var userType, status string
-	var guest, address, items []byte
+	var guest, address, billing, seller, items []byte
 	sh := &o.Shipment
 	err := r.Scan(&o.ID, &o.OrderNumber, &o.CheckoutSessionID, &o.UserID, &userType, &guest,
-		&address, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot, &o.Currency,
-		&o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
+		&address, &billing, &seller, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot,
+		&o.Currency, &o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
 		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt,
 		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt,
 		&o.ChargebackID)
@@ -50,6 +51,20 @@ func scanOrder(r pgx.Row) (domain.Order, error) {
 		if err := json.Unmarshal(address, &o.DeliveryAddress); err != nil {
 			return o, fmt.Errorf("decode delivery_address: %w", err)
 		}
+	}
+	if len(billing) > 0 {
+		var b domain.BillingAddress
+		if err := json.Unmarshal(billing, &b); err != nil {
+			return o, fmt.Errorf("decode billing_address: %w", err)
+		}
+		o.BillingAddress = &b
+	}
+	if len(seller) > 0 {
+		var s domain.SellerInvoice
+		if err := json.Unmarshal(seller, &s); err != nil {
+			return o, fmt.Errorf("decode seller_invoice: %w", err)
+		}
+		o.SellerInvoice = &s
 	}
 	if err := json.Unmarshal(items, &o.Items); err != nil {
 		return o, fmt.Errorf("decode items: %w", err)
@@ -94,7 +109,7 @@ func nullJSON(v any) ([]byte, error) {
 
 // InsertOrder records a new order.
 func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o domain.Order) error {
-	var guest, address []byte
+	var guest, address, billing, seller []byte
 	var err error
 	if o.GuestContact != nil {
 		if guest, err = json.Marshal(o.GuestContact); err != nil {
@@ -106,6 +121,16 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 			return fmt.Errorf("encode delivery_address: %w", err)
 		}
 	}
+	if o.BillingAddress != nil {
+		if billing, err = json.Marshal(o.BillingAddress); err != nil {
+			return fmt.Errorf("encode billing_address: %w", err)
+		}
+	}
+	if o.SellerInvoice != nil {
+		if seller, err = json.Marshal(o.SellerInvoice); err != nil {
+			return fmt.Errorf("encode seller_invoice: %w", err)
+		}
+	}
 	items, err := json.Marshal(o.Items)
 	if err != nil {
 		return fmt.Errorf("encode items: %w", err)
@@ -115,15 +140,15 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 		shipping = o.ShippingSnapshot
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders (id, tenant_id, checkout_session_id, user_id, user_type, guest_contact,
-			source_email, delivery_address, requires_shipping, status, items, pricing_snapshot, shipping_snapshot,
-			currency, items_total_minor, shipping_minor, tax_total_minor, total_minor, payment_transaction_id,
-			payment_gateway, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-			NULLIF($19, '')::uuid, NULLIF($20, ''), $21, $21)`,
+			source_email, delivery_address, billing_address, seller_invoice, requires_shipping, status, items,
+			pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor,
+			total_minor, payment_transaction_id, payment_gateway, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+			$20, NULLIF($21, '')::uuid, NULLIF($22, ''), $23, $23)`,
 		o.ID, tenantID, o.CheckoutSessionID, o.UserID, string(o.UserType), guest,
-		o.SourceEmail(), address, o.RequiresShipping, string(o.Status), items, []byte(o.PricingSnapshot), shipping,
-		o.Currency, o.ItemsTotalMinor, o.ShippingMinor, o.TaxTotalMinor, o.TotalMinor, o.PaymentTransactionID,
-		o.PaymentGateway, o.CreatedAt)
+		o.SourceEmail(), address, billing, seller, o.RequiresShipping, string(o.Status), items,
+		[]byte(o.PricingSnapshot), shipping, o.Currency, o.ItemsTotalMinor, o.ShippingMinor, o.TaxTotalMinor,
+		o.TotalMinor, o.PaymentTransactionID, o.PaymentGateway, o.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}

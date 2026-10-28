@@ -39,12 +39,13 @@ func TestPostsRequireAnIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestRoutesAreSystemAdminOnly(t *testing.T) {
+func TestRoutesRoles(t *testing.T) {
 	routes := Routes()
-	require.Len(t, routes, 1)
+	require.Len(t, routes, 2)
 	assert.Equal(t, "/sysadmin/tenants", routes[0].Prefix)
 	assert.Equal(t, []string{"system_admin"}, routes[0].Roles)
-	assert.False(t, routes[0].Anonymous)
+	assert.Equal(t, "/admin/shop", routes[1].Prefix)
+	assert.Equal(t, []string{"shop_admin"}, routes[1].Roles)
 }
 
 func TestTenantMapping(t *testing.T) {

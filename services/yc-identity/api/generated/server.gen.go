@@ -260,6 +260,22 @@ type AcceptInvitationRequest struct {
 // ActorType defines model for ActorType.
 type ActorType string
 
+// BillingAddress Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
+// Distinct from free-form delivery addresses.
+type BillingAddress struct {
+	CompanyName *string `json:"company_name,omitempty"`
+
+	// CountryCode ISO 3166-1 alpha-2; defaults to ZA when omitted.
+	CountryCode     *string `json:"country_code,omitempty"`
+	PostalCode      string  `json:"postal_code"`
+	StreetAndNumber string  `json:"street_and_number"`
+	Suburb          *string `json:"suburb,omitempty"`
+	TownCity        string  `json:"town_city"`
+
+	// VatNumber Optional SA VAT number (10 digits starting with 4).
+	VatNumber *string `json:"vat_number,omitempty"`
+}
+
 // CreateInvitationRequest defines model for CreateInvitationRequest.
 type CreateInvitationRequest struct {
 	// AcceptHost Hostname for the accept link; optional when known from platform_hosts or shop_hosts.
@@ -533,6 +549,9 @@ type LoginJSONRequestBody = LoginRequest
 // LogoutJSONRequestBody defines body for Logout for application/json ContentType.
 type LogoutJSONRequestBody = LogoutRequest
 
+// PutMyBillingJSONRequestBody defines body for PutMyBilling for application/json ContentType.
+type PutMyBillingJSONRequestBody = BillingAddress
+
 // CompleteOAuthJSONRequestBody defines body for CompleteOAuth for application/json ContentType.
 type CompleteOAuthJSONRequestBody = OAuthCallback
 
@@ -580,6 +599,9 @@ type ServerInterface interface {
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(w http.ResponseWriter, r *http.Request)
+	// GetUserBilling A customer's billing address (service)
+	// (GET /internal/users/{id}/billing)
+	GetUserBilling(w http.ResponseWriter, r *http.Request, id UserID)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(w http.ResponseWriter, r *http.Request)
@@ -598,6 +620,15 @@ type ServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// DeleteMyBilling Clear the caller's billing address
+	// (DELETE /me/billing)
+	DeleteMyBilling(w http.ResponseWriter, r *http.Request)
+	// GetMyBilling The caller's billing address
+	// (GET /me/billing)
+	GetMyBilling(w http.ResponseWriter, r *http.Request)
+	// PutMyBilling Replace the caller's billing address
+	// (PUT /me/billing)
+	PutMyBilling(w http.ResponseWriter, r *http.Request)
 	// CompleteOAuth Complete signing in with an OAuth provider
 	// (POST /oauth/{provider}/callback)
 	CompleteOAuth(w http.ResponseWriter, r *http.Request, provider CompleteOAuthParamsProvider)
@@ -685,6 +716,12 @@ func (_ Unimplemented) IssueServiceToken(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetUserBilling A customer's billing address (service)
+// (GET /internal/users/{id}/billing)
+func (_ Unimplemented) GetUserBilling(w http.ResponseWriter, r *http.Request, id UserID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ValidateToken Validate an access token (called by yc-gateway)
 // (POST /internal/validate-token)
 func (_ Unimplemented) ValidateToken(w http.ResponseWriter, r *http.Request) {
@@ -718,6 +755,24 @@ func (_ Unimplemented) DeleteMe(w http.ResponseWriter, r *http.Request) {
 // GetMe The caller's own user
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteMyBilling Clear the caller's billing address
+// (DELETE /me/billing)
+func (_ Unimplemented) DeleteMyBilling(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetMyBilling The caller's billing address
+// (GET /me/billing)
+func (_ Unimplemented) GetMyBilling(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutMyBilling Replace the caller's billing address
+// (PUT /me/billing)
+func (_ Unimplemented) PutMyBilling(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1051,6 +1106,32 @@ func (siw *ServerInterfaceWrapper) IssueServiceToken(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetUserBilling operation middleware
+func (siw *ServerInterfaceWrapper) GetUserBilling(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id UserID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserBilling(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateToken operation middleware
 func (siw *ServerInterfaceWrapper) ValidateToken(w http.ResponseWriter, r *http.Request) {
 
@@ -1126,6 +1207,48 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMyBilling operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMyBilling(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMyBilling(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyBilling operation middleware
+func (siw *ServerInterfaceWrapper) GetMyBilling(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyBilling(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutMyBilling operation middleware
+func (siw *ServerInterfaceWrapper) PutMyBilling(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutMyBilling(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1573,6 +1696,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/me/billing", wrapper.DeleteMyBilling)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/me/billing", wrapper.GetMyBilling)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/me/billing", wrapper.PutMyBilling)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/users", wrapper.ListUsers)
 	})
 	r.Group(func(r chi.Router) {
@@ -1607,6 +1739,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/invitations/accept", wrapper.AcceptInvitation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/users/{id}/billing", wrapper.GetUserBilling)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/validate-token", wrapper.ValidateToken)
@@ -2102,6 +2237,44 @@ func (response IssueServiceToken401ApplicationProblemPlusJSONResponse) VisitIssu
 	return err
 }
 
+type GetUserBillingRequestObject struct {
+	ID UserID `json:"id"`
+}
+
+type GetUserBillingResponseObject interface {
+	VisitGetUserBillingResponse(w http.ResponseWriter) error
+}
+
+type GetUserBilling200JSONResponse BillingAddress
+
+func (response GetUserBilling200JSONResponse) VisitGetUserBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUserBilling404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetUserBilling404ApplicationProblemPlusJSONResponse) VisitGetUserBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ValidateTokenRequestObject struct {
 	Body *ValidateTokenJSONRequestBody
 }
@@ -2438,6 +2611,182 @@ func (response GetMe404ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyBillingRequestObject struct {
+}
+
+type DeleteMyBillingResponseObject interface {
+	VisitDeleteMyBillingResponse(w http.ResponseWriter) error
+}
+
+type DeleteMyBilling204Response struct {
+}
+
+func (response DeleteMyBilling204Response) VisitDeleteMyBillingResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMyBilling401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteMyBilling401ApplicationProblemPlusJSONResponse) VisitDeleteMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMyBilling403ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteMyBilling403ApplicationProblemPlusJSONResponse) VisitDeleteMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyBillingRequestObject struct {
+}
+
+type GetMyBillingResponseObject interface {
+	VisitGetMyBillingResponse(w http.ResponseWriter) error
+}
+
+type GetMyBilling200JSONResponse BillingAddress
+
+func (response GetMyBilling200JSONResponse) VisitGetMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyBilling401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetMyBilling401ApplicationProblemPlusJSONResponse) VisitGetMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyBilling403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMyBilling403ApplicationProblemPlusJSONResponse) VisitGetMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyBilling404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetMyBilling404ApplicationProblemPlusJSONResponse) VisitGetMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyBillingRequestObject struct {
+	Body *PutMyBillingJSONRequestBody
+}
+
+type PutMyBillingResponseObject interface {
+	VisitPutMyBillingResponse(w http.ResponseWriter) error
+}
+
+type PutMyBilling200JSONResponse BillingAddress
+
+func (response PutMyBilling200JSONResponse) VisitPutMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyBilling400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PutMyBilling400ApplicationProblemPlusJSONResponse) VisitPutMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyBilling401ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyBilling401ApplicationProblemPlusJSONResponse) VisitPutMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutMyBilling403ApplicationProblemPlusJSONResponse Problem
+
+func (response PutMyBilling403ApplicationProblemPlusJSONResponse) VisitPutMyBillingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3038,6 +3387,9 @@ type StrictServerInterface interface {
 	// IssueServiceToken Issue a service token (ADR-021)
 	// (POST /internal/service-token)
 	IssueServiceToken(ctx context.Context, request IssueServiceTokenRequestObject) (IssueServiceTokenResponseObject, error)
+	// GetUserBilling A customer's billing address (service)
+	// (GET /internal/users/{id}/billing)
+	GetUserBilling(ctx context.Context, request GetUserBillingRequestObject) (GetUserBillingResponseObject, error)
 	// ValidateToken Validate an access token (called by yc-gateway)
 	// (POST /internal/validate-token)
 	ValidateToken(ctx context.Context, request ValidateTokenRequestObject) (ValidateTokenResponseObject, error)
@@ -3056,6 +3408,15 @@ type StrictServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// DeleteMyBilling Clear the caller's billing address
+	// (DELETE /me/billing)
+	DeleteMyBilling(ctx context.Context, request DeleteMyBillingRequestObject) (DeleteMyBillingResponseObject, error)
+	// GetMyBilling The caller's billing address
+	// (GET /me/billing)
+	GetMyBilling(ctx context.Context, request GetMyBillingRequestObject) (GetMyBillingResponseObject, error)
+	// PutMyBilling Replace the caller's billing address
+	// (PUT /me/billing)
+	PutMyBilling(ctx context.Context, request PutMyBillingRequestObject) (PutMyBillingResponseObject, error)
 	// CompleteOAuth Complete signing in with an OAuth provider
 	// (POST /oauth/{provider}/callback)
 	CompleteOAuth(ctx context.Context, request CompleteOAuthRequestObject) (CompleteOAuthResponseObject, error)
@@ -3360,6 +3721,32 @@ func (sh *strictHandler) IssueServiceToken(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// GetUserBilling operation middleware
+func (sh *strictHandler) GetUserBilling(w http.ResponseWriter, r *http.Request, id UserID) {
+	var request GetUserBillingRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUserBilling(ctx, request.(GetUserBillingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUserBilling")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUserBillingResponseObject); ok {
+		if err := validResponse.VisitGetUserBillingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ValidateToken operation middleware
 func (sh *strictHandler) ValidateToken(w http.ResponseWriter, r *http.Request) {
 	var request ValidateTokenRequestObject
@@ -3528,6 +3915,85 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMyBilling operation middleware
+func (sh *strictHandler) DeleteMyBilling(w http.ResponseWriter, r *http.Request) {
+	var request DeleteMyBillingRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMyBilling(ctx, request.(DeleteMyBillingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMyBilling")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMyBillingResponseObject); ok {
+		if err := validResponse.VisitDeleteMyBillingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyBilling operation middleware
+func (sh *strictHandler) GetMyBilling(w http.ResponseWriter, r *http.Request) {
+	var request GetMyBillingRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMyBilling(ctx, request.(GetMyBillingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyBilling")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyBillingResponseObject); ok {
+		if err := validResponse.VisitGetMyBillingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutMyBilling operation middleware
+func (sh *strictHandler) PutMyBilling(w http.ResponseWriter, r *http.Request) {
+	var request PutMyBillingRequestObject
+
+	var body PutMyBillingJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutMyBilling(ctx, request.(PutMyBillingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutMyBilling")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutMyBillingResponseObject); ok {
+		if err := validResponse.VisitPutMyBillingResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

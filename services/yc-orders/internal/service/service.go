@@ -42,20 +42,28 @@ type Shipments interface {
 	CreateShipment(ctx context.Context, req integration.ShipmentRequest, key string) (integration.Shipment, error)
 }
 
+// Directory resolves buyer billing and seller invoice identity (issue #29).
+type Directory interface {
+	UserBilling(ctx context.Context, userID string) (integration.BillingAddress, bool, error)
+	SellerInvoice(ctx context.Context, tenantID string) (integration.SellerInvoice, error)
+}
+
 // Service implements the order use cases.
 type Service struct {
-	db       *pgxpool.Pool
-	bus      Publisher
-	payments Payments
-	shipping Shipments
-	guest    domain.GuestAccess
-	repo     repository.Orders
-	now      func() time.Time
+	db        *pgxpool.Pool
+	bus       Publisher
+	payments  Payments
+	shipping  Shipments
+	directory Directory
+	guest     domain.GuestAccess
+	repo      repository.Orders
+	now       func() time.Time
 }
 
 // New returns a Service. guest signs time-limited guest order links (issue #22).
-func New(db *pgxpool.Pool, bus Publisher, payments Payments, shipping Shipments, guest domain.GuestAccess) *Service {
-	s := &Service{db: db, bus: bus, payments: payments, shipping: shipping, guest: guest, now: time.Now}
+// directory may be nil in unit tests that do not create orders with snapshots.
+func New(db *pgxpool.Pool, bus Publisher, payments Payments, shipping Shipments, guest domain.GuestAccess, directory Directory) *Service {
+	s := &Service{db: db, bus: bus, payments: payments, shipping: shipping, directory: directory, guest: guest, now: time.Now}
 	if s.guest.Now == nil {
 		s.guest.Now = s.now
 	}
@@ -71,8 +79,13 @@ type Detail struct {
 }
 
 // Create records checkout's pending_payment order. A session has one
-// order: creating it again returns it.
+// order: creating it again returns it. Billing and seller invoice are
+// snapshotted here (issue #29).
 func (s *Service) Create(ctx context.Context, o domain.Order) (domain.Order, error) {
+	a, _ := authctx.FromContext(ctx)
+	if err := s.resolveSnapshots(ctx, a.TenantID, &o); err != nil {
+		return domain.Order{}, err
+	}
 	if err := o.Validate(); err != nil {
 		return domain.Order{}, err
 	}
@@ -98,6 +111,63 @@ func (s *Service) Create(ctx context.Context, o domain.Order) (domain.Order, err
 		})
 	})
 	return o, err
+}
+
+func (s *Service) resolveSnapshots(ctx context.Context, tenantID string, o *domain.Order) error {
+	if o.BillingAddress != nil {
+		b := domain.NormaliseBilling(*o.BillingAddress)
+		o.BillingAddress = &b
+	} else if o.UserType == domain.UserCustomer && s.directory != nil {
+		b, ok, err := s.directory.UserBilling(ctx, o.UserID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			ba := domain.NormaliseBilling(domain.BillingAddress{
+				CompanyName: b.CompanyName, VATNumber: b.VATNumber, StreetAndNumber: b.StreetAndNumber,
+				Suburb: b.Suburb, TownCity: b.TownCity, PostalCode: b.PostalCode, CountryCode: b.CountryCode,
+			})
+			o.BillingAddress = &ba
+		}
+	}
+	if s.directory == nil {
+		return nil
+	}
+	seller, err := s.directory.SellerInvoice(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	si := domain.SellerInvoice{Name: seller.Name, ContactEmail: seller.ContactEmail, VATNumber: seller.VATNumber}
+	if a := seller.InvoiceAddress; a != nil {
+		addr := domain.BillingAddress{
+			StreetAndNumber: a.StreetAndNumber, Suburb: a.Suburb, TownCity: a.TownCity,
+			PostalCode: a.PostalCode, CountryCode: a.CountryCode,
+		}
+		si.InvoiceAddress = &addr
+	}
+	o.SellerInvoice = &si
+	return nil
+}
+
+// InvoicePDF returns the order invoice for the caller (owner, guest_token, or shop admin).
+func (s *Service) InvoicePDF(ctx context.Context, id, guestToken string) (filename string, pdf []byte, err error) {
+	d, err := s.invoiceOrder(ctx, id, guestToken)
+	if err != nil {
+		return "", nil, err
+	}
+	name := d.Order.OrderNumber
+	if name == "" {
+		name = d.Order.ID
+	}
+	return name + ".pdf", domain.InvoicePDF(d.Order), nil
+}
+
+func (s *Service) invoiceOrder(ctx context.Context, id, guestToken string) (Detail, error) {
+	a, _ := authctx.FromContext(ctx)
+	if a.ActorType == authctx.ActorShopAdmin {
+		return s.AdminOrder(ctx, id)
+	}
+	return s.CustomerOrder(ctx, id, guestToken)
 }
 
 // Confirm places a paid order: it gets its number and order.placed.v1 is

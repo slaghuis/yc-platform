@@ -223,6 +223,7 @@ func TestPatchInputRules(t *testing.T) {
 		{"blank name", domain.PatchInput{Name: s(" ")}, "name"},
 		{"bad email", domain.PatchInput{ContactEmail: s("x")}, "contact_email"},
 		{"blank email", domain.PatchInput{ContactEmail: s("")}, "contact_email"},
+		{"bad vat", domain.PatchInput{VATNumber: s("123")}, "vat_number"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

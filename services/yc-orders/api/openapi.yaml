@@ -68,6 +68,33 @@ paths:
         '401': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /orders/{id}/invoice:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    get:
+      summary: Download the order invoice PDF
+      description: |
+        Customer/visitor owner, valid guest_token, or shop admin. Title is
+        "Tax Invoice" when seller_invoice.vat_number is set, else "Invoice".
+        Amounts come from the order snapshot only (issue #29).
+      operationId: getOrderInvoice
+      parameters:
+        - name: guest_token
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        '200':
+          description: The invoice PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
   /orders/{id}/returns:
     parameters:
       - $ref: '#/components/parameters/OrderID'
@@ -624,6 +651,29 @@ components:
       properties:
         transaction_id: { type: string, format: uuid }
         gateway: { type: string, maxLength: 50 }
+    BillingAddress:
+      type: object
+      description: Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
+      required: [street_and_number, town_city, postal_code]
+      additionalProperties: false
+      properties:
+        company_name: { type: string, maxLength: 200 }
+        vat_number: { type: string, maxLength: 16 }
+        street_and_number: { type: string, minLength: 1, maxLength: 200 }
+        suburb: { type: string, maxLength: 200 }
+        town_city: { type: string, minLength: 1, maxLength: 200 }
+        postal_code: { type: string, minLength: 1, maxLength: 200 }
+        country_code: { type: string, minLength: 2, maxLength: 2 }
+    SellerInvoice:
+      type: object
+      description: Shop identity snapshotted at order place (issue #29).
+      required: [name, contact_email]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        contact_email: { type: string }
+        vat_number: { type: string }
+        invoice_address: { $ref: '#/components/schemas/BillingAddress' }
     CreateOrderInput:
       type: object
       required: [checkout_session_id, user_id, user_type, requires_shipping, items, currency, items_total_minor,
@@ -638,6 +688,11 @@ components:
           type: object
           additionalProperties: true
           description: Free-form address (ADR-015); required with physical items.
+        billing_address:
+          $ref: '#/components/schemas/BillingAddress'
+          description: |
+            Optional buyer billing snapshot. When omitted for a customer,
+            yc-orders loads GET /internal/users/{id}/billing (issue #29).
         requires_shipping: { type: boolean }
         items:
           type: array
@@ -703,6 +758,8 @@ components:
         user_type: { type: string, enum: [customer, visitor] }
         guest_contact: { $ref: '#/components/schemas/GuestContact' }
         delivery_address: { type: object, additionalProperties: true }
+        billing_address: { $ref: '#/components/schemas/BillingAddress' }
+        seller_invoice: { $ref: '#/components/schemas/SellerInvoice' }
         requires_shipping: { type: boolean }
         status: { $ref: '#/components/schemas/OrderStatus' }
         items:

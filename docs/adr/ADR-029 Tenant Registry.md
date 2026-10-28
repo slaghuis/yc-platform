@@ -76,3 +76,16 @@
 - **Keep it in yc-identity**: rejected; shops are not identities, and yc-identity is already the most security-sensitive service.
 - **No registry; the console reads `dim_tenant` from yc-analytics or `tenant_hosts` from the gateway**: rejected; neither owns the data, neither has lifecycle, and both are projections that can lag.
 - **Hard delete with a full cascade now**: rejected for v1.1; it needs handlers in eleven services and retention rules per domain (ADR-004). It stays in backlog-v2.
+
+## Amends
+
+### 2026-10-28 — Shop invoice identity (issue #29)
+
+In addition to sysadmin CRUD (rule 7), a **shop admin** may read and update their own shop's invoice identity on the shop host:
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/admin/shop` | Own tenant: name, contact_email, optional `vat_number`, optional `invoice_address` |
+| PATCH | `/admin/shop` | Update `vat_number` and/or `invoice_address` only |
+
+`vat_number` and `invoice_address` are optional. Sysadmin `PATCH /sysadmin/tenants/{id}` may set the same fields. Order placement snapshots seller invoice fields by reading yc-tenant (no `platform.tenant.updated` schema change required for MVP).

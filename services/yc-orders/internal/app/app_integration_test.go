@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -101,10 +102,17 @@ func (f *fakePayment) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	switch r.URL.Path {
-	case "/internal/service-token":
+	switch {
+	case r.URL.Path == "/internal/service-token":
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "svc-yc-orders", "expires_at": time.Now().Add(time.Hour)})
-	case "/internal/refund":
+	case strings.HasPrefix(r.URL.Path, "/internal/tenants/"):
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tenant_id": strings.TrimPrefix(r.URL.Path, "/internal/tenants/"),
+			"name":      "Demo Shop", "contact_email": "ops@demo.test", "vat_number": "4123456789",
+		})
+	case strings.HasSuffix(r.URL.Path, "/billing"):
+		w.WriteHeader(http.StatusNotFound)
+	case r.URL.Path == "/internal/refund":
 		var in struct {
 			AmountMinor int64 `json:"amount_minor"`
 		}
@@ -126,7 +134,7 @@ func (f *fakePayment) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "completed", "refund": map[string]any{"amount_minor": f.keys[key]},
 		})
-	case "/internal/shipments":
+	case r.URL.Path == "/internal/shipments":
 		var in map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.booked = append(f.booked, in)

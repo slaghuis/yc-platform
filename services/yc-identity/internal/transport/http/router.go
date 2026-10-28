@@ -38,6 +38,10 @@ type Identity interface {
 	Demote(ctx context.Context, id string) (domain.User, error)
 	DeleteMe(ctx context.Context) error
 	DeleteUser(ctx context.Context, id string) error
+	GetMyBilling(ctx context.Context) (domain.BillingAddress, error)
+	PutMyBilling(ctx context.Context, in domain.BillingAddress) (domain.BillingAddress, error)
+	DeleteMyBilling(ctx context.Context) error
+	UserBilling(ctx context.Context, userID string) (domain.BillingAddress, error)
 	CreateInvitation(ctx context.Context, in domain.InviteInput) (domain.Invitation, error)
 	ListInvitations(ctx context.Context, f repository.InvitationFilter, after *repository.InvitationCursor, limit int) ([]domain.Invitation, *repository.InvitationCursor, error)
 	ResendInvitation(ctx context.Context, id string) (domain.Invitation, error)
@@ -51,6 +55,7 @@ func Routes() []httpkit.RegisteredRoute {
 	sysadmin := []string{string(authctx.ActorSystemAdmin)}
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/sysadmin/invitations", Roles: sysadmin},
+		{Prefix: "/internal/users", Methods: []string{http.MethodGet}},
 	}
 }
 
@@ -380,6 +385,75 @@ func (h handlers) AcceptInvitation(ctx context.Context, req api.AcceptInvitation
 		return nil, err
 	}
 	return api.AcceptInvitation200JSONResponse(session(sess)), nil
+}
+
+func (h handlers) GetMyBilling(ctx context.Context, _ api.GetMyBillingRequestObject) (api.GetMyBillingResponseObject, error) {
+	b, err := h.svc.GetMyBilling(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetMyBilling200JSONResponse(billing(b)), nil
+}
+
+func (h handlers) PutMyBilling(ctx context.Context, req api.PutMyBillingRequestObject) (api.PutMyBillingResponseObject, error) {
+	b, err := h.svc.PutMyBilling(ctx, billingIn(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.PutMyBilling200JSONResponse(billing(b)), nil
+}
+
+func (h handlers) DeleteMyBilling(ctx context.Context, _ api.DeleteMyBillingRequestObject) (api.DeleteMyBillingResponseObject, error) {
+	if err := h.svc.DeleteMyBilling(ctx); err != nil {
+		return nil, err
+	}
+	return api.DeleteMyBilling204Response{}, nil
+}
+
+func (h handlers) GetUserBilling(ctx context.Context, req api.GetUserBillingRequestObject) (api.GetUserBillingResponseObject, error) {
+	b, err := h.svc.UserBilling(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetUserBilling200JSONResponse(billing(b)), nil
+}
+
+func billing(b domain.BillingAddress) api.BillingAddress {
+	out := api.BillingAddress{
+		StreetAndNumber: b.StreetAndNumber, TownCity: b.TownCity, PostalCode: b.PostalCode,
+	}
+	if b.CompanyName != "" {
+		out.CompanyName = &b.CompanyName
+	}
+	if b.VATNumber != "" {
+		out.VatNumber = &b.VATNumber
+	}
+	if b.Suburb != "" {
+		out.Suburb = &b.Suburb
+	}
+	if b.CountryCode != "" {
+		out.CountryCode = &b.CountryCode
+	}
+	return out
+}
+
+func billingIn(b api.BillingAddress) domain.BillingAddress {
+	out := domain.BillingAddress{
+		StreetAndNumber: b.StreetAndNumber, TownCity: b.TownCity, PostalCode: b.PostalCode,
+	}
+	if b.CompanyName != nil {
+		out.CompanyName = *b.CompanyName
+	}
+	if b.VatNumber != nil {
+		out.VATNumber = *b.VatNumber
+	}
+	if b.Suburb != nil {
+		out.Suburb = *b.Suburb
+	}
+	if b.CountryCode != nil {
+		out.CountryCode = *b.CountryCode
+	}
+	return out
 }
 
 func (h handlers) DeleteMe(ctx context.Context, _ api.DeleteMeRequestObject) (api.DeleteMeResponseObject, error) {

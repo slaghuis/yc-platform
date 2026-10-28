@@ -101,10 +101,11 @@ func (r *fakeRepo) HostnameOwners(_ context.Context, _ pgx.Tx, hostnames []strin
 	return out, nil
 }
 
-func (r *fakeRepo) UpdateDetails(_ context.Context, _ pgx.Tx, id, name, email string, at time.Time) error {
-	t := r.tenants[id]
-	t.Name, t.ContactEmail, t.UpdatedAt = name, email, at
-	r.tenants[id] = t
+func (r *fakeRepo) UpdateDetails(_ context.Context, _ pgx.Tx, t domain.Tenant) error {
+	cur := r.tenants[t.TenantID]
+	cur.Name, cur.ContactEmail, cur.VATNumber, cur.InvoiceAddress, cur.UpdatedAt =
+		t.Name, t.ContactEmail, t.VATNumber, t.InvoiceAddress, t.UpdatedAt
+	r.tenants[t.TenantID] = cur
 	return nil
 }
 

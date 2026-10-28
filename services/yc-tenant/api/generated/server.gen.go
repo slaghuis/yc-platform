@@ -78,13 +78,28 @@ type HostnamesInput struct {
 	PrimaryHostname *string `json:"primary_hostname,omitempty"`
 }
 
+// InvoiceAddress Seller postal block on a tax invoice (issue
+type InvoiceAddress struct {
+	CountryCode     *string `json:"country_code,omitempty"`
+	PostalCode      *string `json:"postal_code,omitempty"`
+	StreetAndNumber *string `json:"street_and_number,omitempty"`
+	Suburb          *string `json:"suburb,omitempty"`
+	TownCity        *string `json:"town_city,omitempty"`
+}
+
 // PageInfo Cursor pagination (api-conventions.md §7).
 type PageInfo = httpkit.PageInfo
 
 // PatchInput defines model for PatchInput.
 type PatchInput struct {
 	ContactEmail *openapi_types.Email `json:"contact_email,omitempty"`
-	Name         *string              `json:"name,omitempty"`
+
+	// InvoiceAddress Empty object clears the address (issue
+	InvoiceAddress *InvoiceAddress `json:"invoice_address,omitempty"`
+	Name           *string         `json:"name,omitempty"`
+
+	// VatNumber Empty string clears the store VAT number (issue
+	VatNumber *string `json:"vat_number,omitempty"`
 }
 
 // Problem RFC 9457 problem details (docs/standards/error-handling.md).
@@ -100,6 +115,26 @@ type Problem struct {
 	Status int    `json:"status"`
 	Title  string `json:"title"`
 	Type   string `json:"type"`
+}
+
+// Shop defines model for Shop.
+type Shop struct {
+	ContactEmail string `json:"contact_email"`
+
+	// InvoiceAddress Seller postal block on a tax invoice (issue
+	InvoiceAddress *InvoiceAddress `json:"invoice_address,omitempty"`
+	Name           string          `json:"name"`
+	TenantID       string          `json:"tenant_id"`
+	VatNumber      *string         `json:"vat_number,omitempty"`
+}
+
+// ShopPatch defines model for ShopPatch.
+type ShopPatch struct {
+	// InvoiceAddress Empty object (no postal fields) clears the address.
+	InvoiceAddress *InvoiceAddress `json:"invoice_address,omitempty"`
+
+	// VatNumber Empty string clears the store VAT number.
+	VatNumber *string `json:"vat_number,omitempty"`
 }
 
 // Status defines model for Status.
@@ -121,9 +156,12 @@ type Tenant struct {
 	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
 
 	// Hostnames The primary first. Empty once the tenant is deleted (its hostnames are freed).
-	Hostnames      []Hostname `json:"hostnames"`
-	IsTaxInclusive bool       `json:"is_tax_inclusive"`
-	Name           string     `json:"name"`
+	Hostnames []Hostname `json:"hostnames"`
+
+	// InvoiceAddress Seller postal block on a tax invoice (issue
+	InvoiceAddress *InvoiceAddress `json:"invoice_address,omitempty"`
+	IsTaxInclusive bool            `json:"is_tax_inclusive"`
+	Name           string          `json:"name"`
 
 	// PrimaryHostname Left out once the tenant is deleted.
 	PrimaryHostname *string    `json:"primary_hostname,omitempty"`
@@ -133,6 +171,9 @@ type Tenant struct {
 	SuspendedReason *string    `json:"suspended_reason,omitempty"`
 	TenantID        string     `json:"tenant_id"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+
+	// VatNumber Optional SA VAT number (issue
+	VatNumber *string `json:"vat_number,omitempty"`
 }
 
 // TenantList defines model for TenantList.
@@ -180,6 +221,9 @@ type SuspendTenantParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// PatchShopJSONRequestBody defines body for PatchShop for application/json ContentType.
+type PatchShopJSONRequestBody = ShopPatch
+
 // CreateTenantJSONRequestBody defines body for CreateTenant for application/json ContentType.
 type CreateTenantJSONRequestBody = CreateInput
 
@@ -197,6 +241,15 @@ type SuspendTenantJSONRequestBody = SuspendInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetShop Own shop invoice identity
+	// (GET /admin/shop)
+	GetShop(w http.ResponseWriter, r *http.Request)
+	// PatchShop Update shop invoice identity
+	// (PATCH /admin/shop)
+	PatchShop(w http.ResponseWriter, r *http.Request)
+	// GetInternalTenant Tenant invoice snapshot (service)
+	// (GET /internal/tenants/{id})
+	GetInternalTenant(w http.ResponseWriter, r *http.Request, id TenantID)
 	// ListTenants List tenants
 	// (GET /sysadmin/tenants)
 	ListTenants(w http.ResponseWriter, r *http.Request, params ListTenantsParams)
@@ -226,6 +279,24 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// GetShop Own shop invoice identity
+// (GET /admin/shop)
+func (_ Unimplemented) GetShop(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PatchShop Update shop invoice identity
+// (PATCH /admin/shop)
+func (_ Unimplemented) PatchShop(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetInternalTenant Tenant invoice snapshot (service)
+// (GET /internal/tenants/{id})
+func (_ Unimplemented) GetInternalTenant(w http.ResponseWriter, r *http.Request, id TenantID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // ListTenants List tenants
 // (GET /sysadmin/tenants)
@@ -283,6 +354,60 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetShop operation middleware
+func (siw *ServerInterfaceWrapper) GetShop(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetShop(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchShop operation middleware
+func (siw *ServerInterfaceWrapper) PatchShop(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchShop(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInternalTenant operation middleware
+func (siw *ServerInterfaceWrapper) GetInternalTenant(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id TenantID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInternalTenant(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListTenants operation middleware
 func (siw *ServerInterfaceWrapper) ListTenants(w http.ResponseWriter, r *http.Request) {
@@ -727,6 +852,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/shop", wrapper.GetShop)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/admin/shop", wrapper.PatchShop)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/tenants/{id}", wrapper.GetInternalTenant)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sysadmin/tenants", wrapper.ListTenants)
 	})
 	r.Group(func(r chi.Router) {
@@ -755,6 +889,189 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type GetShopRequestObject struct {
+}
+
+type GetShopResponseObject interface {
+	VisitGetShopResponse(w http.ResponseWriter) error
+}
+
+type GetShop200JSONResponse Shop
+
+func (response GetShop200JSONResponse) VisitGetShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetShop403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetShop403ApplicationProblemPlusJSONResponse) VisitGetShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetShop404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetShop404ApplicationProblemPlusJSONResponse) VisitGetShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchShopRequestObject struct {
+	Body *PatchShopJSONRequestBody
+}
+
+type PatchShopResponseObject interface {
+	VisitPatchShopResponse(w http.ResponseWriter) error
+}
+
+type PatchShop200JSONResponse Shop
+
+func (response PatchShop200JSONResponse) VisitPatchShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchShop400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PatchShop400ApplicationProblemPlusJSONResponse) VisitPatchShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchShop403ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchShop403ApplicationProblemPlusJSONResponse) VisitPatchShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchShop404ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchShop404ApplicationProblemPlusJSONResponse) VisitPatchShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchShop409ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchShop409ApplicationProblemPlusJSONResponse) VisitPatchShopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalTenantRequestObject struct {
+	ID TenantID `json:"id"`
+}
+
+type GetInternalTenantResponseObject interface {
+	VisitGetInternalTenantResponse(w http.ResponseWriter) error
+}
+
+type GetInternalTenant200JSONResponse Shop
+
+func (response GetInternalTenant200JSONResponse) VisitGetInternalTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalTenant403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetInternalTenant403ApplicationProblemPlusJSONResponse) VisitGetInternalTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInternalTenant404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetInternalTenant404ApplicationProblemPlusJSONResponse) VisitGetInternalTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListTenantsRequestObject struct {
 	Params ListTenantsParams
@@ -1363,6 +1680,15 @@ func (response SuspendTenant422ApplicationProblemPlusJSONResponse) VisitSuspendT
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetShop Own shop invoice identity
+	// (GET /admin/shop)
+	GetShop(ctx context.Context, request GetShopRequestObject) (GetShopResponseObject, error)
+	// PatchShop Update shop invoice identity
+	// (PATCH /admin/shop)
+	PatchShop(ctx context.Context, request PatchShopRequestObject) (PatchShopResponseObject, error)
+	// GetInternalTenant Tenant invoice snapshot (service)
+	// (GET /internal/tenants/{id})
+	GetInternalTenant(ctx context.Context, request GetInternalTenantRequestObject) (GetInternalTenantResponseObject, error)
 	// ListTenants List tenants
 	// (GET /sysadmin/tenants)
 	ListTenants(ctx context.Context, request ListTenantsRequestObject) (ListTenantsResponseObject, error)
@@ -1426,6 +1752,87 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetShop operation middleware
+func (sh *strictHandler) GetShop(w http.ResponseWriter, r *http.Request) {
+	var request GetShopRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetShop(ctx, request.(GetShopRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetShop")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetShopResponseObject); ok {
+		if err := validResponse.VisitGetShopResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PatchShop operation middleware
+func (sh *strictHandler) PatchShop(w http.ResponseWriter, r *http.Request) {
+	var request PatchShopRequestObject
+
+	var body PatchShopJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PatchShop(ctx, request.(PatchShopRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PatchShop")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PatchShopResponseObject); ok {
+		if err := validResponse.VisitPatchShopResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInternalTenant operation middleware
+func (sh *strictHandler) GetInternalTenant(w http.ResponseWriter, r *http.Request, id TenantID) {
+	var request GetInternalTenantRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInternalTenant(ctx, request.(GetInternalTenantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInternalTenant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInternalTenantResponseObject); ok {
+		if err := validResponse.VisitGetInternalTenantResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListTenants operation middleware

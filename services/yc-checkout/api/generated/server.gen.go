@@ -178,6 +178,18 @@ type AdminSession struct {
 // AdminSessionUserType defines model for AdminSession.UserType.
 type AdminSessionUserType string
 
+// BillingAddress Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
+// Distinct from free-form delivery addresses.
+type BillingAddress struct {
+	CompanyName     *string `json:"company_name,omitempty"`
+	CountryCode     *string `json:"country_code,omitempty"`
+	PostalCode      string  `json:"postal_code"`
+	StreetAndNumber string  `json:"street_and_number"`
+	Suburb          *string `json:"suburb,omitempty"`
+	TownCity        string  `json:"town_city"`
+	VatNumber       *string `json:"vat_number,omitempty"`
+}
+
 // CompensationEntry defines model for CompensationEntry.
 type CompensationEntry struct {
 	At     time.Time             `json:"at"`
@@ -190,6 +202,11 @@ type CompensationEntryStep string
 
 // ConfirmInput defines model for ConfirmInput.
 type ConfirmInput struct {
+	// BillingAddress Optional buyer billing for the order invoice snapshot. When
+	// omitted for a customer, yc-orders may copy the saved
+	// /me/billing profile (issue #29).
+	BillingAddress *BillingAddress `json:"billing_address,omitempty"`
+
 	// DeliveryAddress Optional: physical items ship to the address chosen at the
 	// shipping step. A different one here is 409; choose shipping
 	// again.

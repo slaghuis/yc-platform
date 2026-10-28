@@ -95,6 +95,7 @@ type Service struct {
 	failures    repository.LoginFailures
 	invitations repository.Invitations
 	shopHosts   repository.ShopHosts
+	billing     repository.Billing
 	clients     map[string][sha256.Size]byte
 	cfg         Config
 	now         func() time.Time

@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,15 +30,30 @@ type Cursor struct {
 type Tenants struct{}
 
 const tenantColumns = `tenant_id, name, status, store_currency, default_jurisdiction, is_tax_inclusive,
-	contact_email, created_at, updated_at, suspended_at, COALESCE(suspended_reason, ''), deleted_at, data_purged_at`
+	contact_email, COALESCE(vat_number, ''), invoice_address, created_at, updated_at, suspended_at,
+	COALESCE(suspended_reason, ''), deleted_at, data_purged_at`
 
 func scanTenant(row pgx.Row) (domain.Tenant, error) {
 	var t domain.Tenant
 	var status string
+	var invoice []byte
 	err := row.Scan(&t.TenantID, &t.Name, &status, &t.StoreCurrency, &t.DefaultJurisdiction, &t.IsTaxInclusive,
-		&t.ContactEmail, &t.CreatedAt, &t.UpdatedAt, &t.SuspendedAt, &t.SuspendedReason, &t.DeletedAt, &t.DataPurgedAt)
+		&t.ContactEmail, &t.VATNumber, &invoice, &t.CreatedAt, &t.UpdatedAt, &t.SuspendedAt, &t.SuspendedReason,
+		&t.DeletedAt, &t.DataPurgedAt)
 	t.Status = domain.Status(status)
-	return t, err
+	if err != nil {
+		return t, err
+	}
+	if len(invoice) > 0 {
+		var a domain.InvoiceAddress
+		if err := json.Unmarshal(invoice, &a); err != nil {
+			return t, fmt.Errorf("decode invoice_address: %w", err)
+		}
+		if !a.Empty() {
+			t.InvoiceAddress = &a
+		}
+	}
+	return t, nil
 }
 
 // Insert stores t and its hostnames. It returns ErrConflict when the
@@ -180,11 +196,19 @@ func (Tenants) HostnameOwners(ctx context.Context, tx pgx.Tx, hostnames []string
 	return out, nil
 }
 
-// UpdateDetails sets the name and contact email.
-func (Tenants) UpdateDetails(ctx context.Context, tx pgx.Tx, tenantID, name, contactEmail string, at time.Time) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE tenants SET name = $2, contact_email = $3, updated_at = $4 WHERE tenant_id = $1`,
-		tenantID, name, contactEmail, at)
+// UpdateDetails sets the name, contact email and invoice identity.
+func (Tenants) UpdateDetails(ctx context.Context, tx pgx.Tx, t domain.Tenant) error {
+	var invoice []byte
+	var err error
+	if t.InvoiceAddress != nil && !t.InvoiceAddress.Empty() {
+		if invoice, err = json.Marshal(t.InvoiceAddress); err != nil {
+			return fmt.Errorf("encode invoice_address: %w", err)
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE tenants SET name = $2, contact_email = $3, vat_number = $4, invoice_address = $5, updated_at = $6
+		WHERE tenant_id = $1`,
+		t.TenantID, t.Name, t.ContactEmail, t.VATNumber, invoice, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("update tenant: %w", err)
 	}

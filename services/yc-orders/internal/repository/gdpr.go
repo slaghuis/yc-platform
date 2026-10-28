@@ -75,8 +75,8 @@ func (Orders) Pseudonym(ctx context.Context, tx pgx.Tx, tenantID, userID string)
 // status history and clears the orders' addresses and contacts. It
 // returns how many orders changed.
 func (Orders) Pseudonymise(ctx context.Context, tx pgx.Tx, tenantID, userID, pseudonym string, at time.Time) (int64, error) {
-	tag, err := tx.Exec(ctx, `UPDATE orders SET user_id = $3, delivery_address = NULL, guest_contact = NULL,
-			source_email = NULL, updated_at = $4
+	tag, err := tx.Exec(ctx, `UPDATE orders SET user_id = $3, delivery_address = NULL, billing_address = NULL,
+			guest_contact = NULL, source_email = NULL, updated_at = $4
 		WHERE tenant_id = $1 AND user_id = $2`, tenantID, userID, pseudonym, at)
 	if err != nil {
 		return 0, fmt.Errorf("pseudonymise orders: %w", err)

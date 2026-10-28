@@ -304,6 +304,12 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 	if g := sess.GuestContact; g != nil {
 		in.GuestContact = &integration.GuestContact{Email: g.Email, PhoneE164: g.PhoneE164}
 	}
+	if b := sess.BillingAddress; b != nil {
+		in.BillingAddress = &integration.BillingAddress{
+			CompanyName: b.CompanyName, VATNumber: b.VATNumber, StreetAndNumber: b.StreetAndNumber,
+			Suburb: b.Suburb, TownCity: b.TownCity, PostalCode: b.PostalCode, CountryCode: b.CountryCode,
+		}
+	}
 	if sess.RequiresShipping {
 		in.DeliveryAddress = sess.DeliveryAddress
 		if o, ok := sess.SelectedShipping(); ok {

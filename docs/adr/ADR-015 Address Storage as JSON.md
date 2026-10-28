@@ -69,3 +69,13 @@ Different functions have different minimum requirements. These are enforced by t
 | Invoice rendering | `lines` recommended; falls back to iterating `fields` |
 
 The frontend is responsible for collecting the superset of fields needed for the tenant's enabled functions.
+
+## Amends
+
+### 2026-10-28 — Structured billing for invoices (issue #29)
+
+**Delivery and shipping addresses remain free-form JSON** under the rules above.
+
+**Customer and seller billing for tax invoices is an exception:** the platform validates a typed `BillingAddress` / `InvoiceAddress` schema (company name and VAT number optional; street and number, town/city, and postal code required when a billing object is present; suburb optional; `country_code` defaults to `ZA`). That schema is stored on the customer profile (yc-identity), optionally on the tenant as the seller `invoice_address`, and snapshotted onto the order at place time so later edits do not rewrite invoices.
+
+This does not change ADR-015 for delivery, carrier mapping, or tax jurisdiction resolution from `delivery_address.country_code`.

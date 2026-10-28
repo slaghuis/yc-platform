@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 )
 
 // State is a session's saga state.
@@ -199,6 +201,7 @@ type Session struct {
 	ShippingOptionID string
 	GuestContact     *GuestContact
 	DeliveryAddress  map[string]any
+	BillingAddress   *BillingAddress
 
 	// PaymentGateway and the rest of the routing are chosen when the
 	// session starts and may change at confirm.
@@ -449,6 +452,7 @@ type Violation struct {
 type ConfirmInput struct {
 	GuestContact     *GuestContact
 	DeliveryAddress  map[string]any
+	BillingAddress   *BillingAddress
 	ShippingOptionID string
 	PaymentGateway   string
 	PaymentToken     string
@@ -519,12 +523,27 @@ func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 	case s.HostedPayment && strings.TrimSpace(in.ReturnURL) == "":
 		add("return_url", "required", "A return URL is required: the customer comes back to it after paying on the gateway's page")
 	}
+	if in.BillingAddress != nil {
+		if err := ValidateBilling(*in.BillingAddress); err != nil {
+			if e, ok := ycerrors.As(err); ok {
+				for _, f := range e.Fields {
+					add(f.Field, f.Code, f.Message)
+				}
+			} else {
+				add("billing_address", "invalid", "Billing address is not valid")
+			}
+		}
+	}
 	return out
 }
 
 // Confirm applies a valid confirm input and starts the saga.
 func (s *Session) Confirm(in ConfirmInput, key string, now time.Time) {
 	s.GuestContact = in.GuestContact
+	if in.BillingAddress != nil {
+		b := NormaliseBilling(*in.BillingAddress)
+		s.BillingAddress = &b
+	}
 	if s.RequiresShipping && in.ShippingOptionID != "" {
 		s.SelectShipping(in.ShippingOptionID)
 	}

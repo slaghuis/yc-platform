@@ -102,6 +102,9 @@ func (s *Service) deleteUser(ctx context.Context, tenantID, id, requestedBy stri
 		if err := s.users.Anonymise(ctx, tx, id, now); err != nil {
 			return err
 		}
+		if err := s.billing.Delete(ctx, tx, id); err != nil {
+			return err
+		}
 		links, err := s.oauth.UnlinkAll(ctx, tx, id)
 		if err != nil {
 			return err

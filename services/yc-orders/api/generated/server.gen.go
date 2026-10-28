@@ -189,6 +189,17 @@ type AcceptReturnInput struct {
 	RefundShipping *bool `json:"refund_shipping,omitempty"`
 }
 
+// BillingAddress Structured SA billing for tax invoices (issue
+type BillingAddress struct {
+	CompanyName     *string `json:"company_name,omitempty"`
+	CountryCode     *string `json:"country_code,omitempty"`
+	PostalCode      string  `json:"postal_code"`
+	StreetAndNumber string  `json:"street_and_number"`
+	Suburb          *string `json:"suburb,omitempty"`
+	TownCity        string  `json:"town_city"`
+	VatNumber       *string `json:"vat_number,omitempty"`
+}
+
 // ConfirmInput defines model for ConfirmInput.
 type ConfirmInput struct {
 	PaymentTransactionID *openapi_types.UUID `json:"payment_transaction_id,omitempty"`
@@ -196,6 +207,9 @@ type ConfirmInput struct {
 
 // CreateOrderInput defines model for CreateOrderInput.
 type CreateOrderInput struct {
+	// BillingAddress Optional buyer billing snapshot. When omitted for a customer,
+	// yc-orders loads GET /internal/users/{id}/billing (issue #29).
+	BillingAddress    *BillingAddress    `json:"billing_address,omitempty"`
 	CheckoutSessionID openapi_types.UUID `json:"checkout_session_id"`
 	Currency          string             `json:"currency"`
 
@@ -265,6 +279,8 @@ type Money struct {
 
 // Order defines model for Order.
 type Order struct {
+	// BillingAddress Structured SA billing for tax invoices (issue
+	BillingAddress    *BillingAddress         `json:"billing_address,omitempty"`
 	CheckoutSessionID openapi_types.UUID      `json:"checkout_session_id"`
 	CreatedAt         time.Time               `json:"created_at"`
 	DeliveryAddress   *map[string]interface{} `json:"delivery_address,omitempty"`
@@ -280,8 +296,11 @@ type Order struct {
 	Refunds           *[]Refund               `json:"refunds,omitempty"`
 	RequiresShipping  bool                    `json:"requires_shipping"`
 	Returns           *[]Return               `json:"returns,omitempty"`
-	Shipment          *OrderShipment          `json:"shipment,omitempty"`
-	Shipping          Money                   `json:"shipping"`
+
+	// SellerInvoice Shop identity snapshotted at order place (issue
+	SellerInvoice *SellerInvoice `json:"seller_invoice,omitempty"`
+	Shipment      *OrderShipment `json:"shipment,omitempty"`
+	Shipping      Money          `json:"shipping"`
 
 	// ShippingMethod The shipping option chosen at checkout.
 	ShippingMethod *string       `json:"shipping_method,omitempty"`
@@ -468,6 +487,16 @@ type ReturnList struct {
 // ReturnStatus defines model for ReturnStatus.
 type ReturnStatus string
 
+// SellerInvoice Shop identity snapshotted at order place (issue
+type SellerInvoice struct {
+	ContactEmail string `json:"contact_email"`
+
+	// InvoiceAddress Structured SA billing for tax invoices (issue
+	InvoiceAddress *BillingAddress `json:"invoice_address,omitempty"`
+	Name           string          `json:"name"`
+	VatNumber      *string         `json:"vat_number,omitempty"`
+}
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -540,6 +569,11 @@ type ListMyOrdersParams struct {
 type GetMyOrderParams struct {
 	// GuestToken Time-limited HMAC token from a guest order email. Required when
 	// the caller is not the visitor who placed the order.
+	GuestToken *string `form:"guest_token,omitempty" json:"guest_token,omitempty"`
+}
+
+// GetOrderInvoiceParams defines parameters for GetOrderInvoice.
+type GetOrderInvoiceParams struct {
 	GuestToken *string `form:"guest_token,omitempty" json:"guest_token,omitempty"`
 }
 
@@ -620,6 +654,9 @@ type ServerInterface interface {
 	// GetMyOrder Get one of my orders
 	// (GET /orders/{id})
 	GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID, params GetMyOrderParams)
+	// GetOrderInvoice Download the order invoice PDF
+	// (GET /orders/{id}/invoice)
+	GetOrderInvoice(w http.ResponseWriter, r *http.Request, id OrderID, params GetOrderInvoiceParams)
 	// RequestReturn Ask to return delivered items
 	// (POST /orders/{id}/returns)
 	RequestReturn(w http.ResponseWriter, r *http.Request, id OrderID)
@@ -728,6 +765,12 @@ func (_ Unimplemented) ListMyOrders(w http.ResponseWriter, r *http.Request, para
 // GetMyOrder Get one of my orders
 // (GET /orders/{id})
 func (_ Unimplemented) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID, params GetMyOrderParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetOrderInvoice Download the order invoice PDF
+// (GET /orders/{id}/invoice)
+func (_ Unimplemented) GetOrderInvoice(w http.ResponseWriter, r *http.Request, id OrderID, params GetOrderInvoiceParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1420,6 +1463,48 @@ func (siw *ServerInterfaceWrapper) GetMyOrder(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// GetOrderInvoice operation middleware
+func (siw *ServerInterfaceWrapper) GetOrderInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id OrderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOrderInvoiceParams
+
+	// ------------- Optional query parameter "guest_token" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "guest_token", r.URL.Query(), &params.GuestToken, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "guest_token"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "guest_token", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOrderInvoice(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RequestReturn operation middleware
 func (siw *ServerInterfaceWrapper) RequestReturn(w http.ResponseWriter, r *http.Request) {
 
@@ -1564,6 +1649,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/orders/{id}", wrapper.GetMyOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/orders/{id}/invoice", wrapper.GetOrderInvoice)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/orders/{id}/returns", wrapper.RequestReturn)
@@ -2542,6 +2630,73 @@ func (response GetMyOrder404ApplicationProblemPlusJSONResponse) VisitGetMyOrderR
 	return err
 }
 
+type GetOrderInvoiceRequestObject struct {
+	ID     OrderID `json:"id"`
+	Params GetOrderInvoiceParams
+}
+
+type GetOrderInvoiceResponseObject interface {
+	VisitGetOrderInvoiceResponse(w http.ResponseWriter) error
+}
+
+type GetOrderInvoice200ResponseHeaders struct {
+	ContentDisposition *string
+}
+
+type GetOrderInvoice200ApplicationPdfResponse struct {
+	Body          io.Reader
+	Headers       GetOrderInvoice200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetOrderInvoice200ApplicationPdfResponse) VisitGetOrderInvoiceResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	if response.Headers.ContentDisposition != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprint(*response.Headers.ContentDisposition))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetOrderInvoice401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetOrderInvoice401ApplicationProblemPlusJSONResponse) VisitGetOrderInvoiceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOrderInvoice404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetOrderInvoice404ApplicationProblemPlusJSONResponse) VisitGetOrderInvoiceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RequestReturnRequestObject struct {
 	ID   OrderID `json:"id"`
 	Body *RequestReturnJSONRequestBody
@@ -2676,6 +2831,9 @@ type StrictServerInterface interface {
 	// GetMyOrder Get one of my orders
 	// (GET /orders/{id})
 	GetMyOrder(ctx context.Context, request GetMyOrderRequestObject) (GetMyOrderResponseObject, error)
+	// GetOrderInvoice Download the order invoice PDF
+	// (GET /orders/{id}/invoice)
+	GetOrderInvoice(ctx context.Context, request GetOrderInvoiceRequestObject) (GetOrderInvoiceResponseObject, error)
 	// RequestReturn Ask to return delivered items
 	// (POST /orders/{id}/returns)
 	RequestReturn(ctx context.Context, request RequestReturnRequestObject) (RequestReturnResponseObject, error)
@@ -3220,6 +3378,33 @@ func (sh *strictHandler) GetMyOrder(w http.ResponseWriter, r *http.Request, id O
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMyOrderResponseObject); ok {
 		if err := validResponse.VisitGetMyOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOrderInvoice operation middleware
+func (sh *strictHandler) GetOrderInvoice(w http.ResponseWriter, r *http.Request, id OrderID, params GetOrderInvoiceParams) {
+	var request GetOrderInvoiceRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetOrderInvoice(ctx, request.(GetOrderInvoiceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOrderInvoice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOrderInvoiceResponseObject); ok {
+		if err := validResponse.VisitGetOrderInvoiceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

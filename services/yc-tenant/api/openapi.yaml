@@ -8,11 +8,68 @@ info:
 
     Routes are reached through yc-gateway on platform hosts, which sets
     X-YC-Tenant-ID, X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
-    (api-conventions.md §9). Every route is for system admins. POSTs require
-    an Idempotency-Key (api-conventions.md §10). Errors are
+    (api-conventions.md §9). Sysadmin routes are for system admins; shop
+    admins manage their own invoice identity on /admin/shop (issue #29).
+    POSTs require an Idempotency-Key (api-conventions.md §10). Errors are
     application/problem+json (error-handling.md).
 
 paths:
+  /admin/shop:
+    get:
+      summary: Own shop invoice identity
+      description: |
+        Shop admins only. Returns name, contact_email and optional
+        vat_number / invoice_address for tax invoices (issue #29).
+      operationId: getShop
+      responses:
+        '200':
+          description: The shop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shop' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Update shop invoice identity
+      description: |
+        Shop admins only. Updates vat_number and/or invoice_address.
+        An empty vat_number clears VAT; an empty invoice_address object
+        clears the stored address.
+      operationId: patchShop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShopPatch' }
+      responses:
+        '200':
+          description: The shop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shop' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/tenants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TenantID'
+    get:
+      summary: Tenant invoice snapshot (service)
+      description: |
+        For yc-orders at place time: name, contact_email, optional
+        vat_number and invoice_address (issue #29). Service callers only.
+      operationId: getInternalTenant
+      responses:
+        '200':
+          description: The tenant invoice identity.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Shop' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
   /sysadmin/tenants:
     get:
       summary: List tenants
@@ -246,6 +303,11 @@ components:
         default_jurisdiction: { type: string }
         is_tax_inclusive: { type: boolean }
         contact_email: { type: string }
+        vat_number:
+          type: string
+          description: Optional SA VAT number (issue #29).
+        invoice_address:
+          $ref: '#/components/schemas/InvoiceAddress'
         hostnames:
           type: array
           description: The primary first. Empty once the tenant is deleted (its hostnames are freed).
@@ -260,6 +322,38 @@ components:
           type: string
           format: date-time
           description: Null until the deletion cascade exists (backlog-v2).
+    InvoiceAddress:
+      type: object
+      description: Seller postal block on a tax invoice (issue #29; ADR-015 amendment).
+      additionalProperties: false
+      properties:
+        street_and_number: { type: string, maxLength: 200 }
+        suburb: { type: string, maxLength: 200 }
+        town_city: { type: string, maxLength: 200 }
+        postal_code: { type: string, maxLength: 200 }
+        country_code: { type: string, minLength: 2, maxLength: 2 }
+    Shop:
+      type: object
+      required: [tenant_id, name, contact_email]
+      additionalProperties: false
+      properties:
+        tenant_id: { type: string }
+        name: { type: string }
+        contact_email: { type: string }
+        vat_number: { type: string }
+        invoice_address: { $ref: '#/components/schemas/InvoiceAddress' }
+    ShopPatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        vat_number:
+          type: string
+          maxLength: 16
+          description: Empty string clears the store VAT number.
+        invoice_address:
+          $ref: '#/components/schemas/InvoiceAddress'
+          description: Empty object (no postal fields) clears the address.
     TenantList:
       type: object
       required: [items, page]
@@ -308,6 +402,13 @@ components:
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
         contact_email: { type: string, format: email }
+        vat_number:
+          type: string
+          maxLength: 16
+          description: Empty string clears the store VAT number (issue #29).
+        invoice_address:
+          $ref: '#/components/schemas/InvoiceAddress'
+          description: Empty object clears the address (issue #29).
 
     HostnamesInput:
       type: object

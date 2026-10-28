@@ -109,6 +109,7 @@ POST /checkout/{session_id}/confirm
     "phone_e164": "+27831234567"
   },
   "delivery_address": { ... },    // optional: must be the address given at the shipping step (409 otherwise)
+  "billing_address": { ... },     // optional structured SA billing (issue #29); passed through to the order
   "shipping_option_id": "...",    // optional: one of the session's options; defaults to the selected one
   "payment_gateway": "stripe",    // optional: another enabled gateway than the session's
   "payment_gateway_token": "...", // token from the gateway SDK (ADR-009); not for a hosted gateway

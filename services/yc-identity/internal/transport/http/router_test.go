@@ -158,6 +158,20 @@ func (*fakeIdentity) DeleteMe(context.Context) error { return nil }
 
 func (*fakeIdentity) DeleteUser(context.Context, string) error { return nil }
 
+func (*fakeIdentity) GetMyBilling(context.Context) (domain.BillingAddress, error) {
+	return domain.BillingAddress{}, ycerrors.NotFound("Billing", userID)
+}
+
+func (*fakeIdentity) PutMyBilling(_ context.Context, in domain.BillingAddress) (domain.BillingAddress, error) {
+	return in, nil
+}
+
+func (*fakeIdentity) DeleteMyBilling(context.Context) error { return nil }
+
+func (*fakeIdentity) UserBilling(context.Context, string) (domain.BillingAddress, error) {
+	return domain.BillingAddress{}, ycerrors.NotFound("Billing", userID)
+}
+
 func (*fakeIdentity) CreateInvitation(_ context.Context, in domain.InviteInput) (domain.Invitation, error) {
 	return domain.Invitation{ID: userID, TenantID: in.TenantID, Email: in.Email, Role: in.Role, Status: domain.InvitationPending}, nil
 }

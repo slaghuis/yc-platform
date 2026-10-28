@@ -240,6 +240,47 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
 
+  /me/billing:
+    get:
+      summary: The caller's billing address
+      description: |
+        Customers only. Structured SA billing for tax invoices (issue #29).
+        404 when none is saved.
+      operationId: getMyBilling
+      responses:
+        '200':
+          description: The billing address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingAddress' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace the caller's billing address
+      operationId: putMyBilling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BillingAddress' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingAddress' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Clear the caller's billing address
+      operationId: deleteMyBilling
+      responses:
+        '204': { description: Cleared. }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
   /admin/users:
     get:
       summary: List users
@@ -480,6 +521,23 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
+
+  /internal/users/{id}/billing:
+    parameters:
+      - $ref: '#/components/parameters/UserID'
+    get:
+      summary: A customer's billing address (service)
+      description: |
+        For yc-orders when checkout omit billing: returns the saved profile
+        billing or 404 (issue #29).
+      operationId: getUserBilling
+      responses:
+        '200':
+          description: The billing address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BillingAddress' }
+        '404': { $ref: '#/components/responses/Problem' }
 
   /internal/validate-token:
     post:
@@ -733,6 +791,28 @@ components:
         role: { $ref: '#/components/schemas/Role' }
         status: { type: string, enum: [active, suspended, deleted] }
         created_at: { type: string, format: date-time }
+    BillingAddress:
+      type: object
+      description: |
+        Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
+        Distinct from free-form delivery addresses.
+      required: [street_and_number, town_city, postal_code]
+      additionalProperties: false
+      properties:
+        company_name: { type: string, maxLength: 200 }
+        vat_number:
+          type: string
+          maxLength: 16
+          description: Optional SA VAT number (10 digits starting with 4).
+        street_and_number: { type: string, minLength: 1, maxLength: 200 }
+        suburb: { type: string, maxLength: 200 }
+        town_city: { type: string, minLength: 1, maxLength: 200 }
+        postal_code: { type: string, minLength: 1, maxLength: 200 }
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: ISO 3166-1 alpha-2; defaults to ZA when omitted.
     UserList:
       type: object
       required: [items, page]

@@ -36,7 +36,7 @@ type Repository interface {
 	Get(ctx context.Context, tx pgx.Tx, tenantID string, lock bool) (domain.Tenant, bool, error)
 	List(ctx context.Context, tx pgx.Tx, f domain.ListFilter, after *repository.Cursor, limit int) ([]domain.Tenant, error)
 	HostnameOwners(ctx context.Context, tx pgx.Tx, hostnames []string) (map[string]string, error)
-	UpdateDetails(ctx context.Context, tx pgx.Tx, tenantID, name, contactEmail string, at time.Time) error
+	UpdateDetails(ctx context.Context, tx pgx.Tx, t domain.Tenant) error
 	ReplaceHostnames(ctx context.Context, tx pgx.Tx, tenantID string, hs []domain.Hostname, at time.Time) error
 	SetStatus(ctx context.Context, tx pgx.Tx, t domain.Tenant) error
 }
@@ -173,8 +173,9 @@ func (s *Service) List(ctx context.Context, f domain.ListFilter, after *reposito
 	return p, nil
 }
 
-// Patch changes the name and contact email. A changed name publishes
-// updated.v1; the contact email is not part of any event.
+// Patch changes name, contact email and/or invoice identity. A changed
+// name publishes updated.v1; invoice fields are not part of any event
+// (orders snapshot via internal GET, issue #29).
 func (s *Service) Patch(ctx context.Context, tenantID string, in domain.PatchInput) (domain.Tenant, error) {
 	actor, err := requireSystemAdmin(ctx)
 	if err != nil {
@@ -194,18 +195,12 @@ func (s *Service) Patch(ctx context.Context, tenantID string, in domain.PatchInp
 			return err
 		}
 		nameChanged := in.Name != nil && *in.Name != t.Name
-		emailChanged := in.ContactEmail != nil && *in.ContactEmail != t.ContactEmail
-		if !nameChanged && !emailChanged {
+		changed := applyTenantPatch(&t, in)
+		if !changed {
 			return nil
 		}
-		if nameChanged {
-			t.Name = *in.Name
-		}
-		if emailChanged {
-			t.ContactEmail = *in.ContactEmail
-		}
 		t.UpdatedAt = s.now().UTC()
-		if err := s.repo.UpdateDetails(ctx, tx, t.TenantID, t.Name, t.ContactEmail, t.UpdatedAt); err != nil {
+		if err := s.repo.UpdateDetails(ctx, tx, t); err != nil {
 			return err
 		}
 		if !nameChanged {
@@ -217,6 +212,80 @@ func (s *Service) Patch(ctx context.Context, tenantID string, in domain.PatchInp
 		return domain.Tenant{}, err
 	}
 	return t, nil
+}
+
+// Shop returns the caller's shop invoice identity (shop admin).
+func (s *Service) Shop(ctx context.Context) (domain.Tenant, error) {
+	a, err := requireShopAdmin(ctx)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+	return s.Get(ctx, a.TenantID)
+}
+
+// PatchShop updates the caller's shop invoice identity (shop admin).
+func (s *Service) PatchShop(ctx context.Context, in domain.ShopPatch) (domain.Tenant, error) {
+	a, err := requireShopAdmin(ctx)
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+	in, err = in.Validate()
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+	var t domain.Tenant
+	err = s.run(ctx, func(tx pgx.Tx) error {
+		var err error
+		if t, err = s.load(ctx, tx, a.TenantID, true); err != nil {
+			return err
+		}
+		if err := mutable(t); err != nil {
+			return err
+		}
+		patch := domain.PatchInput{VATNumber: in.VATNumber, InvoiceAddress: in.InvoiceAddress}
+		if !applyTenantPatch(&t, patch) {
+			return nil
+		}
+		t.UpdatedAt = s.now().UTC()
+		return s.repo.UpdateDetails(ctx, tx, t)
+	})
+	if err != nil {
+		return domain.Tenant{}, err
+	}
+	return t, nil
+}
+
+// InternalTenant returns invoice identity for service callers (issue #29).
+func (s *Service) InternalTenant(ctx context.Context, tenantID string) (domain.Tenant, error) {
+	a, _ := authctx.FromContext(ctx)
+	if a.ActorType != authctx.ActorService {
+		return domain.Tenant{}, ycerrors.Forbidden("Service callers only")
+	}
+	return s.Get(ctx, tenantID)
+}
+
+func applyTenantPatch(t *domain.Tenant, in domain.PatchInput) bool {
+	changed := false
+	if in.Name != nil && *in.Name != t.Name {
+		t.Name, changed = *in.Name, true
+	}
+	if in.ContactEmail != nil && *in.ContactEmail != t.ContactEmail {
+		t.ContactEmail, changed = *in.ContactEmail, true
+	}
+	if in.VATNumber != nil && *in.VATNumber != t.VATNumber {
+		t.VATNumber, changed = *in.VATNumber, true
+	}
+	if in.InvoiceAddress != nil {
+		if in.InvoiceAddress.Empty() {
+			if t.InvoiceAddress != nil {
+				t.InvoiceAddress, changed = nil, true
+			}
+		} else if t.InvoiceAddress == nil || *t.InvoiceAddress != *in.InvoiceAddress {
+			a := *in.InvoiceAddress
+			t.InvoiceAddress, changed = &a, true
+		}
+	}
+	return changed
 }
 
 // ReplaceHostnames replaces the tenant's hostnames and primary and
@@ -413,6 +482,20 @@ func (s *Service) publish(ctx context.Context, tx pgx.Tx, actor eventbus.Actor, 
 	return s.bus.Publish(ctx, tx, eventbus.Event{
 		EventType: payload.EventType(), TenantID: eventbus.PlatformTenantID, Actor: actor, Payload: payload,
 	})
+}
+
+func requireShopAdmin(ctx context.Context) (authctx.AuthContext, error) {
+	a, _ := authctx.FromContext(ctx)
+	if !a.Authenticated() {
+		return a, ycerrors.Unauthorized("Authentication required")
+	}
+	if a.ActorType != authctx.ActorShopAdmin {
+		return a, ycerrors.Forbidden("Shop admins only").WithInternal("actor_type %s", a.ActorType)
+	}
+	if a.TenantID == "" || a.TenantID == eventbus.PlatformTenantID {
+		return a, ycerrors.Forbidden("Shop admins only")
+	}
+	return a, nil
 }
 
 // requireSystemAdmin refuses other callers and returns the actor for the

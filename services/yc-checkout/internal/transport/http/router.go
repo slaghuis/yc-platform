@@ -113,6 +113,10 @@ func (h handlers) ConfirmCheckout(ctx context.Context, req api.ConfirmCheckoutRe
 	if g := b.GuestContact; g != nil {
 		in.GuestContact = &domain.GuestContact{Email: g.Email, PhoneE164: g.PhoneE164}
 	}
+	if b.BillingAddress != nil {
+		ba := billingIn(*b.BillingAddress)
+		in.BillingAddress = &ba
+	}
 	s, err := h.svc.Confirm(ctx, req.ID.String(), req.Params.IdempotencyKey, in)
 	if err != nil {
 		return nil, err
@@ -335,4 +339,12 @@ func deref[T any](p *T) T {
 		return zero
 	}
 	return *p
+}
+
+func billingIn(b api.BillingAddress) domain.BillingAddress {
+	return domain.BillingAddress{
+		CompanyName: deref(b.CompanyName), VATNumber: deref(b.VatNumber),
+		StreetAndNumber: b.StreetAndNumber, Suburb: deref(b.Suburb),
+		TownCity: b.TownCity, PostalCode: b.PostalCode, CountryCode: deref(b.CountryCode),
+	}
 }

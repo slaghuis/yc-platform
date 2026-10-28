@@ -63,6 +63,10 @@ type Tenant struct {
 	DefaultJurisdiction string
 	IsTaxInclusive      bool
 	ContactEmail        string
+	// VATNumber and InvoiceAddress are optional seller invoice identity
+	// (issue #29; ADR-029 amendment).
+	VATNumber      string
+	InvoiceAddress *InvoiceAddress
 	// Hostnames lists the primary first, then the others by name. A
 	// deleted tenant has none: its hostnames are released.
 	Hostnames       []Hostname
@@ -116,8 +120,10 @@ type CreateInput struct {
 // PatchInput is the body of PATCH /sysadmin/tenants/{id}. Nil fields are
 // left as they are.
 type PatchInput struct {
-	Name         *string
-	ContactEmail *string
+	Name           *string
+	ContactEmail   *string
+	VATNumber      *string
+	InvoiceAddress *InvoiceAddress
 }
 
 // HostnamesInput is the body of PUT /sysadmin/tenants/{id}/hostnames.
@@ -256,8 +262,8 @@ func (in CreateInput) Validate() (CreateInput, error) {
 func (in PatchInput) Validate() (PatchInput, error) {
 	v := ycerrors.Validation()
 	var out PatchInput
-	if in.Name == nil && in.ContactEmail == nil {
-		return PatchInput{}, v.Field("body", "required", "Give name or contact_email").Build()
+	if in.Name == nil && in.ContactEmail == nil && in.VATNumber == nil && in.InvoiceAddress == nil {
+		return PatchInput{}, v.Field("body", "required", "Give at least one field to change").Build()
 	}
 	if in.Name != nil {
 		n := ValidateName(v, "name", *in.Name)
@@ -266,6 +272,30 @@ func (in PatchInput) Validate() (PatchInput, error) {
 	if in.ContactEmail != nil {
 		e := ValidateEmail(v, "contact_email", *in.ContactEmail, true)
 		out.ContactEmail = &e
+	}
+	if in.VATNumber != nil {
+		vat := NormaliseVAT(*in.VATNumber)
+		if err := ValidateVAT(vat); err != nil {
+			if e, ok := ycerrors.As(err); ok {
+				for _, f := range e.Fields {
+					v.Field(f.Field, f.Code, f.Message)
+				}
+			}
+		} else {
+			out.VATNumber = &vat
+		}
+	}
+	if in.InvoiceAddress != nil {
+		a := NormaliseInvoice(*in.InvoiceAddress)
+		if err := ValidateInvoice(a); err != nil {
+			if e, ok := ycerrors.As(err); ok {
+				for _, f := range e.Fields {
+					v.Field(f.Field, f.Code, f.Message)
+				}
+			}
+		} else {
+			out.InvoiceAddress = &a
+		}
 	}
 	if v.HasErrors() {
 		return PatchInput{}, v.Build()

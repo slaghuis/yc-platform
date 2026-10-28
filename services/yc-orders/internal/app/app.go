@@ -109,6 +109,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
 	a.Service = service.New(db, bus, integration.NewPayment(internal), integration.NewShipping(internal), domain.GuestAccess{
 		Secret: []byte(cfg.GuestAccess.Secret), TTL: cfg.GuestAccess.TTL,
+	}, integration.ClientsDirectory{
+		Identity: integration.NewIdentity(internal),
+		Tenant:   integration.NewTenant(internal),
 	})
 	for _, sub := range subscribers.Subscriptions(a.Service) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
