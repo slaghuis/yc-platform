@@ -84,7 +84,8 @@ func (Shipping) DeleteZone(ctx context.Context, tx pgx.Tx, tenantID, id string) 
 }
 
 const rateColumns = `id, zone_id, method, display_name, pricing_type, flat_amount_minor, weight_tiers, price_tiers,
-	estimated_days_min, estimated_days_max, carrier_driver, status, created_at, updated_at`
+	estimated_days_min, estimated_days_max, carrier_driver, COALESCE(schedule_id::text, ''), requires_delivery_slot,
+	status, created_at, updated_at`
 
 func scanRate(r pgx.Row) (domain.Rate, error) {
 	var (
@@ -94,7 +95,7 @@ func scanRate(r pgx.Row) (domain.Rate, error) {
 		daysLo, daysHi *int
 	)
 	err := r.Scan(&rt.ID, &rt.ZoneID, &rt.Method, &rt.DisplayName, &ptype, &rt.FlatAmountMinor, &weight, &price,
-		&daysLo, &daysHi, &rt.CarrierDriver, &status, &rt.CreatedAt, &rt.UpdatedAt)
+		&daysLo, &daysHi, &rt.CarrierDriver, &rt.ScheduleID, &rt.RequiresDeliverySlot, &status, &rt.CreatedAt, &rt.UpdatedAt)
 	if err != nil {
 		return rt, err
 	}
@@ -155,16 +156,18 @@ func (Shipping) PutRate(ctx context.Context, tx pgx.Tx, tenantID string, r domai
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO rates (id, tenant_id, zone_id, method, display_name, pricing_type,
 			flat_amount_minor, weight_tiers, price_tiers, estimated_days_min, estimated_days_max, carrier_driver,
-			status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			schedule_id, requires_delivery_slot, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, '')::uuid, $14, $15, $16, $17)
 		ON CONFLICT (id) DO UPDATE SET zone_id = EXCLUDED.zone_id, method = EXCLUDED.method,
 			display_name = EXCLUDED.display_name, pricing_type = EXCLUDED.pricing_type,
 			flat_amount_minor = EXCLUDED.flat_amount_minor, weight_tiers = EXCLUDED.weight_tiers,
 			price_tiers = EXCLUDED.price_tiers, estimated_days_min = EXCLUDED.estimated_days_min,
 			estimated_days_max = EXCLUDED.estimated_days_max, carrier_driver = EXCLUDED.carrier_driver,
+			schedule_id = EXCLUDED.schedule_id, requires_delivery_slot = EXCLUDED.requires_delivery_slot,
 			status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
 		r.ID, tenantID, r.ZoneID, r.Method, r.DisplayName, string(r.PricingType), r.FlatAmountMinor, weight, price,
-		r.EstimatedDaysMin, r.EstimatedDaysMax, r.CarrierDriver, status, r.CreatedAt, r.UpdatedAt)
+		r.EstimatedDaysMin, r.EstimatedDaysMax, r.CarrierDriver, r.ScheduleID, r.RequiresDeliverySlot, status,
+		r.CreatedAt, r.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("put rate: %w", err)
 	}

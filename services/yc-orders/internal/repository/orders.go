@@ -20,8 +20,8 @@ import (
 type Orders struct{}
 
 const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_id, user_type, guest_contact,
-	delivery_address, billing_address, seller_invoice, requires_shipping, status, items, pricing_snapshot,
-	shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor, total_minor,
+	delivery_address, billing_address, seller_invoice, delivery_slot, requires_shipping, status, items,
+	pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor, total_minor,
 	COALESCE(payment_transaction_id::text, ''), COALESCE(payment_gateway, ''), refunded_minor, created_at,
 	updated_at, placed_at, COALESCE(shipment_id::text, ''), COALESCE(tracking_number, ''),
 	COALESCE(carrier_name, ''), COALESCE(carrier_reference, ''), packaged_at, shipped_at, delivered_at,
@@ -30,10 +30,10 @@ const orderColumns = `id, COALESCE(order_number, ''), checkout_session_id, user_
 func scanOrder(r pgx.Row) (domain.Order, error) {
 	var o domain.Order
 	var userType, status string
-	var guest, address, billing, seller, items []byte
+	var guest, address, billing, seller, slot, items []byte
 	sh := &o.Shipment
 	err := r.Scan(&o.ID, &o.OrderNumber, &o.CheckoutSessionID, &o.UserID, &userType, &guest,
-		&address, &billing, &seller, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot,
+		&address, &billing, &seller, &slot, &o.RequiresShipping, &status, &items, &o.PricingSnapshot, &o.ShippingSnapshot,
 		&o.Currency, &o.ItemsTotalMinor, &o.ShippingMinor, &o.TaxTotalMinor, &o.TotalMinor, &o.PaymentTransactionID,
 		&o.PaymentGateway, &o.RefundedMinor, &o.CreatedAt, &o.UpdatedAt, &o.PlacedAt,
 		&sh.ID, &sh.TrackingNumber, &sh.CarrierName, &sh.CarrierReference, &sh.PackagedAt, &sh.ShippedAt, &sh.DeliveredAt,
@@ -65,6 +65,13 @@ func scanOrder(r pgx.Row) (domain.Order, error) {
 			return o, fmt.Errorf("decode seller_invoice: %w", err)
 		}
 		o.SellerInvoice = &s
+	}
+	if len(slot) > 0 {
+		var ds domain.DeliverySlot
+		if err := json.Unmarshal(slot, &ds); err != nil {
+			return o, fmt.Errorf("decode delivery_slot: %w", err)
+		}
+		o.DeliverySlot = &ds
 	}
 	if err := json.Unmarshal(items, &o.Items); err != nil {
 		return o, fmt.Errorf("decode items: %w", err)
@@ -109,7 +116,7 @@ func nullJSON(v any) ([]byte, error) {
 
 // InsertOrder records a new order.
 func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o domain.Order) error {
-	var guest, address, billing, seller []byte
+	var guest, address, billing, seller, slot []byte
 	var err error
 	if o.GuestContact != nil {
 		if guest, err = json.Marshal(o.GuestContact); err != nil {
@@ -131,6 +138,11 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 			return fmt.Errorf("encode seller_invoice: %w", err)
 		}
 	}
+	if o.DeliverySlot != nil {
+		if slot, err = json.Marshal(o.DeliverySlot); err != nil {
+			return fmt.Errorf("encode delivery_slot: %w", err)
+		}
+	}
 	items, err := json.Marshal(o.Items)
 	if err != nil {
 		return fmt.Errorf("encode items: %w", err)
@@ -140,13 +152,13 @@ func (Orders) InsertOrder(ctx context.Context, tx pgx.Tx, tenantID string, o dom
 		shipping = o.ShippingSnapshot
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO orders (id, tenant_id, checkout_session_id, user_id, user_type, guest_contact,
-			source_email, delivery_address, billing_address, seller_invoice, requires_shipping, status, items,
-			pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor,
+			source_email, delivery_address, billing_address, seller_invoice, delivery_slot, requires_shipping, status,
+			items, pricing_snapshot, shipping_snapshot, currency, items_total_minor, shipping_minor, tax_total_minor,
 			total_minor, payment_transaction_id, payment_gateway, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-			$20, NULLIF($21, '')::uuid, NULLIF($22, ''), $23, $23)`,
+			$20, $21, NULLIF($22, '')::uuid, NULLIF($23, ''), $24, $24)`,
 		o.ID, tenantID, o.CheckoutSessionID, o.UserID, string(o.UserType), guest,
-		o.SourceEmail(), address, billing, seller, o.RequiresShipping, string(o.Status), items,
+		o.SourceEmail(), address, billing, seller, slot, o.RequiresShipping, string(o.Status), items,
 		[]byte(o.PricingSnapshot), shipping, o.Currency, o.ItemsTotalMinor, o.ShippingMinor, o.TaxTotalMinor,
 		o.TotalMinor, o.PaymentTransactionID, o.PaymentGateway, o.CreatedAt)
 	if err != nil {

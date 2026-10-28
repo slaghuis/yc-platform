@@ -78,6 +78,7 @@ Orders capture a point-in-time snapshot. The order record **does not reference l
   "delivery_address": { ... },    // free-form JSON (ADR-015)
   "billing_address": { ... },     // optional structured SA billing snapshot (issue #29)
   "seller_invoice": { ... },      // shop name/email/VAT/address snapshotted at create (issue #29)
+  "delivery_slot": { ... },       // optional window from checkout (issue #30); immutable snapshot
   "requires_shipping": true,
   "items": [
     {

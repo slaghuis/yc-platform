@@ -52,6 +52,10 @@ type Participants interface {
 	ConfirmOrder(ctx context.Context, key, orderID, transactionID string) (integration.Order, error)
 	AbandonOrder(ctx context.Context, key, orderID, reason string) error
 	QuoteShipping(ctx context.Context, req integration.ShippingQuoteRequest) (integration.ShippingQuote, error)
+	ListSlots(ctx context.Context, rateID, from, to string) (integration.SlotList, error)
+	GetSlot(ctx context.Context, slotID string) (integration.Slot, error)
+	BookSlot(ctx context.Context, slotID, bookingKey string) error
+	ReleaseSlot(ctx context.Context, slotID, bookingKey string) error
 }
 
 // Settings tune sessions and the saga.

@@ -215,10 +215,13 @@ type CreateOrderInput struct {
 
 	// DeliveryAddress Free-form address (ADR-015); required with physical items.
 	DeliveryAddress *map[string]interface{} `json:"delivery_address,omitempty"`
-	GuestContact    *GuestContact           `json:"guest_contact,omitempty"`
-	Items           []OrderItemInput        `json:"items"`
-	ItemsTotalMinor int64                   `json:"items_total_minor"`
-	Payment         *Payment                `json:"payment,omitempty"`
+
+	// DeliverySlot Chosen delivery window from checkout (issue
+	DeliverySlot    *DeliverySlot    `json:"delivery_slot,omitempty"`
+	GuestContact    *GuestContact    `json:"guest_contact,omitempty"`
+	Items           []OrderItemInput `json:"items"`
+	ItemsTotalMinor int64            `json:"items_total_minor"`
+	Payment         *Payment         `json:"payment,omitempty"`
 
 	// PricingSnapshot The full pricing result.
 	PricingSnapshot  map[string]interface{}   `json:"pricing_snapshot"`
@@ -246,6 +249,16 @@ type CustomerOrder struct {
 type CustomerOrders struct {
 	OpenCount int             `json:"open_count"`
 	Orders    []CustomerOrder `json:"orders"`
+}
+
+// DeliverySlot defines model for DeliverySlot.
+type DeliverySlot struct {
+	EndAt      time.Time           `json:"end_at"`
+	Label      *string             `json:"label,omitempty"`
+	ScheduleID *openapi_types.UUID `json:"schedule_id,omitempty"`
+	SlotID     string              `json:"slot_id"`
+	StartAt    time.Time           `json:"start_at"`
+	Timezone   string              `json:"timezone"`
 }
 
 // GuestAccess defines model for GuestAccess.
@@ -284,6 +297,7 @@ type Order struct {
 	CheckoutSessionID openapi_types.UUID      `json:"checkout_session_id"`
 	CreatedAt         time.Time               `json:"created_at"`
 	DeliveryAddress   *map[string]interface{} `json:"delivery_address,omitempty"`
+	DeliverySlot      *DeliverySlot           `json:"delivery_slot,omitempty"`
 	GuestContact      *GuestContact           `json:"guest_contact,omitempty"`
 	History           *[]HistoryEntry         `json:"history,omitempty"`
 	Items             []OrderItem             `json:"items"`

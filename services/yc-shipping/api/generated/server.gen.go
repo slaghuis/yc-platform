@@ -190,20 +190,22 @@ type QuoteZone struct {
 
 // Rate defines model for Rate.
 type Rate struct {
-	Active           bool               `json:"active"`
-	CarrierDriver    string             `json:"carrier_driver"`
-	CreatedAt        time.Time          `json:"created_at"`
-	DisplayName      string             `json:"display_name"`
-	EstimatedDaysMax *int               `json:"estimated_days_max,omitempty"`
-	EstimatedDaysMin *int               `json:"estimated_days_min,omitempty"`
-	FlatAmountMinor  int64              `json:"flat_amount_minor"`
-	Method           string             `json:"method"`
-	PriceTiers       []PriceTier        `json:"price_tiers"`
-	PricingType      PricingType        `json:"pricing_type"`
-	RateID           openapi_types.UUID `json:"rate_id"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	WeightTiers      []WeightTier       `json:"weight_tiers"`
-	ZoneID           openapi_types.UUID `json:"zone_id"`
+	Active               bool                `json:"active"`
+	CarrierDriver        string              `json:"carrier_driver"`
+	CreatedAt            time.Time           `json:"created_at"`
+	DisplayName          string              `json:"display_name"`
+	EstimatedDaysMax     *int                `json:"estimated_days_max,omitempty"`
+	EstimatedDaysMin     *int                `json:"estimated_days_min,omitempty"`
+	FlatAmountMinor      int64               `json:"flat_amount_minor"`
+	Method               string              `json:"method"`
+	PriceTiers           []PriceTier         `json:"price_tiers"`
+	PricingType          PricingType         `json:"pricing_type"`
+	RateID               openapi_types.UUID  `json:"rate_id"`
+	RequiresDeliverySlot bool                `json:"requires_delivery_slot"`
+	ScheduleID           *openapi_types.UUID `json:"schedule_id,omitempty"`
+	UpdatedAt            time.Time           `json:"updated_at"`
+	WeightTiers          []WeightTier        `json:"weight_tiers"`
+	ZoneID               openapi_types.UUID  `json:"zone_id"`
 }
 
 // RateInput defines model for RateInput.
@@ -216,16 +218,70 @@ type RateInput struct {
 	FlatAmountMinor  *int64  `json:"flat_amount_minor,omitempty"`
 
 	// Method The option ID checkout shows, e.g. standard; one per zone.
-	Method      string             `json:"method"`
-	PriceTiers  *[]PriceTier       `json:"price_tiers,omitempty"`
-	PricingType PricingType        `json:"pricing_type"`
-	WeightTiers *[]WeightTier      `json:"weight_tiers,omitempty"`
-	ZoneID      openapi_types.UUID `json:"zone_id"`
+	Method      string       `json:"method"`
+	PriceTiers  *[]PriceTier `json:"price_tiers,omitempty"`
+	PricingType PricingType  `json:"pricing_type"`
+
+	// RequiresDeliverySlot When true, schedule_id is required (hard 400 if missing or unknown).
+	RequiresDeliverySlot *bool `json:"requires_delivery_slot,omitempty"`
+
+	// ScheduleID Delivery schedule for slot booking.
+	ScheduleID  *openapi_types.UUID `json:"schedule_id,omitempty"`
+	WeightTiers *[]WeightTier       `json:"weight_tiers,omitempty"`
+	ZoneID      openapi_types.UUID  `json:"zone_id"`
 }
 
 // RateList defines model for RateList.
 type RateList struct {
 	Items []Rate `json:"items"`
+}
+
+// Schedule defines model for Schedule.
+type Schedule struct {
+	Active            bool                 `json:"active"`
+	BlackoutDates     []openapi_types.Date `json:"blackout_dates"`
+	CapacityPerWindow int                  `json:"capacity_per_window"`
+	CloseTime         string               `json:"close_time"`
+	CreatedAt         time.Time            `json:"created_at"`
+	MinLeadMinutes    int                  `json:"min_lead_minutes"`
+	Name              string               `json:"name"`
+	OpenTime          string               `json:"open_time"`
+	SameDayCutoff     *string              `json:"same_day_cutoff,omitempty"`
+	ScheduleID        openapi_types.UUID   `json:"schedule_id"`
+	Timezone          string               `json:"timezone"`
+	UpdatedAt         time.Time            `json:"updated_at"`
+	Weekdays          []int                `json:"weekdays"`
+	WindowMinutes     int                  `json:"window_minutes"`
+}
+
+// ScheduleInput defines model for ScheduleInput.
+type ScheduleInput struct {
+	Active            *bool                 `json:"active,omitempty"`
+	BlackoutDates     *[]openapi_types.Date `json:"blackout_dates,omitempty"`
+	CapacityPerWindow int                   `json:"capacity_per_window"`
+
+	// CloseTime Local HH:MM; must be after open_time.
+	CloseTime      string `json:"close_time"`
+	MinLeadMinutes *int   `json:"min_lead_minutes,omitempty"`
+	Name           string `json:"name"`
+
+	// OpenTime Local HH:MM.
+	OpenTime string `json:"open_time"`
+
+	// SameDayCutoff Optional local HH:MM; after this, today has no windows.
+	SameDayCutoff *string `json:"same_day_cutoff,omitempty"`
+
+	// Timezone IANA timezone; defaults to Africa/Johannesburg when omitted.
+	Timezone *string `json:"timezone,omitempty"`
+
+	// Weekdays 0=Sunday … 6=Saturday (Go time.Weekday).
+	Weekdays      []int `json:"weekdays"`
+	WindowMinutes int   `json:"window_minutes"`
+}
+
+// ScheduleList defines model for ScheduleList.
+type ScheduleList struct {
+	Items []Schedule `json:"items"`
 }
 
 // Shipment defines model for Shipment.
@@ -301,8 +357,33 @@ type ShippingOption struct {
 	Name             string `json:"name"`
 
 	// OptionID The rate's method.
-	OptionID string             `json:"option_id"`
-	RateID   openapi_types.UUID `json:"rate_id"`
+	OptionID             string              `json:"option_id"`
+	RateID               openapi_types.UUID  `json:"rate_id"`
+	RequiresDeliverySlot bool                `json:"requires_delivery_slot"`
+	ScheduleID           *openapi_types.UUID `json:"schedule_id,omitempty"`
+}
+
+// Slot defines model for Slot.
+type Slot struct {
+	EndAt             time.Time          `json:"end_at"`
+	RemainingCapacity int                `json:"remaining_capacity"`
+	ScheduleID        openapi_types.UUID `json:"schedule_id"`
+
+	// SlotID Deterministic "{schedule_id}_{unix}".
+	SlotID   string    `json:"slot_id"`
+	StartAt  time.Time `json:"start_at"`
+	Timezone string    `json:"timezone"`
+}
+
+// SlotBookInput defines model for SlotBookInput.
+type SlotBookInput struct {
+	// BookingKey Checkout session ID (ORDER_CREATE / abandon).
+	BookingKey string `json:"booking_key"`
+}
+
+// SlotList defines model for SlotList.
+type SlotList struct {
+	Slots []Slot `json:"slots"`
 }
 
 // Tracking defines model for Tracking.
@@ -381,6 +462,17 @@ type CreateShipmentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ListSlotsParams defines parameters for ListSlots.
+type ListSlotsParams struct {
+	RateID openapi_types.UUID `form:"rate_id" json:"rate_id"`
+
+	// From Inclusive start date (YYYY-MM-DD) in the schedule timezone.
+	From openapi_types.Date `form:"from" json:"from"`
+
+	// To Inclusive end date; at most 14 days after from.
+	To openapi_types.Date `form:"to" json:"to"`
+}
+
 // CreateRateJSONRequestBody defines body for CreateRate for application/json ContentType.
 type CreateRateJSONRequestBody = RateInput
 
@@ -389,6 +481,12 @@ type UpdateRateJSONRequestBody = RateInput
 
 // UpdateShipmentJSONRequestBody defines body for UpdateShipment for application/json ContentType.
 type UpdateShipmentJSONRequestBody = ManualUpdateInput
+
+// CreateScheduleJSONRequestBody defines body for CreateSchedule for application/json ContentType.
+type CreateScheduleJSONRequestBody = ScheduleInput
+
+// UpdateScheduleJSONRequestBody defines body for UpdateSchedule for application/json ContentType.
+type UpdateScheduleJSONRequestBody = ScheduleInput
 
 // CreateZoneJSONRequestBody defines body for CreateZone for application/json ContentType.
 type CreateZoneJSONRequestBody = ZoneInput
@@ -401,6 +499,12 @@ type QuoteShippingJSONRequestBody = QuoteInput
 
 // CreateShipmentJSONRequestBody defines body for CreateShipment for application/json ContentType.
 type CreateShipmentJSONRequestBody = ShipmentInput
+
+// BookSlotJSONRequestBody defines body for BookSlot for application/json ContentType.
+type BookSlotJSONRequestBody = SlotBookInput
+
+// ReleaseSlotJSONRequestBody defines body for ReleaseSlot for application/json ContentType.
+type ReleaseSlotJSONRequestBody = SlotBookInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -425,6 +529,21 @@ type ServerInterface interface {
 	// UpdateShipment Report a manual shipment's progress
 	// (POST /admin/shipments/{id}/manual-update)
 	UpdateShipment(w http.ResponseWriter, r *http.Request, id ID)
+	// ListSchedules List delivery schedules
+	// (GET /admin/shipping/schedules)
+	ListSchedules(w http.ResponseWriter, r *http.Request)
+	// CreateSchedule Create a delivery schedule
+	// (POST /admin/shipping/schedules)
+	CreateSchedule(w http.ResponseWriter, r *http.Request)
+	// DeleteSchedule Delete a delivery schedule
+	// (DELETE /admin/shipping/schedules/{id})
+	DeleteSchedule(w http.ResponseWriter, r *http.Request, id ID)
+	// GetSchedule Get a delivery schedule
+	// (GET /admin/shipping/schedules/{id})
+	GetSchedule(w http.ResponseWriter, r *http.Request, id ID)
+	// UpdateSchedule Replace a delivery schedule
+	// (PUT /admin/shipping/schedules/{id})
+	UpdateSchedule(w http.ResponseWriter, r *http.Request, id ID)
 	// ListZones List zones
 	// (GET /admin/zones)
 	ListZones(w http.ResponseWriter, r *http.Request)
@@ -443,6 +562,18 @@ type ServerInterface interface {
 	// CreateShipment Create an order's shipment
 	// (POST /internal/shipments)
 	CreateShipment(w http.ResponseWriter, r *http.Request, params CreateShipmentParams)
+	// ListSlots List available delivery slots for a rate
+	// (GET /internal/slots)
+	ListSlots(w http.ResponseWriter, r *http.Request, params ListSlotsParams)
+	// GetSlot Get one slot if it still has capacity
+	// (GET /internal/slots/{slot_id})
+	GetSlot(w http.ResponseWriter, r *http.Request, slotID string)
+	// BookSlot Book a delivery slot
+	// (POST /internal/slots/{slot_id}/book)
+	BookSlot(w http.ResponseWriter, r *http.Request, slotID string)
+	// ReleaseSlot Release a delivery slot booking
+	// (POST /internal/slots/{slot_id}/release)
+	ReleaseSlot(w http.ResponseWriter, r *http.Request, slotID string)
 	// TrackShipment Track a shipment
 	// (GET /shipping/tracking/{tracking_number})
 	TrackShipment(w http.ResponseWriter, r *http.Request, trackingNumber string)
@@ -497,6 +628,36 @@ func (_ Unimplemented) UpdateShipment(w http.ResponseWriter, r *http.Request, id
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListSchedules List delivery schedules
+// (GET /admin/shipping/schedules)
+func (_ Unimplemented) ListSchedules(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateSchedule Create a delivery schedule
+// (POST /admin/shipping/schedules)
+func (_ Unimplemented) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteSchedule Delete a delivery schedule
+// (DELETE /admin/shipping/schedules/{id})
+func (_ Unimplemented) DeleteSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSchedule Get a delivery schedule
+// (GET /admin/shipping/schedules/{id})
+func (_ Unimplemented) GetSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateSchedule Replace a delivery schedule
+// (PUT /admin/shipping/schedules/{id})
+func (_ Unimplemented) UpdateSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListZones List zones
 // (GET /admin/zones)
 func (_ Unimplemented) ListZones(w http.ResponseWriter, r *http.Request) {
@@ -530,6 +691,30 @@ func (_ Unimplemented) QuoteShipping(w http.ResponseWriter, r *http.Request) {
 // CreateShipment Create an order's shipment
 // (POST /internal/shipments)
 func (_ Unimplemented) CreateShipment(w http.ResponseWriter, r *http.Request, params CreateShipmentParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListSlots List available delivery slots for a rate
+// (GET /internal/slots)
+func (_ Unimplemented) ListSlots(w http.ResponseWriter, r *http.Request, params ListSlotsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSlot Get one slot if it still has capacity
+// (GET /internal/slots/{slot_id})
+func (_ Unimplemented) GetSlot(w http.ResponseWriter, r *http.Request, slotID string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// BookSlot Book a delivery slot
+// (POST /internal/slots/{slot_id}/book)
+func (_ Unimplemented) BookSlot(w http.ResponseWriter, r *http.Request, slotID string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReleaseSlot Release a delivery slot booking
+// (POST /internal/slots/{slot_id}/release)
+func (_ Unimplemented) ReleaseSlot(w http.ResponseWriter, r *http.Request, slotID string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -764,6 +949,112 @@ func (siw *ServerInterfaceWrapper) UpdateShipment(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListSchedules operation middleware
+func (siw *ServerInterfaceWrapper) ListSchedules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSchedules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSchedule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSchedule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSchedule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSchedule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSchedule operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSchedule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListZones operation middleware
 func (siw *ServerInterfaceWrapper) ListZones(w http.ResponseWriter, r *http.Request) {
 
@@ -894,6 +1185,143 @@ func (siw *ServerInterfaceWrapper) CreateShipment(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateShipment(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSlots operation middleware
+func (siw *ServerInterfaceWrapper) ListSlots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSlotsParams
+
+	// ------------- Required query parameter "rate_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "rate_id", r.URL.Query(), &params.RateID, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "rate_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "rate_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSlots(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSlot operation middleware
+func (siw *ServerInterfaceWrapper) GetSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slot_id" -------------
+	var slotID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slot_id", chi.URLParam(r, "slot_id"), &slotID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slot_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSlot(w, r, slotID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BookSlot operation middleware
+func (siw *ServerInterfaceWrapper) BookSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slot_id" -------------
+	var slotID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slot_id", chi.URLParam(r, "slot_id"), &slotID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slot_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BookSlot(w, r, slotID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReleaseSlot operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "slot_id" -------------
+	var slotID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "slot_id", chi.URLParam(r, "slot_id"), &slotID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "slot_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReleaseSlot(w, r, slotID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1087,6 +1515,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/admin/rates/{id}", wrapper.UpdateRate)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/shipping/schedules", wrapper.ListSchedules)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/shipping/schedules", wrapper.CreateSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/admin/shipping/schedules/{id}", wrapper.DeleteSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/shipping/schedules/{id}", wrapper.GetSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/shipping/schedules/{id}", wrapper.UpdateSchedule)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/shipments", wrapper.ListShipments)
 	})
 	r.Group(func(r chi.Router) {
@@ -1097,6 +1540,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/quote", wrapper.QuoteShipping)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/slots", wrapper.ListSlots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/slots/{slot_id}", wrapper.GetSlot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/slots/{slot_id}/book", wrapper.BookSlot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/internal/slots/{slot_id}/release", wrapper.ReleaseSlot)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/internal/shipments", wrapper.CreateShipment)
@@ -1523,6 +1978,274 @@ func (response UpdateShipment409ApplicationProblemPlusJSONResponse) VisitUpdateS
 	return err
 }
 
+type ListSchedulesRequestObject struct {
+}
+
+type ListSchedulesResponseObject interface {
+	VisitListSchedulesResponse(w http.ResponseWriter) error
+}
+
+type ListSchedules200JSONResponse ScheduleList
+
+func (response ListSchedules200JSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSchedules403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListSchedules403ApplicationProblemPlusJSONResponse) VisitListSchedulesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScheduleRequestObject struct {
+	Body *CreateScheduleJSONRequestBody
+}
+
+type CreateScheduleResponseObject interface {
+	VisitCreateScheduleResponse(w http.ResponseWriter) error
+}
+
+type CreateSchedule201JSONResponse Schedule
+
+func (response CreateSchedule201JSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSchedule400ApplicationProblemPlusJSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSchedule403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSchedule403ApplicationProblemPlusJSONResponse) VisitCreateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScheduleRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type DeleteScheduleResponseObject interface {
+	VisitDeleteScheduleResponse(w http.ResponseWriter) error
+}
+
+type DeleteSchedule204Response struct {
+}
+
+func (response DeleteSchedule204Response) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSchedule403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteSchedule403ApplicationProblemPlusJSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule404ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteSchedule404ApplicationProblemPlusJSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSchedule409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteSchedule409ApplicationProblemPlusJSONResponse) VisitDeleteScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type GetScheduleResponseObject interface {
+	VisitGetScheduleResponse(w http.ResponseWriter) error
+}
+
+type GetSchedule200JSONResponse Schedule
+
+func (response GetSchedule200JSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSchedule403ApplicationProblemPlusJSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSchedule404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSchedule404ApplicationProblemPlusJSONResponse) VisitGetScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScheduleRequestObject struct {
+	ID   ID `json:"id"`
+	Body *UpdateScheduleJSONRequestBody
+}
+
+type UpdateScheduleResponseObject interface {
+	VisitUpdateScheduleResponse(w http.ResponseWriter) error
+}
+
+type UpdateSchedule200JSONResponse Schedule
+
+func (response UpdateSchedule200JSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateSchedule400ApplicationProblemPlusJSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule403ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateSchedule403ApplicationProblemPlusJSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSchedule404ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateSchedule404ApplicationProblemPlusJSONResponse) VisitUpdateScheduleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListZonesRequestObject struct {
 }
 
@@ -1802,6 +2525,196 @@ func (response CreateShipment400ApplicationProblemPlusJSONResponse) VisitCreateS
 	return err
 }
 
+type ListSlotsRequestObject struct {
+	Params ListSlotsParams
+}
+
+type ListSlotsResponseObject interface {
+	VisitListSlotsResponse(w http.ResponseWriter) error
+}
+
+type ListSlots200JSONResponse SlotList
+
+func (response ListSlots200JSONResponse) VisitListSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSlots400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListSlots400ApplicationProblemPlusJSONResponse) VisitListSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSlotRequestObject struct {
+	SlotID string `json:"slot_id"`
+}
+
+type GetSlotResponseObject interface {
+	VisitGetSlotResponse(w http.ResponseWriter) error
+}
+
+type GetSlot200JSONResponse Slot
+
+func (response GetSlot200JSONResponse) VisitGetSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSlot404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSlot404ApplicationProblemPlusJSONResponse) VisitGetSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BookSlotRequestObject struct {
+	SlotID string `json:"slot_id"`
+	Body   *BookSlotJSONRequestBody
+}
+
+type BookSlotResponseObject interface {
+	VisitBookSlotResponse(w http.ResponseWriter) error
+}
+
+type BookSlot200JSONResponse Slot
+
+func (response BookSlot200JSONResponse) VisitBookSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BookSlot400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response BookSlot400ApplicationProblemPlusJSONResponse) VisitBookSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BookSlot404ApplicationProblemPlusJSONResponse Problem
+
+func (response BookSlot404ApplicationProblemPlusJSONResponse) VisitBookSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BookSlot409ApplicationProblemPlusJSONResponse Problem
+
+func (response BookSlot409ApplicationProblemPlusJSONResponse) VisitBookSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseSlotRequestObject struct {
+	SlotID string `json:"slot_id"`
+	Body   *ReleaseSlotJSONRequestBody
+}
+
+type ReleaseSlotResponseObject interface {
+	VisitReleaseSlotResponse(w http.ResponseWriter) error
+}
+
+type ReleaseSlot204Response struct {
+}
+
+func (response ReleaseSlot204Response) VisitReleaseSlotResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ReleaseSlot400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ReleaseSlot400ApplicationProblemPlusJSONResponse) VisitReleaseSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseSlot404ApplicationProblemPlusJSONResponse Problem
+
+func (response ReleaseSlot404ApplicationProblemPlusJSONResponse) VisitReleaseSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type TrackShipmentRequestObject struct {
 	TrackingNumber string `json:"tracking_number"`
 }
@@ -1884,6 +2797,21 @@ type StrictServerInterface interface {
 	// UpdateShipment Report a manual shipment's progress
 	// (POST /admin/shipments/{id}/manual-update)
 	UpdateShipment(ctx context.Context, request UpdateShipmentRequestObject) (UpdateShipmentResponseObject, error)
+	// ListSchedules List delivery schedules
+	// (GET /admin/shipping/schedules)
+	ListSchedules(ctx context.Context, request ListSchedulesRequestObject) (ListSchedulesResponseObject, error)
+	// CreateSchedule Create a delivery schedule
+	// (POST /admin/shipping/schedules)
+	CreateSchedule(ctx context.Context, request CreateScheduleRequestObject) (CreateScheduleResponseObject, error)
+	// DeleteSchedule Delete a delivery schedule
+	// (DELETE /admin/shipping/schedules/{id})
+	DeleteSchedule(ctx context.Context, request DeleteScheduleRequestObject) (DeleteScheduleResponseObject, error)
+	// GetSchedule Get a delivery schedule
+	// (GET /admin/shipping/schedules/{id})
+	GetSchedule(ctx context.Context, request GetScheduleRequestObject) (GetScheduleResponseObject, error)
+	// UpdateSchedule Replace a delivery schedule
+	// (PUT /admin/shipping/schedules/{id})
+	UpdateSchedule(ctx context.Context, request UpdateScheduleRequestObject) (UpdateScheduleResponseObject, error)
 	// ListZones List zones
 	// (GET /admin/zones)
 	ListZones(ctx context.Context, request ListZonesRequestObject) (ListZonesResponseObject, error)
@@ -1902,6 +2830,18 @@ type StrictServerInterface interface {
 	// CreateShipment Create an order's shipment
 	// (POST /internal/shipments)
 	CreateShipment(ctx context.Context, request CreateShipmentRequestObject) (CreateShipmentResponseObject, error)
+	// ListSlots List available delivery slots for a rate
+	// (GET /internal/slots)
+	ListSlots(ctx context.Context, request ListSlotsRequestObject) (ListSlotsResponseObject, error)
+	// GetSlot Get one slot if it still has capacity
+	// (GET /internal/slots/{slot_id})
+	GetSlot(ctx context.Context, request GetSlotRequestObject) (GetSlotResponseObject, error)
+	// BookSlot Book a delivery slot
+	// (POST /internal/slots/{slot_id}/book)
+	BookSlot(ctx context.Context, request BookSlotRequestObject) (BookSlotResponseObject, error)
+	// ReleaseSlot Release a delivery slot booking
+	// (POST /internal/slots/{slot_id}/release)
+	ReleaseSlot(ctx context.Context, request ReleaseSlotRequestObject) (ReleaseSlotResponseObject, error)
 	// TrackShipment Track a shipment
 	// (GET /shipping/tracking/{tracking_number})
 	TrackShipment(ctx context.Context, request TrackShipmentRequestObject) (TrackShipmentResponseObject, error)
@@ -2150,6 +3090,146 @@ func (sh *strictHandler) UpdateShipment(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// ListSchedules operation middleware
+func (sh *strictHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
+	var request ListSchedulesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSchedules(ctx, request.(ListSchedulesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSchedules")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSchedulesResponseObject); ok {
+		if err := validResponse.VisitListSchedulesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSchedule operation middleware
+func (sh *strictHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+	var request CreateScheduleRequestObject
+
+	var body CreateScheduleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSchedule(ctx, request.(CreateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateScheduleResponseObject); ok {
+		if err := validResponse.VisitCreateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSchedule operation middleware
+func (sh *strictHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteScheduleRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSchedule(ctx, request.(DeleteScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteScheduleResponseObject); ok {
+		if err := validResponse.VisitDeleteScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSchedule operation middleware
+func (sh *strictHandler) GetSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetScheduleRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSchedule(ctx, request.(GetScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleResponseObject); ok {
+		if err := validResponse.VisitGetScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSchedule operation middleware
+func (sh *strictHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateScheduleRequestObject
+
+	request.ID = id
+
+	var body UpdateScheduleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSchedule(ctx, request.(UpdateScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateScheduleResponseObject); ok {
+		if err := validResponse.VisitUpdateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListZones operation middleware
 func (sh *strictHandler) ListZones(w http.ResponseWriter, r *http.Request) {
 	var request ListZonesRequestObject
@@ -2321,6 +3401,124 @@ func (sh *strictHandler) CreateShipment(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateShipmentResponseObject); ok {
 		if err := validResponse.VisitCreateShipmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSlots operation middleware
+func (sh *strictHandler) ListSlots(w http.ResponseWriter, r *http.Request, params ListSlotsParams) {
+	var request ListSlotsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSlots(ctx, request.(ListSlotsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSlots")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSlotsResponseObject); ok {
+		if err := validResponse.VisitListSlotsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSlot operation middleware
+func (sh *strictHandler) GetSlot(w http.ResponseWriter, r *http.Request, slotID string) {
+	var request GetSlotRequestObject
+
+	request.SlotID = slotID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSlot(ctx, request.(GetSlotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSlot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSlotResponseObject); ok {
+		if err := validResponse.VisitGetSlotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BookSlot operation middleware
+func (sh *strictHandler) BookSlot(w http.ResponseWriter, r *http.Request, slotID string) {
+	var request BookSlotRequestObject
+
+	request.SlotID = slotID
+
+	var body BookSlotJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BookSlot(ctx, request.(BookSlotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BookSlot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BookSlotResponseObject); ok {
+		if err := validResponse.VisitBookSlotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReleaseSlot operation middleware
+func (sh *strictHandler) ReleaseSlot(w http.ResponseWriter, r *http.Request, slotID string) {
+	var request ReleaseSlotRequestObject
+
+	request.SlotID = slotID
+
+	var body ReleaseSlotJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReleaseSlot(ctx, request.(ReleaseSlotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReleaseSlot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReleaseSlotResponseObject); ok {
+		if err := validResponse.VisitReleaseSlotResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

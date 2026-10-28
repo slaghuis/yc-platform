@@ -142,12 +142,14 @@ type Item struct {
 // ShippingOption is a way to deliver the physical items, as yc-shipping
 // priced it for the delivery address. ID is the rate's method.
 type ShippingOption struct {
-	ID               string `json:"id"`
-	RateID           string `json:"rate_id,omitempty"`
-	Name             string `json:"name"`
-	AmountMinor      int64  `json:"amount_minor"`
-	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
-	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
+	ID                   string `json:"id"`
+	RateID               string `json:"rate_id,omitempty"`
+	Name                 string `json:"name"`
+	AmountMinor          int64  `json:"amount_minor"`
+	EstimatedDaysMin     *int   `json:"estimated_days_min,omitempty"`
+	EstimatedDaysMax     *int   `json:"estimated_days_max,omitempty"`
+	ScheduleID           string `json:"schedule_id,omitempty"`
+	RequiresDeliverySlot bool   `json:"requires_delivery_slot,omitempty"`
 }
 
 // ShippingChoice is the shipping step: a delivery address to quote, an
@@ -164,12 +166,14 @@ type GuestContact struct {
 }
 
 // Compensation steps. UndoLateCharge refunds a charge that settled after
-// the session gave up on it (a hosted payment completed late).
+// the session gave up on it (a hosted payment completed late). UndoSlot
+// releases a delivery window booked at ORDER_CREATE (issue #30).
 const (
 	UndoPayment     = "payment_voided"
 	UndoOrder       = "order_abandoned"
 	UndoReservation = "reservation_released"
 	UndoLateCharge  = "late_charge_refunded"
+	UndoSlot        = "slot_released"
 )
 
 // CompensationEntry records one finished compensation step.
@@ -202,6 +206,7 @@ type Session struct {
 	GuestContact     *GuestContact
 	DeliveryAddress  map[string]any
 	BillingAddress   *BillingAddress
+	DeliverySlot     *DeliverySlot
 
 	// PaymentGateway and the rest of the routing are chosen when the
 	// session starts and may change at confirm.
@@ -255,10 +260,13 @@ func (s Session) Leased(now time.Time) bool {
 func (s Session) Expired(now time.Time) bool { return !now.Before(s.ExpiresAt) }
 
 // SelectShipping chooses one of the session's options and updates the
-// totals. Shipping is untaxed.
+// totals. Shipping is untaxed. Changing the option clears a bound slot.
 func (s *Session) SelectShipping(id string) bool {
 	for _, o := range s.ShippingOptions {
 		if o.ID == id {
+			if s.ShippingOptionID != id {
+				s.DeliverySlot = nil
+			}
 			s.ShippingOptionID = id
 			s.ShippingMinor = o.AmountMinor
 			s.TotalMinor = s.ItemsTotalMinor + s.ShippingMinor
@@ -271,10 +279,12 @@ func (s *Session) SelectShipping(id string) bool {
 // ShipTo records the options yc-shipping quoted for an address and
 // selects optionID, or the cheapest when it is empty. A previous address's
 // options and choice are replaced. It reports whether optionID is one of
-// the options.
+// the options. A new address or option clears any bound delivery slot
+// (issue #30).
 func (s *Session) ShipTo(address map[string]any, options []ShippingOption, optionID string) bool {
 	s.DeliveryAddress, s.ShippingOptions = address, options
 	s.ShippingOptionID, s.ShippingMinor, s.TotalMinor = "", 0, s.ItemsTotalMinor
+	s.DeliverySlot = nil
 	if optionID == "" && len(options) > 0 {
 		optionID = slices.MinFunc(options, func(a, b ShippingOption) int { return cmp.Compare(a.AmountMinor, b.AmountMinor) }).ID
 	}
@@ -507,8 +517,17 @@ func (s Session) ValidateConfirm(in ConfirmInput) []Violation {
 		if id == "" {
 			id = s.ShippingOptionID
 		}
-		if !slices.ContainsFunc(s.ShippingOptions, func(o ShippingOption) bool { return o.ID == id }) {
+		opt, ok := ShippingOption{}, false
+		for _, o := range s.ShippingOptions {
+			if o.ID == id {
+				opt, ok = o, true
+				break
+			}
+		}
+		if !ok {
 			add("shipping_option_id", "invalid", "Choose one of the session's shipping options")
+		} else if opt.RequiresDeliverySlot && (s.DeliverySlot == nil || !s.DeliverySlot.Valid()) {
+			add("delivery_slot", "required", "Choose a delivery slot (PUT /checkout/{id}/slot) for this shipping option")
 		}
 	}
 	switch {

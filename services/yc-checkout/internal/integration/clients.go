@@ -386,7 +386,18 @@ type CreateOrder struct {
 	TotalMinor        int64           `json:"total_minor"`
 	PricingSnapshot   json.RawMessage `json:"pricing_snapshot,omitempty"`
 	ShippingOption    map[string]any  `json:"shipping_option,omitempty"`
+	DeliverySlot      *DeliverySlot   `json:"delivery_slot,omitempty"`
 	Payment           *OrderPayment   `json:"payment,omitempty"`
+}
+
+// DeliverySlot is the chosen window snapshotted onto the order (issue #30).
+type DeliverySlot struct {
+	SlotID     string    `json:"slot_id"`
+	StartAt    time.Time `json:"start_at"`
+	EndAt      time.Time `json:"end_at"`
+	Timezone   string    `json:"timezone"`
+	Label      string    `json:"label,omitempty"`
+	ScheduleID string    `json:"schedule_id,omitempty"`
 }
 
 // Order is yc-orders' view of an order.
@@ -429,12 +440,30 @@ type ShippingQuoteRequest struct {
 
 // ShippingQuoteOption is one way to ship, priced.
 type ShippingQuoteOption struct {
-	OptionID         string `json:"option_id"`
-	RateID           string `json:"rate_id"`
-	Name             string `json:"name"`
-	AmountMinor      int64  `json:"amount_minor"`
-	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
-	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
+	OptionID             string `json:"option_id"`
+	RateID               string `json:"rate_id"`
+	Name                 string `json:"name"`
+	AmountMinor          int64  `json:"amount_minor"`
+	EstimatedDaysMin     *int   `json:"estimated_days_min,omitempty"`
+	EstimatedDaysMax     *int   `json:"estimated_days_max,omitempty"`
+	ScheduleID           string `json:"schedule_id,omitempty"`
+	RequiresDeliverySlot bool   `json:"requires_delivery_slot,omitempty"`
+}
+
+// Slot is one delivery window with remaining capacity (yc-shipping).
+type Slot struct {
+	SlotID            string    `json:"slot_id"`
+	StartAt           time.Time `json:"start_at"`
+	EndAt             time.Time `json:"end_at"`
+	Timezone          string    `json:"timezone"`
+	RemainingCapacity int       `json:"remaining_capacity"`
+	Label             string    `json:"label,omitempty"`
+	ScheduleID        string    `json:"schedule_id,omitempty"`
+}
+
+// SlotList is yc-shipping's available windows for a rate.
+type SlotList struct {
+	Slots []Slot `json:"slots"`
 }
 
 // ShippingQuote is yc-shipping's options for an address, cheapest first.
@@ -448,6 +477,42 @@ func (c *Clients) QuoteShipping(ctx context.Context, req ShippingQuoteRequest) (
 	var out ShippingQuote
 	err := c.call(ctx, http.MethodPost, "/internal/quote", "", 0, req, &out)
 	return out, err
+}
+
+// ListSlots returns available delivery windows for a rate (yc-shipping).
+func (c *Clients) ListSlots(ctx context.Context, rateID, from, to string) (SlotList, error) {
+	q := url.Values{"rate_id": {rateID}}
+	if from != "" {
+		q.Set("from", from)
+	}
+	if to != "" {
+		q.Set("to", to)
+	}
+	var out SlotList
+	err := c.call(ctx, http.MethodGet, "/internal/slots?"+q.Encode(), "", 0, nil, &out)
+	return out, err
+}
+
+// GetSlot returns one window when it still has capacity (yc-shipping).
+func (c *Clients) GetSlot(ctx context.Context, slotID string) (Slot, error) {
+	var out Slot
+	err := c.call(ctx, http.MethodGet, "/internal/slots/"+url.PathEscape(slotID), "", 0, nil, &out)
+	return out, err
+}
+
+// BookSlot reserves capacity for bookingKey (checkout session id).
+func (c *Clients) BookSlot(ctx context.Context, slotID, bookingKey string) error {
+	return c.call(ctx, http.MethodPost, "/internal/slots/"+url.PathEscape(slotID)+"/book", "", 0,
+		map[string]string{"booking_key": bookingKey}, nil)
+}
+
+// ReleaseSlot frees a booking keyed by bookingKey (idempotent).
+func (c *Clients) ReleaseSlot(ctx context.Context, slotID, bookingKey string) error {
+	path := "/internal/slots/release"
+	if slotID != "" {
+		path = "/internal/slots/" + url.PathEscape(slotID) + "/release"
+	}
+	return c.call(ctx, http.MethodPost, path, "", 0, map[string]string{"booking_key": bookingKey}, nil)
 }
 
 // AbandonOrder closes a pending order (yc-orders). No order is nothing to

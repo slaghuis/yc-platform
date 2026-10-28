@@ -319,6 +319,12 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 			}
 		}
 	}
+	if ds := sess.DeliverySlot; ds != nil && ds.Valid() {
+		in.DeliverySlot = &integration.DeliverySlot{
+			SlotID: ds.SlotID, StartAt: ds.StartAt, EndAt: ds.EndAt, Timezone: ds.Timezone,
+			Label: ds.Label, ScheduleID: ds.ScheduleID,
+		}
+	}
 	if sess.PaymentTransactionID != "" || sess.PaymentGateway != "" {
 		in.Payment = &integration.OrderPayment{TransactionID: sess.PaymentTransactionID, Gateway: sess.PaymentGateway}
 	}
@@ -326,6 +332,13 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 }
 
 func (s *Service) createOrder(ctx context.Context, tenantID, token string, sess domain.Session) (bool, error) {
+	if ds := sess.DeliverySlot; ds != nil && ds.Valid() {
+		if err := s.p.BookSlot(ctx, ds.SlotID, sess.ID); err != nil {
+			return s.failed(ctx, tenantID, token, sess, err, func(r *integration.Rejection) (string, map[string]any) {
+				return domain.ReasonStepFailed, describe(r)
+			})
+		}
+	}
 	o, err := s.p.CreateOrder(ctx, sess.Key("order"), s.orderInput(sess))
 	if err != nil {
 		return s.failed(ctx, tenantID, token, sess, err, nil)
@@ -432,6 +445,13 @@ func (s *Service) compensate(ctx context.Context, tenantID, token string, sess d
 		}
 		return s.undone(ctx, tenantID, token, sess.ID, domain.UndoOrder, result)
 	}
+	if sess.DeliverySlot != nil && sess.Reached(domain.StateOrderCreate) && !sess.Undone(domain.UndoSlot) {
+		result, err := s.releaseSlot(ctx, sess)
+		if err != nil {
+			return s.retryLater(ctx, tenantID, token, sess, err)
+		}
+		return s.undone(ctx, tenantID, token, sess.ID, domain.UndoSlot, result)
+	}
 	if sess.HasTrackedItems && sess.Reached(domain.StateReserving) && !sess.Undone(domain.UndoReservation) {
 		result, err := s.releaseReservation(ctx, sess)
 		if err != nil {
@@ -481,6 +501,22 @@ func (s *Service) capturedAfterAll(ctx context.Context, tenantID, token string, 
 		return s.history(ctx, tx, tenantID, x.ID, "capture_discovered", "", "", map[string]any{"failure_reason": x.FailureReason})
 	})
 	return err == nil, err
+}
+
+// releaseSlot frees the delivery window booked at ORDER_CREATE (issue #30).
+func (s *Service) releaseSlot(ctx context.Context, sess domain.Session) (string, error) {
+	ds := sess.DeliverySlot
+	if ds == nil || ds.SlotID == "" {
+		return "none", nil
+	}
+	err := s.p.ReleaseSlot(ctx, ds.SlotID, sess.ID)
+	if r, ok := integration.Rejected(err); ok {
+		return "rejected: " + string(r.Problem.Code), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return "released", nil
 }
 
 // abandonOrder closes the pending order. When the create call's answer was

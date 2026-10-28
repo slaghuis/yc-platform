@@ -3,10 +3,12 @@ info:
   title: yc-shipping
   version: 0.1.0
   description: |
-    Shipping zones, rates, quotes and shipments (docs/services/yc-shipping.md).
-    Phase 6 subset: zones and rates (flat, weight-tiered, price-tiered),
-    quotes for yc-checkout, shipments for yc-orders with the manual carrier
-    driver, shop-admin status updates and public tracking.
+    Shipping zones, rates, quotes, delivery schedules/slots and shipments
+    (docs/services/yc-shipping.md). Phase 6 + WP4c (#30): zones and rates
+    (flat, weight-tiered, price-tiered), optional delivery schedules with
+    capacity-backed slots, quotes for yc-checkout, shipments for yc-orders
+    with the manual carrier driver, shop-admin status updates and public
+    tracking.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -15,6 +17,8 @@ info:
     address's country_code and, optionally, values under its fields object.
     Amounts are minor units of the store currency (ADR-014). Errors are
     application/problem+json (error-handling.md).
+    Weekdays on schedules are 0=Sunday … 6=Saturday. Default schedule
+    timezone is Africa/Johannesburg. Slot IDs are "{schedule_id}_{unix}".
 
 paths:
   /shipping/zones:
@@ -166,6 +170,75 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /admin/shipping/schedules:
+    get:
+      summary: List delivery schedules
+      operationId: listSchedules
+      responses:
+        '200':
+          description: The schedules by name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a delivery schedule
+      operationId: createSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '201':
+          description: The schedule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/shipping/schedules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get a delivery schedule
+      operationId: getSchedule
+      responses:
+        '200':
+          description: The schedule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace a delivery schedule
+      operationId: updateSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '200':
+          description: The schedule.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a delivery schedule
+      description: Refused with 409 while any rate still references it.
+      operationId: deleteSchedule
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
   /admin/shipments:
     get:
       summary: List shipments
@@ -249,6 +322,106 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/QuoteResult' }
         '400': { $ref: '#/components/responses/Problem' }
+
+  /internal/slots:
+    get:
+      summary: List available delivery slots for a rate
+      description: |
+        For yc-checkout. Generates windows from the rate's schedule, applies
+        lead time, same-day cut-off and blackouts, and subtracts bookings.
+        Full windows are omitted. Range is at most 14 days.
+      operationId: listSlots
+      parameters:
+        - name: rate_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          description: Inclusive start date (YYYY-MM-DD) in the schedule timezone.
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+          description: Inclusive end date; at most 14 days after from.
+      responses:
+        '200':
+          description: Available slots, sorted by start.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlotList' }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  /internal/slots/{slot_id}:
+    parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+    get:
+      summary: Get one slot if it still has capacity
+      description: |
+        Soft capacity check for checkout PUT /slot. Returns 404 when the
+        window is invalid, past cut-off, or full.
+      operationId: getSlot
+      responses:
+        '200':
+          description: The slot with remaining capacity.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/slots/{slot_id}/book:
+    parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+    post:
+      summary: Book a delivery slot
+      description: |
+        Hard book at ORDER_CREATE. booking_key is the checkout session ID.
+        Idempotent for the same key and slot; 409 when full.
+      operationId: bookSlot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlotBookInput' }
+      responses:
+        '200':
+          description: The booked slot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/slots/{slot_id}/release:
+    parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 128 }
+    post:
+      summary: Release a delivery slot booking
+      description: |
+        On abandon/compensate. Deletes the booking for booking_key on this
+        slot. Missing bookings are a no-op (204).
+      operationId: releaseSlot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlotBookInput' }
+      responses:
+        '204': { description: Released (or already absent). }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
 
   /internal/shipments:
     post:
@@ -394,10 +567,15 @@ components:
         estimated_days_max: { type: integer }
         carrier_driver: { type: string, default: manual }
         active: { type: boolean, default: true }
+        schedule_id: { type: string, format: uuid, description: Delivery schedule for slot booking. }
+        requires_delivery_slot:
+          type: boolean
+          default: false
+          description: When true, schedule_id is required (hard 400 if missing or unknown).
     Rate:
       type: object
       required: [rate_id, zone_id, method, display_name, pricing_type, flat_amount_minor, weight_tiers, price_tiers,
-        carrier_driver, active, created_at, updated_at]
+        carrier_driver, requires_delivery_slot, active, created_at, updated_at]
       properties:
         rate_id: { type: string, format: uuid }
         zone_id: { type: string, format: uuid }
@@ -414,6 +592,8 @@ components:
         estimated_days_min: { type: integer }
         estimated_days_max: { type: integer }
         carrier_driver: { type: string }
+        schedule_id: { type: string, format: uuid }
+        requires_delivery_slot: { type: boolean }
         active: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -451,7 +631,7 @@ components:
         name: { type: string }
     ShippingOption:
       type: object
-      required: [option_id, rate_id, name, amount_minor, carrier_driver]
+      required: [option_id, rate_id, name, amount_minor, carrier_driver, requires_delivery_slot]
       properties:
         option_id: { type: string, description: The rate's method. }
         rate_id: { type: string, format: uuid }
@@ -460,6 +640,8 @@ components:
         estimated_days_min: { type: integer }
         estimated_days_max: { type: integer }
         carrier_driver: { type: string }
+        schedule_id: { type: string, format: uuid }
+        requires_delivery_slot: { type: boolean }
     QuoteResult:
       type: object
       required: [options]
@@ -561,6 +743,86 @@ components:
         cursor: { type: string }
         next_cursor: { type: string }
         total_available: { type: integer }
+    ScheduleInput:
+      type: object
+      required: [name, window_minutes, weekdays, open_time, close_time, capacity_per_window]
+      additionalProperties: false
+      properties:
+        name: { type: string }
+        timezone:
+          type: string
+          description: IANA timezone; defaults to Africa/Johannesburg when omitted.
+        window_minutes: { type: integer, minimum: 5, maximum: 240 }
+        weekdays:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 6 }
+          description: '0=Sunday … 6=Saturday (Go time.Weekday).'
+        open_time: { type: string, description: 'Local HH:MM.' }
+        close_time: { type: string, description: 'Local HH:MM; must be after open_time.' }
+        capacity_per_window: { type: integer, minimum: 1 }
+        min_lead_minutes: { type: integer, minimum: 0, default: 0 }
+        same_day_cutoff: { type: string, description: 'Optional local HH:MM; after this, today has no windows.' }
+        blackout_dates:
+          type: array
+          items: { type: string, format: date }
+        active: { type: boolean, default: true }
+    Schedule:
+      type: object
+      required: [schedule_id, name, timezone, window_minutes, weekdays, open_time, close_time,
+        capacity_per_window, min_lead_minutes, blackout_dates, active, created_at, updated_at]
+      properties:
+        schedule_id: { type: string, format: uuid }
+        name: { type: string }
+        timezone: { type: string }
+        window_minutes: { type: integer }
+        weekdays:
+          type: array
+          items: { type: integer }
+        open_time: { type: string }
+        close_time: { type: string }
+        capacity_per_window: { type: integer }
+        min_lead_minutes: { type: integer }
+        same_day_cutoff: { type: string }
+        blackout_dates:
+          type: array
+          items: { type: string, format: date }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ScheduleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Schedule' }
+    Slot:
+      type: object
+      required: [slot_id, schedule_id, start_at, end_at, timezone, remaining_capacity]
+      properties:
+        slot_id: { type: string, description: 'Deterministic "{schedule_id}_{unix}".' }
+        schedule_id: { type: string, format: uuid }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string }
+        remaining_capacity: { type: integer }
+    SlotList:
+      type: object
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          items: { $ref: '#/components/schemas/Slot' }
+    SlotBookInput:
+      type: object
+      required: [booking_key]
+      additionalProperties: false
+      properties:
+        booking_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Checkout session ID (ORDER_CREATE / abandon).
     Problem:
       type: object
       description: RFC 9457 problem details (docs/standards/error-handling.md).

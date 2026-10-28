@@ -44,6 +44,7 @@ const (
 	OrderAbandoned      CompensationEntryStep = "order_abandoned"
 	PaymentVoided       CompensationEntryStep = "payment_voided"
 	ReservationReleased CompensationEntryStep = "reservation_released"
+	SlotReleased        CompensationEntryStep = "slot_released"
 )
 
 // Valid indicates whether the value is a known member of the CompensationEntryStep enum.
@@ -56,6 +57,8 @@ func (e CompensationEntryStep) Valid() bool {
 	case PaymentVoided:
 		return true
 	case ReservationReleased:
+		return true
+	case SlotReleased:
 		return true
 	default:
 		return false
@@ -152,6 +155,7 @@ type AdminSession struct {
 	ConfirmedAt              *time.Time              `json:"confirmed_at,omitempty"`
 	CreatedAt                time.Time               `json:"created_at"`
 	DeliveryAddress          *map[string]interface{} `json:"delivery_address,omitempty"`
+	DeliverySlot             *DeliverySlot           `json:"delivery_slot,omitempty"`
 	ExpiresAt                time.Time               `json:"expires_at"`
 	Failure                  *Failure                `json:"failure,omitempty"`
 	GuestContact             *GuestContact           `json:"guest_contact,omitempty"`
@@ -177,6 +181,16 @@ type AdminSession struct {
 
 // AdminSessionUserType defines model for AdminSession.UserType.
 type AdminSessionUserType string
+
+// AvailableSlot defines model for AvailableSlot.
+type AvailableSlot struct {
+	EndAt             time.Time `json:"end_at"`
+	Label             *string   `json:"label,omitempty"`
+	RemainingCapacity int       `json:"remaining_capacity"`
+	SlotID            string    `json:"slot_id"`
+	StartAt           time.Time `json:"start_at"`
+	Timezone          string    `json:"timezone"`
+}
 
 // BillingAddress Structured SA billing for tax invoices (issue #29; ADR-015 amendment).
 // Distinct from free-form delivery addresses.
@@ -224,6 +238,18 @@ type ConfirmInput struct {
 
 	// ShippingOptionID Defaults to the selected option.
 	ShippingOptionID *string `json:"shipping_option_id,omitempty"`
+}
+
+// DeliverySlot defines model for DeliverySlot.
+type DeliverySlot struct {
+	EndAt      time.Time           `json:"end_at"`
+	Label      *string             `json:"label,omitempty"`
+	ScheduleID *openapi_types.UUID `json:"schedule_id,omitempty"`
+	SlotID     string              `json:"slot_id"`
+	StartAt    time.Time           `json:"start_at"`
+
+	// Timezone IANA timezone; default Africa/Johannesburg.
+	Timezone string `json:"timezone"`
 }
 
 // Failure defines model for Failure.
@@ -313,6 +339,7 @@ type Session struct {
 	CompletedAt              *time.Time         `json:"completed_at,omitempty"`
 	ConfirmedAt              *time.Time         `json:"confirmed_at,omitempty"`
 	CreatedAt                time.Time          `json:"created_at"`
+	DeliverySlot             *DeliverySlot      `json:"delivery_slot,omitempty"`
 	ExpiresAt                time.Time          `json:"expires_at"`
 	Failure                  *Failure           `json:"failure,omitempty"`
 	Items                    []SessionItem      `json:"items"`
@@ -378,11 +405,23 @@ type ShippingInput struct {
 // ShippingOption defines model for ShippingOption.
 type ShippingOption struct {
 	// Amount An amount in integer minor units of an ISO 4217 currency.
-	Amount           Money  `json:"amount"`
-	EstimatedDaysMax *int   `json:"estimated_days_max,omitempty"`
-	EstimatedDaysMin *int   `json:"estimated_days_min,omitempty"`
-	ID               string `json:"id"`
-	Name             string `json:"name"`
+	Amount               Money               `json:"amount"`
+	EstimatedDaysMax     *int                `json:"estimated_days_max,omitempty"`
+	EstimatedDaysMin     *int                `json:"estimated_days_min,omitempty"`
+	ID                   string              `json:"id"`
+	Name                 string              `json:"name"`
+	RequiresDeliverySlot *bool               `json:"requires_delivery_slot,omitempty"`
+	ScheduleID           *openapi_types.UUID `json:"schedule_id,omitempty"`
+}
+
+// SlotInput defines model for SlotInput.
+type SlotInput struct {
+	SlotID string `json:"slot_id"`
+}
+
+// SlotList defines model for SlotList.
+type SlotList struct {
+	Slots []AvailableSlot `json:"slots"`
 }
 
 // StartInput defines model for StartInput.
@@ -433,6 +472,12 @@ type ConfirmCheckoutParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ListCheckoutSlotsParams defines parameters for ListCheckoutSlots.
+type ListCheckoutSlotsParams struct {
+	From *openapi_types.Date `form:"from,omitempty" json:"from,omitempty"`
+	To   *openapi_types.Date `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // StartCheckoutJSONRequestBody defines body for StartCheckout for application/json ContentType.
 type StartCheckoutJSONRequestBody = StartInput
 
@@ -441,6 +486,9 @@ type ConfirmCheckoutJSONRequestBody = ConfirmInput
 
 // SelectShippingJSONRequestBody defines body for SelectShipping for application/json ContentType.
 type SelectShippingJSONRequestBody = ShippingInput
+
+// SelectCheckoutSlotJSONRequestBody defines body for SelectCheckoutSlot for application/json ContentType.
+type SelectCheckoutSlotJSONRequestBody = SlotInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -465,6 +513,12 @@ type ServerInterface interface {
 	// SelectShipping Choose where and how to ship
 	// (POST /checkout/{id}/shipping)
 	SelectShipping(w http.ResponseWriter, r *http.Request, id SessionID)
+	// SelectCheckoutSlot Bind a delivery slot
+	// (PUT /checkout/{id}/slot)
+	SelectCheckoutSlot(w http.ResponseWriter, r *http.Request, id SessionID)
+	// ListCheckoutSlots List available delivery slots
+	// (GET /checkout/{id}/slots)
+	ListCheckoutSlots(w http.ResponseWriter, r *http.Request, id SessionID, params ListCheckoutSlotsParams)
 	// GetInternalSession A session for a service
 	// (GET /internal/sessions/{id})
 	GetInternalSession(w http.ResponseWriter, r *http.Request, id SessionID)
@@ -513,6 +567,18 @@ func (_ Unimplemented) ConfirmCheckout(w http.ResponseWriter, r *http.Request, i
 // SelectShipping Choose where and how to ship
 // (POST /checkout/{id}/shipping)
 func (_ Unimplemented) SelectShipping(w http.ResponseWriter, r *http.Request, id SessionID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SelectCheckoutSlot Bind a delivery slot
+// (PUT /checkout/{id}/slot)
+func (_ Unimplemented) SelectCheckoutSlot(w http.ResponseWriter, r *http.Request, id SessionID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListCheckoutSlots List available delivery slots
+// (GET /checkout/{id}/slots)
+func (_ Unimplemented) ListCheckoutSlots(w http.ResponseWriter, r *http.Request, id SessionID, params ListCheckoutSlotsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -762,6 +828,87 @@ func (siw *ServerInterfaceWrapper) SelectShipping(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// SelectCheckoutSlot operation middleware
+func (siw *ServerInterfaceWrapper) SelectCheckoutSlot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SelectCheckoutSlot(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCheckoutSlots operation middleware
+func (siw *ServerInterfaceWrapper) ListCheckoutSlots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCheckoutSlotsParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCheckoutSlots(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetInternalSession operation middleware
 func (siw *ServerInterfaceWrapper) GetInternalSession(w http.ResponseWriter, r *http.Request) {
 
@@ -909,6 +1056,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/checkout/{id}/shipping", wrapper.SelectShipping)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/checkout/{id}/slots", wrapper.ListCheckoutSlots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/checkout/{id}/slot", wrapper.SelectCheckoutSlot)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/checkout/{id}/confirm", wrapper.ConfirmCheckout)
@@ -1396,6 +1549,168 @@ func (response SelectShipping410ApplicationProblemPlusJSONResponse) VisitSelectS
 	return err
 }
 
+type SelectCheckoutSlotRequestObject struct {
+	ID   SessionID `json:"id"`
+	Body *SelectCheckoutSlotJSONRequestBody
+}
+
+type SelectCheckoutSlotResponseObject interface {
+	VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error
+}
+
+type SelectCheckoutSlot200JSONResponse Session
+
+func (response SelectCheckoutSlot200JSONResponse) VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectCheckoutSlot400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SelectCheckoutSlot400ApplicationProblemPlusJSONResponse) VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectCheckoutSlot404ApplicationProblemPlusJSONResponse Problem
+
+func (response SelectCheckoutSlot404ApplicationProblemPlusJSONResponse) VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectCheckoutSlot409ApplicationProblemPlusJSONResponse Problem
+
+func (response SelectCheckoutSlot409ApplicationProblemPlusJSONResponse) VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SelectCheckoutSlot410ApplicationProblemPlusJSONResponse Problem
+
+func (response SelectCheckoutSlot410ApplicationProblemPlusJSONResponse) VisitSelectCheckoutSlotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCheckoutSlotsRequestObject struct {
+	ID     SessionID `json:"id"`
+	Params ListCheckoutSlotsParams
+}
+
+type ListCheckoutSlotsResponseObject interface {
+	VisitListCheckoutSlotsResponse(w http.ResponseWriter) error
+}
+
+type ListCheckoutSlots200JSONResponse SlotList
+
+func (response ListCheckoutSlots200JSONResponse) VisitListCheckoutSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCheckoutSlots400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListCheckoutSlots400ApplicationProblemPlusJSONResponse) VisitListCheckoutSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCheckoutSlots404ApplicationProblemPlusJSONResponse Problem
+
+func (response ListCheckoutSlots404ApplicationProblemPlusJSONResponse) VisitListCheckoutSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCheckoutSlots409ApplicationProblemPlusJSONResponse Problem
+
+func (response ListCheckoutSlots409ApplicationProblemPlusJSONResponse) VisitListCheckoutSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCheckoutSlots410ApplicationProblemPlusJSONResponse Problem
+
+func (response ListCheckoutSlots410ApplicationProblemPlusJSONResponse) VisitListCheckoutSlotsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetInternalSessionRequestObject struct {
 	ID SessionID `json:"id"`
 }
@@ -1457,6 +1772,12 @@ type StrictServerInterface interface {
 	// SelectShipping Choose where and how to ship
 	// (POST /checkout/{id}/shipping)
 	SelectShipping(ctx context.Context, request SelectShippingRequestObject) (SelectShippingResponseObject, error)
+	// SelectCheckoutSlot Bind a delivery slot
+	// (PUT /checkout/{id}/slot)
+	SelectCheckoutSlot(ctx context.Context, request SelectCheckoutSlotRequestObject) (SelectCheckoutSlotResponseObject, error)
+	// ListCheckoutSlots List available delivery slots
+	// (GET /checkout/{id}/slots)
+	ListCheckoutSlots(ctx context.Context, request ListCheckoutSlotsRequestObject) (ListCheckoutSlotsResponseObject, error)
 	// GetInternalSession A session for a service
 	// (GET /internal/sessions/{id})
 	GetInternalSession(ctx context.Context, request GetInternalSessionRequestObject) (GetInternalSessionResponseObject, error)
@@ -1699,6 +2020,66 @@ func (sh *strictHandler) SelectShipping(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SelectShippingResponseObject); ok {
 		if err := validResponse.VisitSelectShippingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SelectCheckoutSlot operation middleware
+func (sh *strictHandler) SelectCheckoutSlot(w http.ResponseWriter, r *http.Request, id SessionID) {
+	var request SelectCheckoutSlotRequestObject
+
+	request.ID = id
+
+	var body SelectCheckoutSlotJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SelectCheckoutSlot(ctx, request.(SelectCheckoutSlotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SelectCheckoutSlot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SelectCheckoutSlotResponseObject); ok {
+		if err := validResponse.VisitSelectCheckoutSlotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCheckoutSlots operation middleware
+func (sh *strictHandler) ListCheckoutSlots(w http.ResponseWriter, r *http.Request, id SessionID, params ListCheckoutSlotsParams) {
+	var request ListCheckoutSlotsRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCheckoutSlots(ctx, request.(ListCheckoutSlotsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCheckoutSlots")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCheckoutSlotsResponseObject); ok {
+		if err := validResponse.VisitListCheckoutSlotsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

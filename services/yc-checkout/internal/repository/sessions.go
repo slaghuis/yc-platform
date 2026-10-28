@@ -22,22 +22,23 @@ type Sessions struct{}
 const sessionColumns = `id, user_id, user_type, cart_type, COALESCE(cart_id::text, ''), state, items,
 	requires_shipping, has_tracked_items, currency, tax_inclusive, items_total_minor, tax_total_minor,
 	shipping_minor, total_minor, pricing_snapshot, shipping_options, COALESCE(shipping_option_id, ''),
-	guest_contact, delivery_address, billing_address, COALESCE(confirm_key, ''), COALESCE(payment_gateway, ''),
-	COALESCE(payment_token, ''), COALESCE(return_url, ''), COALESCE(reservation_id::text, ''),
-	reservation_expires_at, COALESCE(payment_transaction_id::text, ''), COALESCE(payment_status, ''),
-	next_action, COALESCE(order_id::text, ''), COALESCE(order_number, ''), COALESCE(failed_state, ''),
-	COALESCE(failure_reason, ''), failure_detail, COALESCE(end_state, ''), compensation_log, attempts,
-	next_attempt_at, COALESCE(lease_owner, ''), lease_until, expires_at, confirmed_at, completed_at,
-	created_at, updated_at, payment_variant, hosted_payment, COALESCE(payment_public_key, '')`
+	guest_contact, delivery_address, billing_address, delivery_slot, COALESCE(confirm_key, ''),
+	COALESCE(payment_gateway, ''), COALESCE(payment_token, ''), COALESCE(return_url, ''),
+	COALESCE(reservation_id::text, ''), reservation_expires_at, COALESCE(payment_transaction_id::text, ''),
+	COALESCE(payment_status, ''), next_action, COALESCE(order_id::text, ''), COALESCE(order_number, ''),
+	COALESCE(failed_state, ''), COALESCE(failure_reason, ''), failure_detail, COALESCE(end_state, ''),
+	compensation_log, attempts, next_attempt_at, COALESCE(lease_owner, ''), lease_until, expires_at,
+	confirmed_at, completed_at, created_at, updated_at, payment_variant, hosted_payment,
+	COALESCE(payment_public_key, '')`
 
 func scanSession(r pgx.Row) (domain.Session, error) {
 	var s domain.Session
 	var userType, state, failedState, endState, variant string
-	var items, shipping, guest, address, billing, nextAction, detail, compensation []byte
+	var items, shipping, guest, address, billing, slot, nextAction, detail, compensation []byte
 	err := r.Scan(&s.ID, &s.UserID, &userType, &s.CartType, &s.CartID, &state, &items,
 		&s.RequiresShipping, &s.HasTrackedItems, &s.Currency, &s.TaxInclusive, &s.ItemsTotalMinor, &s.TaxTotalMinor,
 		&s.ShippingMinor, &s.TotalMinor, &s.PricingSnapshot, &shipping, &s.ShippingOptionID,
-		&guest, &address, &billing, &s.ConfirmKey, &s.PaymentGateway,
+		&guest, &address, &billing, &slot, &s.ConfirmKey, &s.PaymentGateway,
 		&s.PaymentToken, &s.ReturnURL, &s.ReservationID,
 		&s.ReservationExpiresAt, &s.PaymentTransactionID, &s.PaymentStatus,
 		&nextAction, &s.OrderID, &s.OrderNumber, &failedState,
@@ -55,8 +56,8 @@ func scanSession(r pgx.Row) (domain.Session, error) {
 	}{
 		"items": {items, &s.Items}, "shipping_options": {shipping, &s.ShippingOptions},
 		"guest_contact": {guest, &s.GuestContact}, "delivery_address": {address, &s.DeliveryAddress},
-		"billing_address": {billing, &s.BillingAddress},
-		"next_action":     {nextAction, &s.NextAction}, "failure_detail": {detail, &s.FailureDetail},
+		"billing_address": {billing, &s.BillingAddress}, "delivery_slot": {slot, &s.DeliverySlot},
+		"next_action": {nextAction, &s.NextAction}, "failure_detail": {detail, &s.FailureDetail},
 		"compensation_log": {compensation, &s.CompensationLog},
 	} {
 		if len(f.raw) == 0 {
@@ -103,12 +104,16 @@ func encode(v any) ([]byte, error) {
 		if x == nil {
 			return nil, nil
 		}
+	case *domain.DeliverySlot:
+		if x == nil {
+			return nil, nil
+		}
 	}
 	return json.Marshal(v)
 }
 
 type encoded struct {
-	items, shipping, guest, address, billing, nextAction, detail, compensation []byte
+	items, shipping, guest, address, billing, slot, nextAction, detail, compensation []byte
 }
 
 func encodeSession(s domain.Session) (encoded, error) {
@@ -126,8 +131,8 @@ func encodeSession(s domain.Session) (encoded, error) {
 	}{
 		"items": {s.Items, &e.items}, "shipping_options": {s.ShippingOptions, &e.shipping},
 		"guest_contact": {s.GuestContact, &e.guest}, "delivery_address": {s.DeliveryAddress, &e.address},
-		"billing_address": {s.BillingAddress, &e.billing},
-		"next_action":     {s.NextAction, &e.nextAction}, "failure_detail": {s.FailureDetail, &e.detail},
+		"billing_address": {s.BillingAddress, &e.billing}, "delivery_slot": {s.DeliverySlot, &e.slot},
+		"next_action": {s.NextAction, &e.nextAction}, "failure_detail": {s.FailureDetail, &e.detail},
 		"compensation_log": {s.CompensationLog, &e.compensation},
 	} {
 		if *f.out, err = encode(f.v); err != nil {
@@ -167,17 +172,18 @@ func (Sessions) UpdateSession(ctx context.Context, tx pgx.Tx, tenantID string, s
 	}
 	_, err = tx.Exec(ctx, `UPDATE checkout_sessions SET state = $3, shipping_minor = $4, total_minor = $5,
 			shipping_option_id = NULLIF($6, ''), guest_contact = $7, delivery_address = $8, billing_address = $9,
-			confirm_key = NULLIF($10, ''), payment_gateway = NULLIF($11, ''), payment_token = NULLIF($12, ''),
-			return_url = NULLIF($13, ''), reservation_id = NULLIF($14, '')::uuid, reservation_expires_at = $15,
-			payment_transaction_id = NULLIF($16, '')::uuid, payment_status = NULLIF($17, ''), next_action = $18,
-			order_id = NULLIF($19, '')::uuid, order_number = NULLIF($20, ''), failed_state = NULLIF($21, ''),
-			failure_reason = NULLIF($22, ''), failure_detail = $23, end_state = NULLIF($24, ''),
-			compensation_log = $25, attempts = $26, next_attempt_at = $27, lease_owner = NULLIF($28, ''),
-			lease_until = $29, confirmed_at = $30, completed_at = $31, updated_at = $32, payment_variant = $33,
-			hosted_payment = $34, payment_public_key = NULLIF($35, ''), shipping_options = $36
+			delivery_slot = $10, confirm_key = NULLIF($11, ''), payment_gateway = NULLIF($12, ''),
+			payment_token = NULLIF($13, ''), return_url = NULLIF($14, ''), reservation_id = NULLIF($15, '')::uuid,
+			reservation_expires_at = $16, payment_transaction_id = NULLIF($17, '')::uuid,
+			payment_status = NULLIF($18, ''), next_action = $19, order_id = NULLIF($20, '')::uuid,
+			order_number = NULLIF($21, ''), failed_state = NULLIF($22, ''), failure_reason = NULLIF($23, ''),
+			failure_detail = $24, end_state = NULLIF($25, ''), compensation_log = $26, attempts = $27,
+			next_attempt_at = $28, lease_owner = NULLIF($29, ''), lease_until = $30, confirmed_at = $31,
+			completed_at = $32, updated_at = $33, payment_variant = $34, hosted_payment = $35,
+			payment_public_key = NULLIF($36, ''), shipping_options = $37
 		WHERE tenant_id = $1 AND id = $2`,
 		tenantID, s.ID, string(s.State), s.ShippingMinor, s.TotalMinor,
-		s.ShippingOptionID, e.guest, e.address, e.billing,
+		s.ShippingOptionID, e.guest, e.address, e.billing, e.slot,
 		s.ConfirmKey, s.PaymentGateway, s.PaymentToken,
 		s.ReturnURL, s.ReservationID, s.ReservationExpiresAt,
 		s.PaymentTransactionID, s.PaymentStatus, e.nextAction,

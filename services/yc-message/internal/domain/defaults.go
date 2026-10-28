@@ -188,11 +188,15 @@ var samples = map[Type]map[string]any{
 		},
 		"items_total": "ZAR 419.00", "shipping": "ZAR 60.00", "tax_total": "ZAR 62.48", "total": "ZAR 479.00",
 		"requires_shipping": true,
+		"delivery_slot_id":  "sched_1", "delivery_slot_start": "2026-11-03T08:00:00Z",
+		"delivery_slot_end": "2026-11-03T08:30:00Z", "delivery_slot_timezone": "Africa/Johannesburg",
+		"delivery_slot_label": "3 Nov 2026, 10:00–10:30",
 	},
 	TypeOrderShipped: {
 		"order_number": "YC-000123", "order_url": "https://shop.example/orders/example",
 		"tracking_number": "YC1234567890AB", "carrier": "The Courier Guy",
-		"tracking_url": "https://shop.example/shipping/tracking/YC1234567890AB",
+		"tracking_url":        "https://shop.example/shipping/tracking/YC1234567890AB",
+		"delivery_slot_label": "3 Nov 2026, 10:00–10:30",
 	},
 	TypeOrderDelivered: {"order_number": "YC-000123", "order_url": "https://shop.example/orders/example"},
 	TypeOrderCancelled: {

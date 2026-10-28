@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -25,6 +26,8 @@ func (s *Service) Welcome(ctx context.Context, tenantID, eventID string, p event
 }
 
 // OrderPlaced confirms a paid order to its customer or guest.
+// order.placed.v1 is unchanged (issue #30); delivery_slot is enriched from
+// the order row when present.
 func (s *Service) OrderPlaced(ctx context.Context, tenantID, eventID string, p events.OrderPlacedV1) error {
 	ctx = serviceContext(ctx, tenantID)
 	var guest *integration.GuestContact
@@ -43,11 +46,15 @@ func (s *Service) OrderPlaced(ctx context.Context, tenantID, eventID string, p e
 	if err != nil {
 		return err
 	}
-	return s.notify(ctx, tenantID, eventID, domain.TypeOrderConfirmation, to, map[string]any{
+	msgCtx := map[string]any{
 		"order_number": p.OrderNumber, "order_url": orderURL, "items": items,
 		"items_total": eventMoney(p.ItemsTotal), "shipping": eventMoney(p.Shipping),
 		"tax_total": eventMoney(p.TaxTotal), "total": eventMoney(p.Total), "requires_shipping": p.RequiresShipping,
-	})
+	}
+	if o, err := s.upstream.Order(ctx, p.OrderID); err == nil {
+		addDeliverySlot(msgCtx, o.DeliverySlot)
+	}
+	return s.notify(ctx, tenantID, eventID, domain.TypeOrderConfirmation, to, msgCtx)
 }
 
 // OrderShipped tells the customer their order is on its way.
@@ -136,10 +143,25 @@ func (s *Service) orderMessage(ctx context.Context, tenantID, eventID string, t 
 		return err
 	}
 	msgCtx := map[string]any{"order_number": o.OrderNumber, "order_url": orderURL}
+	addDeliverySlot(msgCtx, o.DeliverySlot)
 	for k, v := range extra {
 		msgCtx[k] = v
 	}
 	return s.notify(ctx, tenantID, eventID, t, to, msgCtx)
+}
+
+// addDeliverySlot copies optional slot fields into template context (issue #30).
+func addDeliverySlot(msgCtx map[string]any, ds *integration.DeliverySlot) {
+	if ds == nil || ds.SlotID == "" {
+		return
+	}
+	msgCtx["delivery_slot_id"] = ds.SlotID
+	msgCtx["delivery_slot_start"] = ds.StartAt.UTC().Format(time.RFC3339)
+	msgCtx["delivery_slot_end"] = ds.EndAt.UTC().Format(time.RFC3339)
+	msgCtx["delivery_slot_timezone"] = ds.Timezone
+	if ds.Label != "" {
+		msgCtx["delivery_slot_label"] = ds.Label
+	}
 }
 
 // orderRecipient is an order's customer, through their preferences, or

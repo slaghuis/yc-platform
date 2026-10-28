@@ -123,6 +123,7 @@ type Order struct {
 	DeliveryAddress      map[string]any
 	BillingAddress       *BillingAddress
 	SellerInvoice        *SellerInvoice
+	DeliverySlot         *DeliverySlot
 	RequiresShipping     bool
 	Status               Status
 	Items                []Item

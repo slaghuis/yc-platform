@@ -20,6 +20,7 @@
 6. Emit tracking lifecycle events
 7. Handle delivery exceptions (failed delivery, address issues)
 8. Skip entirely for all-digital orders (per ADR-010 waiver)
+9. Optional delivery schedules and capacity-backed time slots for rates that require them (issue #30, ADR-022 amendment)
 
 ## Multi-Tenancy
 
@@ -90,11 +91,19 @@ Per zone, per method:
   ],
   "estimated_days_min": 2,
   "estimated_days_max": 3,
-  "carrier_driver": "manual"
+  "carrier_driver": "manual",
+  "schedule_id": null,
+  "requires_delivery_slot": false
 }
 ```
 
-Rates are **in store currency** (ADR-014).
+Rates are **in store currency** (ADR-014). When `requires_delivery_slot` is true, `schedule_id` must reference an existing delivery schedule (hard 400 otherwise). Quote options expose both fields so checkout can require a slot.
+
+## Delivery schedules and slots (WP4c / #30)
+
+Shop admins configure **schedules** (timezone, weekdays, open/close, window length, capacity, lead time, same-day cut-off, blackouts). Windows are generated; capacity is tracked in `slot_bookings`. Default timezone is `Africa/Johannesburg`. Weekdays use Go's `time.Weekday` (`0`=Sunday … `6`=Saturday). Slot IDs are deterministic: `{schedule_id}_{unix_start_utc}`.
+
+Checkout lists soft-available windows, verifies capacity on select (`GET /internal/slots/{slot_id}`), and **hard-books at ORDER_CREATE** (`POST …/book` with `booking_key` = checkout session ID). Abandon/compensate calls `POST …/release`. Admin reschedule after place is out of scope.
 
 ## Quote Flow
 
@@ -150,6 +159,11 @@ yc-orders → yc-shipping: POST /internal/shipments   (admin packages the order,
 | POST | `/admin/rates` | Create rate | shop_admin |
 | PUT | `/admin/rates/{id}` | Update rate | shop_admin |
 | DELETE | `/admin/rates/{id}` | Delete rate | shop_admin |
+| GET | `/admin/shipping/schedules` | List delivery schedules | shop_admin |
+| POST | `/admin/shipping/schedules` | Create schedule | shop_admin |
+| GET | `/admin/shipping/schedules/{id}` | Get schedule | shop_admin |
+| PUT | `/admin/shipping/schedules/{id}` | Replace schedule | shop_admin |
+| DELETE | `/admin/shipping/schedules/{id}` | Delete schedule (409 if rates still reference) | shop_admin |
 | GET | `/admin/shipments` | List shipments | shop_admin |
 | GET | `/admin/shipments/{id}` | Shipment detail | shop_admin |
 | POST | `/admin/shipments/{id}/manual-update` | Update tracking manually (for `manual` driver) | shop_admin |
@@ -161,6 +175,10 @@ yc-orders → yc-shipping: POST /internal/shipments   (admin packages the order,
 | Method | Path | Description | Auth |
 |---|---|---|---|
 | POST | `/internal/quote` | Shipping quote for checkout | service |
+| GET | `/internal/slots` | List available slots for a rate (`rate_id`, `from`, `to`; max 14 days) | service |
+| GET | `/internal/slots/{slot_id}` | Soft capacity check for one slot (404 if full/invalid) | service |
+| POST | `/internal/slots/{slot_id}/book` | Hard book at ORDER_CREATE (`booking_key`) | service |
+| POST | `/internal/slots/{slot_id}/release` | Release on abandon/compensate | service |
 | POST | `/internal/shipments` | Book the order's shipment (yc-orders, on packaging) | service |
 
 ### Webhook Endpoints
@@ -171,7 +189,7 @@ yc-orders → yc-shipping: POST /internal/shipments   (admin packages the order,
 
 ### Phase 6 Implementation Notes
 
-The contract is `services/yc-shipping/api/openapi.yaml`; the flow is ADR-022. Implemented: zones, rates, the quote, shipment booking with the `manual` driver, admin shipment list, detail and manual updates, public zones and tracking, and cancellation on `order.cancelled.v1`. Carrier configuration, carrier webhooks and the GDPR and tenant subscriptions come with the first real carrier driver.
+The contract is `services/yc-shipping/api/openapi.yaml`; the flow is ADR-022 (including the 2026-10-28 delivery-slots amendment). Implemented: zones, rates, delivery schedules and internal slot list/get/book/release, the quote (with `requires_delivery_slot` / `schedule_id` on options), shipment booking with the `manual` driver, admin shipment list, detail and manual updates, public zones and tracking, and cancellation on `order.cancelled.v1`. Carrier configuration, carrier webhooks and the GDPR and tenant subscriptions come with the first real carrier driver. Checkout/orders slot wiring is separate (WP4c clients).
 
 - **Manual driver.** Tracking numbers are `YC` followed by 12 random characters of Crockford's base 32 (digits and capitals without I, L, O or U); there is no label URL. The admin reports `in_transit` (with an optional carrier name and reference), `delivered` and `exception` (a message is required). `in_transit` and `exception` may repeat; a shipment moves label_created → in_transit → delivered, with `exception` from any of the first two and back.
 - **Booking** is idempotent per order (`UNIQUE (tenant_id, order_id)`) as well as by `Idempotency-Key`. A booking for a rate that has been deleted uses the method name and the manual driver.
@@ -198,6 +216,36 @@ CREATE TABLE zones (
 );
 CREATE INDEX idx_zones_tenant ON zones (tenant_id, priority);
 
+-- Weekdays: 0=Sunday … 6=Saturday. Windows generated; capacity in slot_bookings.
+CREATE TABLE delivery_schedules (
+    id                  UUID PRIMARY KEY,
+    tenant_id           TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    timezone            TEXT NOT NULL DEFAULT 'Africa/Johannesburg',
+    window_minutes      INT NOT NULL,
+    weekdays            INT[] NOT NULL,
+    open_time           TIME NOT NULL,
+    close_time          TIME NOT NULL,
+    capacity_per_window INT NOT NULL,
+    min_lead_minutes    INT NOT NULL DEFAULT 0,
+    same_day_cutoff     TIME,
+    blackout_dates      DATE[] NOT NULL DEFAULT '{}',
+    active              BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE slot_bookings (
+    id          UUID PRIMARY KEY,
+    tenant_id   TEXT NOT NULL,
+    schedule_id UUID NOT NULL REFERENCES delivery_schedules(id) ON DELETE CASCADE,
+    slot_start  TIMESTAMPTZ NOT NULL,
+    slot_end    TIMESTAMPTZ NOT NULL,
+    booking_key TEXT NOT NULL,          -- checkout_session_id
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, schedule_id, slot_start, booking_key)
+);
+
 CREATE TABLE rates (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id            TEXT NOT NULL,
@@ -211,6 +259,8 @@ CREATE TABLE rates (
     estimated_days_min   INT,
     estimated_days_max   INT,
     carrier_driver       TEXT NOT NULL,
+    schedule_id          UUID REFERENCES delivery_schedules(id) ON DELETE RESTRICT,
+    requires_delivery_slot BOOLEAN NOT NULL DEFAULT FALSE,
     status               TEXT NOT NULL DEFAULT 'active',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -329,8 +379,8 @@ yc-shipping:
 - International customs documentation
 - Returns / RMA shipping (returns are refunded without a return shipment in v1, ADR-022 rule 7)
 - Rates by dimensions (SKU dimensions are stored by yc-product but unused)
-- Delivery scheduling / time slots
 - Live rate shopping (query multiple carriers, pick cheapest)
 - Shipping insurance options
 - Dim weight calculation
 - Pickup point delivery (locker, store)
+- Admin reschedule of a booked delivery slot after place (slot MVP books at ORDER_CREATE only)

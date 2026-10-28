@@ -53,3 +53,11 @@
 - **Quote at confirm:** rejected. The payment amount would change at the moment of paying, and a failed quote would become a failed confirm.
 - **yc-orders stores the shipment status directly from admin calls:** rejected. It would duplicate the shipment lifecycle and leave no place for carrier webhooks.
 - **Return shipments and restocking in v1:** deferred. They need a return label from a carrier driver and an inventory receipt, neither of which exists yet.
+
+## Amends
+
+### 2026-10-28 — Delivery slots (issue #30)
+
+Shops may attach a **delivery schedule** to a rate (`requires_delivery_slot` + `schedule_id`). After the shipping quote (rule 1), checkout lists generated time windows for that rate and the customer selects one (`PUT /checkout/{id}/slot`, which must still have remaining capacity). Confirm requires a bound slot when the selected rate demands it; a stale or full window is **409**.
+
+Capacity is **booked atomically at ORDER_CREATE** (keyed by checkout session) and **released on abandon/compensate**. The bound window is snapshotted on the session and order (`delivery_slot`); later schedule edits do not rewrite history. Digital checkouts and rates without the flag are unchanged. Admin reschedule after place, slot surcharges, and `order.placed.v1` schema changes are out of this amendment.

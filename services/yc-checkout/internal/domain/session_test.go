@@ -56,6 +56,20 @@ func TestValidateConfirm(t *testing.T) {
 	assert.Empty(t, shipped().ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"}))
 	assert.Equal(t, []string{"shipping_option_id"},
 		fields(shipped().ValidateConfirm(domain.ConfirmInput{ShippingOptionID: "overnight", PaymentToken: "pm"})))
+
+	slotOpt := options()
+	slotOpt[1].RequiresDeliverySlot = true
+	needSlot := session(domain.UserCustomer, true)
+	needSlot.ShipTo(address, slotOpt, "standard")
+	assert.Equal(t, []string{"delivery_slot"},
+		fields(needSlot.ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"})),
+		"slot-required rate needs PUT /slot before confirm")
+	now := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	ds := domain.NormaliseDeliverySlot(domain.DeliverySlot{
+		SlotID: "sched_1", StartAt: now, EndAt: now.Add(30 * time.Minute), Timezone: "Africa/Johannesburg",
+	})
+	needSlot.DeliverySlot = &ds
+	assert.Empty(t, needSlot.ValidateConfirm(domain.ConfirmInput{PaymentToken: "pm"}))
 }
 
 func TestShipping(t *testing.T) {

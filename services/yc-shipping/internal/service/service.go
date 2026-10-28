@@ -156,6 +156,13 @@ func (s *Service) putRate(ctx context.Context, id string, r domain.Rate) (domain
 		} else if !ok {
 			return ycerrors.Validation().Field("zone_id", "invalid", "No such zone").Build()
 		}
+		if r.ScheduleID != "" {
+			if _, ok, err := s.repo.Schedule(ctx, tx, tenantID, r.ScheduleID); err != nil {
+				return err
+			} else if !ok {
+				return ycerrors.Validation().Field("schedule_id", "invalid", "No such schedule").Build()
+			}
+		}
 		now := s.now().UTC()
 		r.ID, r.CreatedAt, r.UpdatedAt = uuid.NewString(), now, now
 		if id != "" {

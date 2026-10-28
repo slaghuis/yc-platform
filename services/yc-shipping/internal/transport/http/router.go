@@ -5,10 +5,13 @@ package http
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	api "github.com/slaghuis/yc-platform/services/yc-shipping/api/generated"
 	"github.com/slaghuis/yc-platform/services/yc-shipping/internal/carrier"
@@ -28,6 +31,15 @@ type Shipping interface {
 	CreateRate(ctx context.Context, r domain.Rate) (domain.Rate, error)
 	UpdateRate(ctx context.Context, id string, r domain.Rate) (domain.Rate, error)
 	DeleteRate(ctx context.Context, id string) error
+	Schedules(ctx context.Context) ([]domain.Schedule, error)
+	Schedule(ctx context.Context, id string) (domain.Schedule, error)
+	CreateSchedule(ctx context.Context, sc domain.Schedule) (domain.Schedule, error)
+	UpdateSchedule(ctx context.Context, id string, sc domain.Schedule) (domain.Schedule, error)
+	DeleteSchedule(ctx context.Context, id string) error
+	ListSlots(ctx context.Context, rateID string, from, to time.Time) ([]domain.Slot, error)
+	GetSlot(ctx context.Context, slotID string) (domain.Slot, error)
+	BookSlot(ctx context.Context, slotID, bookingKey string) (domain.Slot, error)
+	ReleaseSlot(ctx context.Context, slotID, bookingKey string) error
 	Quote(ctx context.Context, req service.QuoteRequest) (service.Quote, error)
 	CreateShipment(ctx context.Context, req service.ShipmentRequest) (domain.Shipment, error)
 	Shipments(ctx context.Context, status domain.Status, after *repository.ShipmentCursor, limit int) ([]domain.Shipment, *repository.ShipmentCursor, error)
@@ -62,8 +74,10 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/shipping", Methods: []string{http.MethodGet}},
 		{Prefix: "/admin/zones", Roles: admin},
 		{Prefix: "/admin/rates", Roles: admin},
+		{Prefix: "/admin/shipping/schedules", Roles: admin},
 		{Prefix: "/admin/shipments", Roles: admin},
 		{Prefix: "/internal/quote", Methods: []string{http.MethodPost}},
+		{Prefix: "/internal/slots", Methods: []string{http.MethodGet, http.MethodPost}},
 		{Prefix: "/internal/shipments", Methods: []string{http.MethodPost}},
 	}
 }
@@ -171,6 +185,88 @@ func (h handlers) DeleteRate(ctx context.Context, req api.DeleteRateRequestObjec
 	return api.DeleteRate204Response{}, nil
 }
 
+func (h handlers) ListSchedules(ctx context.Context, _ api.ListSchedulesRequestObject) (api.ListSchedulesResponseObject, error) {
+	list, err := h.svc.Schedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListSchedules200JSONResponse{Items: make([]api.Schedule, len(list))}
+	for i, sc := range list {
+		out.Items[i] = schedule(sc)
+	}
+	return out, nil
+}
+
+func (h handlers) CreateSchedule(ctx context.Context, req api.CreateScheduleRequestObject) (api.CreateScheduleResponseObject, error) {
+	sc, err := h.svc.CreateSchedule(ctx, scheduleInput(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateSchedule201JSONResponse(schedule(sc)), nil
+}
+
+func (h handlers) GetSchedule(ctx context.Context, req api.GetScheduleRequestObject) (api.GetScheduleResponseObject, error) {
+	sc, err := h.svc.Schedule(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetSchedule200JSONResponse(schedule(sc)), nil
+}
+
+func (h handlers) UpdateSchedule(ctx context.Context, req api.UpdateScheduleRequestObject) (api.UpdateScheduleResponseObject, error) {
+	sc, err := h.svc.UpdateSchedule(ctx, req.ID.String(), scheduleInput(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.UpdateSchedule200JSONResponse(schedule(sc)), nil
+}
+
+func (h handlers) DeleteSchedule(ctx context.Context, req api.DeleteScheduleRequestObject) (api.DeleteScheduleResponseObject, error) {
+	if err := h.svc.DeleteSchedule(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.DeleteSchedule204Response{}, nil
+}
+
+func (h handlers) ListSlots(ctx context.Context, req api.ListSlotsRequestObject) (api.ListSlotsResponseObject, error) {
+	from, to, err := slotRange(req.Params.From, req.Params.To)
+	if err != nil {
+		return nil, err
+	}
+	slots, err := h.svc.ListSlots(ctx, req.Params.RateID.String(), from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListSlots200JSONResponse{Slots: make([]api.Slot, len(slots))}
+	for i, sl := range slots {
+		out.Slots[i] = slot(sl)
+	}
+	return out, nil
+}
+
+func (h handlers) GetSlot(ctx context.Context, req api.GetSlotRequestObject) (api.GetSlotResponseObject, error) {
+	sl, err := h.svc.GetSlot(ctx, req.SlotID)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetSlot200JSONResponse(slot(sl)), nil
+}
+
+func (h handlers) BookSlot(ctx context.Context, req api.BookSlotRequestObject) (api.BookSlotResponseObject, error) {
+	sl, err := h.svc.BookSlot(ctx, req.SlotID, req.Body.BookingKey)
+	if err != nil {
+		return nil, err
+	}
+	return api.BookSlot200JSONResponse(slot(sl)), nil
+}
+
+func (h handlers) ReleaseSlot(ctx context.Context, req api.ReleaseSlotRequestObject) (api.ReleaseSlotResponseObject, error) {
+	if err := h.svc.ReleaseSlot(ctx, req.SlotID, req.Body.BookingKey); err != nil {
+		return nil, err
+	}
+	return api.ReleaseSlot204Response{}, nil
+}
+
 func (h handlers) ListShipments(ctx context.Context, req api.ListShipmentsRequestObject) (api.ListShipmentsResponseObject, error) {
 	page, err := httpkit.ParsePage(req.Params.PageSize, req.Params.Cursor)
 	if err != nil {
@@ -243,10 +339,16 @@ func (h handlers) QuoteShipping(ctx context.Context, req api.QuoteShippingReques
 		out.Zone = &api.QuoteZone{ZoneID: mustUUID(q.Zone.ID), Name: q.Zone.Name}
 	}
 	for i, o := range q.Options {
-		out.Options[i] = api.ShippingOption{
+		opt := api.ShippingOption{
 			OptionID: o.ID, RateID: mustUUID(o.RateID), Name: o.Name, AmountMinor: o.AmountMinor,
 			EstimatedDaysMin: o.EstimatedDaysMin, EstimatedDaysMax: o.EstimatedDaysMax, CarrierDriver: o.CarrierDriver,
+			RequiresDeliverySlot: o.RequiresDeliverySlot,
 		}
+		if o.ScheduleID != "" {
+			id := mustUUID(o.ScheduleID)
+			opt.ScheduleID = &id
+		}
+		out.Options[i] = opt
 	}
 	return out, nil
 }
@@ -300,13 +402,16 @@ func rateInput(b api.RateInput) domain.Rate {
 	r := domain.Rate{
 		ZoneID: b.ZoneID.String(), Method: b.Method, DisplayName: b.DisplayName, PricingType: domain.PricingType(b.PricingType),
 		FlatAmountMinor: deref(b.FlatAmountMinor), EstimatedDaysMin: b.EstimatedDaysMin, EstimatedDaysMax: b.EstimatedDaysMax,
-		CarrierDriver: carrier.ManualName, Active: true,
+		CarrierDriver: carrier.ManualName, Active: true, RequiresDeliverySlot: deref(b.RequiresDeliverySlot),
 	}
 	if b.CarrierDriver != nil {
 		r.CarrierDriver = *b.CarrierDriver
 	}
 	if b.Active != nil {
 		r.Active = *b.Active
+	}
+	if b.ScheduleID != nil {
+		r.ScheduleID = b.ScheduleID.String()
 	}
 	if b.WeightTiers != nil {
 		for _, t := range *b.WeightTiers {
@@ -327,7 +432,12 @@ func rate(r domain.Rate) api.Rate {
 		PricingType: api.PricingType(r.PricingType), FlatAmountMinor: r.FlatAmountMinor,
 		WeightTiers: make([]api.WeightTier, len(r.WeightTiers)), PriceTiers: make([]api.PriceTier, len(r.PriceTiers)),
 		EstimatedDaysMin: r.EstimatedDaysMin, EstimatedDaysMax: r.EstimatedDaysMax, CarrierDriver: r.CarrierDriver,
-		Active: r.Active, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
+		RequiresDeliverySlot: r.RequiresDeliverySlot, Active: r.Active,
+		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(),
+	}
+	if r.ScheduleID != "" {
+		id := mustUUID(r.ScheduleID)
+		out.ScheduleID = &id
 	}
 	for i, t := range r.WeightTiers {
 		out.WeightTiers[i] = api.WeightTier{MaxWeightG: t.MaxWeightG, AmountMinor: t.AmountMinor}
@@ -336,6 +446,57 @@ func rate(r domain.Rate) api.Rate {
 		out.PriceTiers[i] = api.PriceTier{MinSubtotalMinor: t.MinSubtotalMinor, AmountMinor: t.AmountMinor}
 	}
 	return out
+}
+
+func scheduleInput(b api.ScheduleInput) domain.Schedule {
+	sc := domain.Schedule{
+		Name: b.Name, WindowMinutes: b.WindowMinutes, Weekdays: append([]int(nil), b.Weekdays...),
+		OpenTime: b.OpenTime, CloseTime: b.CloseTime, CapacityPerWindow: b.CapacityPerWindow,
+		MinLeadMinutes: deref(b.MinLeadMinutes), SameDayCutoff: b.SameDayCutoff, Active: true,
+	}
+	if b.Timezone != nil {
+		sc.Timezone = *b.Timezone
+	}
+	if b.Active != nil {
+		sc.Active = *b.Active
+	}
+	if b.BlackoutDates != nil {
+		sc.BlackoutDates = make([]string, len(*b.BlackoutDates))
+		for i, d := range *b.BlackoutDates {
+			sc.BlackoutDates[i] = d.Format("2006-01-02")
+		}
+	}
+	return sc
+}
+
+func schedule(sc domain.Schedule) api.Schedule {
+	out := api.Schedule{
+		ScheduleID: mustUUID(sc.ID), Name: sc.Name, Timezone: sc.Timezone, WindowMinutes: sc.WindowMinutes,
+		Weekdays: append([]int(nil), sc.Weekdays...), OpenTime: sc.OpenTime, CloseTime: sc.CloseTime,
+		CapacityPerWindow: sc.CapacityPerWindow, MinLeadMinutes: sc.MinLeadMinutes, SameDayCutoff: sc.SameDayCutoff,
+		Active: sc.Active, CreatedAt: sc.CreatedAt.UTC(), UpdatedAt: sc.UpdatedAt.UTC(),
+		BlackoutDates: make([]openapi_types.Date, len(sc.BlackoutDates)),
+	}
+	for i, d := range sc.BlackoutDates {
+		t, _ := time.Parse("2006-01-02", d)
+		out.BlackoutDates[i] = openapi_types.Date{Time: t}
+	}
+	return out
+}
+
+func slot(sl domain.Slot) api.Slot {
+	return api.Slot{
+		SlotID: sl.SlotID, ScheduleID: mustUUID(sl.ScheduleID), StartAt: sl.StartAt.UTC(), EndAt: sl.EndAt.UTC(),
+		Timezone: sl.Timezone, RemainingCapacity: sl.RemainingCapacity,
+	}
+}
+
+func slotRange(from, to openapi_types.Date) (time.Time, time.Time, error) {
+	if from.IsZero() || to.IsZero() {
+		return time.Time{}, time.Time{}, ycerrors.Validation().
+			Field("from", "required", "From and to dates are required").Build()
+	}
+	return from.Time, to.Time, nil
 }
 
 func shipment(sh domain.Shipment) api.Shipment {

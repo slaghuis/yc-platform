@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
 )
 
@@ -38,20 +40,22 @@ type PriceTier struct {
 // Rate is one shipping method in a zone. Amounts are in the store
 // currency (ADR-014).
 type Rate struct {
-	ID               string
-	ZoneID           string
-	Method           string
-	DisplayName      string
-	PricingType      PricingType
-	FlatAmountMinor  int64
-	WeightTiers      []WeightTier
-	PriceTiers       []PriceTier
-	EstimatedDaysMin *int
-	EstimatedDaysMax *int
-	CarrierDriver    string
-	Active           bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                   string
+	ZoneID               string
+	Method               string
+	DisplayName          string
+	PricingType          PricingType
+	FlatAmountMinor      int64
+	WeightTiers          []WeightTier
+	PriceTiers           []PriceTier
+	EstimatedDaysMin     *int
+	EstimatedDaysMax     *int
+	CarrierDriver        string
+	ScheduleID           string // empty when no delivery schedule
+	RequiresDeliverySlot bool
+	Active               bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 var methodRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
@@ -95,6 +99,14 @@ func (r Rate) Validate(drivers []string) error {
 		v.Field("estimated_days_min", "invalid", "Estimated days are between 0 and 365")
 	} else if lo != nil && hi != nil && *lo > *hi {
 		v.Field("estimated_days_max", "invalid", "The most days must not be fewer than the least")
+	}
+	if r.RequiresDeliverySlot && r.ScheduleID == "" {
+		v.Field("schedule_id", "required", "A rate that requires a delivery slot needs a schedule")
+	}
+	if r.ScheduleID != "" {
+		if _, err := uuid.Parse(r.ScheduleID); err != nil {
+			v.Field("schedule_id", "invalid", "Schedule ID must be a UUID")
+		}
 	}
 	if v.HasErrors() {
 		return v.Build()
@@ -175,13 +187,15 @@ func (r Rate) Price(p Parcel) (int64, bool) {
 
 // Option is a priced rate offered to checkout.
 type Option struct {
-	ID               string
-	RateID           string
-	Name             string
-	AmountMinor      int64
-	EstimatedDaysMin *int
-	EstimatedDaysMax *int
-	CarrierDriver    string
+	ID                   string
+	RateID               string
+	Name                 string
+	AmountMinor          int64
+	EstimatedDaysMin     *int
+	EstimatedDaysMax     *int
+	CarrierDriver        string
+	ScheduleID           string
+	RequiresDeliverySlot bool
 }
 
 // Options prices the zone's active rates for p, cheapest first. Rates that
@@ -199,6 +213,7 @@ func Options(rates []Rate, p Parcel) []Option {
 		out = append(out, Option{
 			ID: r.Method, RateID: r.ID, Name: r.DisplayName, AmountMinor: amount,
 			EstimatedDaysMin: r.EstimatedDaysMin, EstimatedDaysMax: r.EstimatedDaysMax, CarrierDriver: r.CarrierDriver,
+			ScheduleID: r.ScheduleID, RequiresDeliverySlot: r.RequiresDeliverySlot,
 		})
 	}
 	slices.SortStableFunc(out, func(a, b Option) int {

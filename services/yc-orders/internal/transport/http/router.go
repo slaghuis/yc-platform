@@ -304,6 +304,16 @@ func (h handlers) CreateOrder(ctx context.Context, req api.CreateOrderRequestObj
 			return nil, err
 		}
 	}
+	if b.DeliverySlot != nil {
+		ds := domain.NormaliseDeliverySlot(domain.DeliverySlot{
+			SlotID: b.DeliverySlot.SlotID, StartAt: b.DeliverySlot.StartAt, EndAt: b.DeliverySlot.EndAt,
+			Timezone: b.DeliverySlot.Timezone, Label: deref(b.DeliverySlot.Label),
+		})
+		if b.DeliverySlot.ScheduleID != nil {
+			ds.ScheduleID = b.DeliverySlot.ScheduleID.String()
+		}
+		o.DeliverySlot = &ds
+	}
 	if b.Payment != nil {
 		o.PaymentGateway = b.Payment.Gateway
 		if b.Payment.TransactionID != nil {
@@ -428,6 +438,18 @@ func order(o domain.Order, history []domain.HistoryEntry) api.Order {
 	if o.SellerInvoice != nil {
 		si := sellerOut(*o.SellerInvoice)
 		out.SellerInvoice = &si
+	}
+	if ds := o.DeliverySlot; ds != nil {
+		slot := api.DeliverySlot{
+			SlotID: ds.SlotID, StartAt: ds.StartAt.UTC(), EndAt: ds.EndAt.UTC(), Timezone: ds.Timezone,
+			Label: optional(ds.Label),
+		}
+		if ds.ScheduleID != "" {
+			if id, err := uuid.Parse(ds.ScheduleID); err == nil {
+				slot.ScheduleID = &id
+			}
+		}
+		out.DeliverySlot = &slot
 	}
 	if o.PaymentGateway != "" || o.PaymentTransactionID != "" {
 		p := api.Payment{Gateway: o.PaymentGateway}

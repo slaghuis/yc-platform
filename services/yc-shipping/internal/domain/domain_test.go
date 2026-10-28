@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -171,4 +172,122 @@ func TestTrackingNumber(t *testing.T) {
 	assert.NotEqual(t, n, domain.NewTrackingNumber())
 	assert.False(t, domain.ValidTrackingNumber("yc1234"), "upper case only")
 	assert.False(t, domain.ValidTrackingNumber("YC 1"))
+}
+
+func TestRateRequiresDeliverySlot(t *testing.T) {
+	drivers := []string{"manual"}
+	base := domain.Rate{
+		Method: "standard", DisplayName: "Standard", PricingType: domain.PricingFlat,
+		CarrierDriver: "manual", FlatAmountMinor: 100,
+	}
+	require.NoError(t, base.Validate(drivers))
+
+	need := base
+	need.RequiresDeliverySlot = true
+	err := need.Validate(drivers)
+	require.True(t, ycerrors.HasCode(err, ycerrors.CodeValidationFailed))
+	e, _ := ycerrors.As(err)
+	require.NotEmpty(t, e.Fields)
+	assert.Equal(t, "schedule_id", e.Fields[0].Field)
+
+	need.ScheduleID = "not-a-uuid"
+	assert.True(t, ycerrors.HasCode(need.Validate(drivers), ycerrors.CodeValidationFailed))
+
+	need.ScheduleID = "11111111-1111-1111-1111-111111111111"
+	require.NoError(t, need.Validate(drivers))
+}
+
+func TestSlotIDRoundTrip(t *testing.T) {
+	id := "22222222-2222-2222-2222-222222222222"
+	start := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	slotID := domain.SlotID(id, start)
+	assert.Equal(t, fmt.Sprintf("%s_%d", id, start.Unix()), slotID)
+	gotID, gotStart, ok := domain.ParseSlotID(slotID)
+	require.True(t, ok)
+	assert.Equal(t, id, gotID)
+	assert.True(t, gotStart.Equal(start))
+	_, _, ok = domain.ParseSlotID("bad")
+	assert.False(t, ok)
+}
+
+func TestGenerateWindows(t *testing.T) {
+	loc, err := time.LoadLocation(domain.DefaultScheduleTimezone)
+	require.NoError(t, err)
+	// Monday 2026-11-02 in Johannesburg.
+	monday := time.Date(2026, 11, 2, 0, 0, 0, 0, loc)
+	now := time.Date(2026, 11, 2, 7, 0, 0, 0, loc) // before open
+	sc := domain.Schedule{
+		ID: "33333333-3333-3333-3333-333333333333", Name: "Windows", Timezone: domain.DefaultScheduleTimezone,
+		WindowMinutes: 60, Weekdays: []int{1, 2, 3, 4, 5}, // Mon–Fri
+		OpenTime: "09:00", CloseTime: "11:00", CapacityPerWindow: 2, Active: true,
+	}
+
+	t.Run("weekdays and tiling", func(t *testing.T) {
+		slots, err := domain.GenerateWindows(sc, monday, monday.AddDate(0, 0, 1), now)
+		require.NoError(t, err)
+		require.Len(t, slots, 4, "Mon+Tue × two hours")
+		assert.Equal(t, domain.SlotID(sc.ID, time.Date(2026, 11, 2, 9, 0, 0, 0, loc).UTC()), slots[0].SlotID)
+		assert.Equal(t, "09:00", slots[0].StartAt.In(loc).Format("15:04"))
+		assert.Equal(t, "10:00", slots[0].EndAt.In(loc).Format("15:04"))
+	})
+
+	t.Run("blackout", func(t *testing.T) {
+		withBlackout := sc
+		withBlackout.BlackoutDates = []string{"2026-11-02"}
+		slots, err := domain.GenerateWindows(withBlackout, monday, monday, now)
+		require.NoError(t, err)
+		assert.Empty(t, slots)
+	})
+
+	t.Run("lead time", func(t *testing.T) {
+		withLead := sc
+		withLead.MinLeadMinutes = 180 // 07:00 + 3h = 10:00 → first 09:00 window dropped
+		slots, err := domain.GenerateWindows(withLead, monday, monday, now)
+		require.NoError(t, err)
+		require.Len(t, slots, 1)
+		assert.Equal(t, "10:00", slots[0].StartAt.In(loc).Format("15:04"))
+	})
+
+	t.Run("same-day cutoff", func(t *testing.T) {
+		withCutoff := sc
+		c := "08:00"
+		withCutoff.SameDayCutoff = &c
+		late := time.Date(2026, 11, 2, 8, 30, 0, 0, loc)
+		slots, err := domain.GenerateWindows(withCutoff, monday, monday, late)
+		require.NoError(t, err)
+		assert.Empty(t, slots, "past cut-off hides today")
+	})
+
+	t.Run("inactive", func(t *testing.T) {
+		inactive := sc
+		inactive.Active = false
+		slots, err := domain.GenerateWindows(inactive, monday, monday, now)
+		require.NoError(t, err)
+		assert.Empty(t, slots)
+	})
+
+	t.Run("default timezone", func(t *testing.T) {
+		emptyTZ := sc
+		emptyTZ.Timezone = ""
+		require.NoError(t, emptyTZ.Validate())
+		emptyTZ.Normalise()
+		assert.Equal(t, domain.DefaultScheduleTimezone, emptyTZ.Timezone)
+	})
+}
+
+func TestScheduleValidate(t *testing.T) {
+	good := domain.Schedule{
+		Name: "Standard", Timezone: "Africa/Johannesburg", WindowMinutes: 30,
+		Weekdays: []int{1, 2, 3}, OpenTime: "09:00", CloseTime: "17:00", CapacityPerWindow: 1,
+	}
+	require.NoError(t, good.Validate())
+
+	bad := good
+	bad.WindowMinutes = 1
+	bad.OpenTime = "18:00"
+	bad.CloseTime = "09:00"
+	bad.Weekdays = nil
+	bad.Timezone = "Not/AZone"
+	err := bad.Validate()
+	require.True(t, ycerrors.HasCode(err, ycerrors.CodeValidationFailed))
 }

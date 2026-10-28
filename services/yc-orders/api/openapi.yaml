@@ -706,7 +706,21 @@ components:
         total_minor: { type: integer, format: int64 }
         pricing_snapshot: { type: object, additionalProperties: true, description: The full pricing result. }
         shipping_option: { type: object, additionalProperties: true }
+        delivery_slot:
+          $ref: '#/components/schemas/DeliverySlot'
+          description: Chosen delivery window from checkout (issue #30); snapshotted on the order.
         payment: { $ref: '#/components/schemas/Payment' }
+    DeliverySlot:
+      type: object
+      required: [slot_id, start_at, end_at, timezone]
+      additionalProperties: false
+      properties:
+        slot_id: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string }
+        label: { type: string }
+        schedule_id: { type: string, format: uuid }
     ConfirmInput:
       type: object
       additionalProperties: false
@@ -760,6 +774,7 @@ components:
         delivery_address: { type: object, additionalProperties: true }
         billing_address: { $ref: '#/components/schemas/BillingAddress' }
         seller_invoice: { $ref: '#/components/schemas/SellerInvoice' }
+        delivery_slot: { $ref: '#/components/schemas/DeliverySlot' }
         requires_shipping: { type: boolean }
         status: { $ref: '#/components/schemas/OrderStatus' }
         items:

@@ -72,6 +72,7 @@ paths:
         the named option, or the cheapest, is selected; 409 when the shop
         does not ship there. Without an address, chooses among the current
         address's options. Publishes checkout.shipping_selected.v1.
+        Changing the address or option clears any bound delivery slot.
       operationId: selectShipping
       parameters:
         - $ref: '#/components/parameters/SessionID'
@@ -83,6 +84,62 @@ paths:
       responses:
         '200':
           description: The session with its new totals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}/slots:
+    get:
+      summary: List available delivery slots
+      description: |
+        After a shipping option that requires a delivery slot is selected.
+        Windows come from yc-shipping for the selected rate. from and to
+        are local dates (YYYY-MM-DD); from defaults to today; the range is
+        at most 14 days. Soft availability only — capacity is booked at
+        ORDER_CREATE.
+      operationId: listCheckoutSlots
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Available windows.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlotList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /checkout/{id}/slot:
+    put:
+      summary: Bind a delivery slot
+      description: |
+        Soft-binds one available window on the session after verifying
+        remaining capacity with yc-shipping. Does not decrement capacity;
+        hard book happens at ORDER_CREATE. Required before confirm when
+        the selected rate has requires_delivery_slot.
+      operationId: selectCheckoutSlot
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SlotInput' }
+      responses:
+        '200':
+          description: The session with the bound slot.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Session' }
@@ -337,6 +394,42 @@ components:
         amount: { $ref: '#/components/schemas/Money' }
         estimated_days_min: { type: integer }
         estimated_days_max: { type: integer }
+        requires_delivery_slot: { type: boolean }
+        schedule_id: { type: string, format: uuid }
+    DeliverySlot:
+      type: object
+      required: [slot_id, start_at, end_at, timezone]
+      additionalProperties: false
+      properties:
+        slot_id: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string, description: IANA timezone; default Africa/Johannesburg. }
+        label: { type: string }
+        schedule_id: { type: string, format: uuid }
+    AvailableSlot:
+      type: object
+      required: [slot_id, start_at, end_at, timezone, remaining_capacity]
+      properties:
+        slot_id: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        timezone: { type: string }
+        remaining_capacity: { type: integer }
+        label: { type: string }
+    SlotList:
+      type: object
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          items: { $ref: '#/components/schemas/AvailableSlot' }
+    SlotInput:
+      type: object
+      required: [slot_id]
+      additionalProperties: false
+      properties:
+        slot_id: { type: string }
     Totals:
       type: object
       required: [items_total, tax_total, shipping, total]
@@ -405,6 +498,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/ShippingOption' }
         selected_shipping_option_id: { type: string }
+        delivery_slot: { $ref: '#/components/schemas/DeliverySlot' }
         totals: { $ref: '#/components/schemas/Totals' }
         tax_inclusive: { type: boolean, description: 'Show gross prices when true, net otherwise.' }
         payment: { $ref: '#/components/schemas/PaymentState' }
@@ -420,7 +514,7 @@ components:
       type: object
       required: [step, result, at]
       properties:
-        step: { type: string, enum: [payment_voided, order_abandoned, reservation_released, late_charge_refunded] }
+        step: { type: string, enum: [payment_voided, order_abandoned, slot_released, reservation_released, late_charge_refunded] }
         result: { type: string }
         at: { type: string, format: date-time }
     HistoryEntry:

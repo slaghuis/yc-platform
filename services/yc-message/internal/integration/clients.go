@@ -73,6 +73,15 @@ type GuestContact struct {
 	PhoneE164 string `json:"phone_e164"`
 }
 
+// DeliverySlot is the snapshotted delivery window on an order (issue #30).
+type DeliverySlot struct {
+	SlotID   string    `json:"slot_id"`
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
+	Timezone string    `json:"timezone"`
+	Label    string    `json:"label,omitempty"`
+}
+
 // Order is what yc-message needs of an order.
 type Order struct {
 	OrderID          string        `json:"order_id"`
@@ -81,6 +90,7 @@ type Order struct {
 	UserType         string        `json:"user_type"`
 	GuestContact     *GuestContact `json:"guest_contact"`
 	RequiresShipping bool          `json:"requires_shipping"`
+	DeliverySlot     *DeliverySlot `json:"delivery_slot,omitempty"`
 	Items            []OrderItem   `json:"items"`
 	ItemsTotal       Money         `json:"items_total"`
 	Shipping         Money         `json:"shipping"`

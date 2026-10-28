@@ -23,6 +23,8 @@ type Checkout interface {
 	Start(ctx context.Context, cartType string) (domain.Session, error)
 	Session(ctx context.Context, id string) (domain.Session, error)
 	SelectShipping(ctx context.Context, id string, in domain.ShippingChoice) (domain.Session, error)
+	ListSlots(ctx context.Context, id, from, to string) ([]domain.AvailableSlot, error)
+	SelectSlot(ctx context.Context, id, slotID string) (domain.Session, error)
 	Confirm(ctx context.Context, id, key string, in domain.ConfirmInput) (domain.Session, error)
 	Cancel(ctx context.Context, id string) (domain.Session, error)
 	AdminSessions(ctx context.Context, state domain.State, after *repository.SessionCursor, limit int) ([]domain.Session, error)
@@ -102,6 +104,40 @@ func (h handlers) SelectShipping(ctx context.Context, req api.SelectShippingRequ
 		return nil, err
 	}
 	return api.SelectShipping200JSONResponse(session(s, false)), nil
+}
+
+func (h handlers) ListCheckoutSlots(ctx context.Context, req api.ListCheckoutSlotsRequestObject) (api.ListCheckoutSlotsResponseObject, error) {
+	from, to := "", ""
+	if req.Params.From != nil {
+		from = req.Params.From.Format("2006-01-02")
+	}
+	if req.Params.To != nil {
+		to = req.Params.To.Format("2006-01-02")
+	}
+	slots, err := h.svc.ListSlots(ctx, req.ID.String(), from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListCheckoutSlots200JSONResponse{Slots: make([]api.AvailableSlot, len(slots))}
+	for i, sl := range slots {
+		out.Slots[i] = api.AvailableSlot{
+			SlotID: sl.SlotID, StartAt: sl.StartAt.UTC(), EndAt: sl.EndAt.UTC(), Timezone: sl.Timezone,
+			RemainingCapacity: sl.RemainingCapacity, Label: optional(sl.Label),
+		}
+	}
+	return out, nil
+}
+
+func (h handlers) SelectCheckoutSlot(ctx context.Context, req api.SelectCheckoutSlotRequestObject) (api.SelectCheckoutSlotResponseObject, error) {
+	var slotID string
+	if req.Body != nil {
+		slotID = req.Body.SlotID
+	}
+	s, err := h.svc.SelectSlot(ctx, req.ID.String(), slotID)
+	if err != nil {
+		return nil, err
+	}
+	return api.SelectCheckoutSlot200JSONResponse(session(s, false)), nil
 }
 
 func (h handlers) ConfirmCheckout(ctx context.Context, req api.ConfirmCheckoutRequestObject) (api.ConfirmCheckoutResponseObject, error) {
@@ -209,10 +245,20 @@ func session(s domain.Session, admin bool) api.Session {
 	}
 	options := make([]api.ShippingOption, len(s.ShippingOptions))
 	for i, o := range s.ShippingOptions {
-		options[i] = api.ShippingOption{
+		opt := api.ShippingOption{
 			ID: o.ID, Name: o.Name, Amount: m(o.AmountMinor),
 			EstimatedDaysMin: o.EstimatedDaysMin, EstimatedDaysMax: o.EstimatedDaysMax,
 		}
+		if o.RequiresDeliverySlot {
+			v := true
+			opt.RequiresDeliverySlot = &v
+		}
+		if o.ScheduleID != "" {
+			if id, err := uuid.Parse(o.ScheduleID); err == nil {
+				opt.ScheduleID = &id
+			}
+		}
+		options[i] = opt
 	}
 	out := api.Session{
 		SessionID: parseUUID(s.ID), State: api.State(s.State), UserType: api.SessionUserType(s.UserType),
@@ -223,6 +269,18 @@ func session(s domain.Session, admin bool) api.Session {
 		},
 		ExpiresAt: s.ExpiresAt.UTC(), ConfirmedAt: utc(s.ConfirmedAt), CompletedAt: utc(s.CompletedAt),
 		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
+	}
+	if ds := s.DeliverySlot; ds != nil && ds.Valid() {
+		slot := api.DeliverySlot{
+			SlotID: ds.SlotID, StartAt: ds.StartAt.UTC(), EndAt: ds.EndAt.UTC(), Timezone: ds.Timezone,
+			Label: optional(ds.Label),
+		}
+		if ds.ScheduleID != "" {
+			if id, err := uuid.Parse(ds.ScheduleID); err == nil {
+				slot.ScheduleID = &id
+			}
+		}
+		out.DeliverySlot = &slot
 	}
 	if s.PaymentGateway != "" {
 		p := &api.PaymentState{
@@ -266,7 +324,8 @@ func adminSession(s domain.Session, history []repository.Event) api.AdminSession
 	out := api.AdminSession{
 		SessionID: b.SessionID, State: b.State, UserType: api.AdminSessionUserType(b.UserType), CartType: b.CartType,
 		Items: b.Items, RequiresShipping: b.RequiresShipping, ShippingOptions: b.ShippingOptions,
-		SelectedShippingOptionID: b.SelectedShippingOptionID, TaxInclusive: b.TaxInclusive, Totals: b.Totals,
+		SelectedShippingOptionID: b.SelectedShippingOptionID, DeliverySlot: b.DeliverySlot,
+		TaxInclusive: b.TaxInclusive, Totals: b.Totals,
 		Payment: b.Payment, Reservation: b.Reservation, Order: b.Order, Failure: b.Failure,
 		ExpiresAt: b.ExpiresAt, ConfirmedAt: b.ConfirmedAt, CompletedAt: b.CompletedAt,
 		CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,

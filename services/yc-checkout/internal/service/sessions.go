@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -296,9 +299,168 @@ func (s *Service) quoteShipping(ctx context.Context, sess domain.Session, addres
 		out[i] = domain.ShippingOption{
 			ID: o.OptionID, RateID: o.RateID, Name: o.Name, AmountMinor: o.AmountMinor,
 			EstimatedDaysMin: o.EstimatedDaysMin, EstimatedDaysMax: o.EstimatedDaysMax,
+			ScheduleID: o.ScheduleID, RequiresDeliverySlot: o.RequiresDeliverySlot,
 		}
 	}
 	return out, nil
+}
+
+// ListSlots returns available delivery windows for the selected shipping
+// option's rate (issue #30). from/to are YYYY-MM-DD in the shop TZ; empty
+// from defaults to today. The range is capped at MaxSlotListDays.
+func (s *Service) ListSlots(ctx context.Context, id, from, to string) ([]domain.AvailableSlot, error) {
+	sess, err := s.Session(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireQuote(sess); err != nil {
+		return nil, err
+	}
+	opt, ok := sess.SelectedShipping()
+	if !ok || !opt.RequiresDeliverySlot || opt.RateID == "" {
+		return nil, ycerrors.Validation().Field("shipping_option_id", "invalid",
+			"Select a shipping option that requires a delivery slot first").Build()
+	}
+	from, to, err = slotRange(from, to, s.now())
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.p.ListSlots(ctx, opt.RateID, from, to)
+	if err != nil {
+		if r, ok := integration.Rejected(err); ok {
+			return nil, ycerrors.Conflict("Delivery slots cannot be listed: " + r.Problem.Detail).Wrap(err)
+		}
+		return nil, err
+	}
+	out := make([]domain.AvailableSlot, len(list.Slots))
+	for i, sl := range list.Slots {
+		out[i] = domain.AvailableSlot{
+			SlotID: sl.SlotID, StartAt: sl.StartAt.UTC(), EndAt: sl.EndAt.UTC(), Timezone: sl.Timezone,
+			RemainingCapacity: sl.RemainingCapacity, Label: sl.Label,
+		}
+	}
+	return out, nil
+}
+
+// SelectSlot soft-binds a delivery window on the session after verifying
+// remaining capacity with yc-shipping. Capacity is not decremented until
+// ORDER_CREATE books it.
+func (s *Service) SelectSlot(ctx context.Context, id, slotID string) (domain.Session, error) {
+	slotID = strings.TrimSpace(slotID)
+	if slotID == "" {
+		return domain.Session{}, ycerrors.Validation().Field("slot_id", "required", "A slot_id is required").Build()
+	}
+	sess, err := s.Session(ctx, id)
+	if err != nil {
+		return sess, err
+	}
+	if err := s.requireQuote(sess); err != nil {
+		return sess, err
+	}
+	opt, ok := sess.SelectedShipping()
+	if !ok || !opt.RequiresDeliverySlot {
+		return sess, ycerrors.Validation().Field("shipping_option_id", "invalid",
+			"Select a shipping option that requires a delivery slot first").Build()
+	}
+	sl, err := s.p.GetSlot(ctx, slotID)
+	if err != nil {
+		if r, ok := integration.Rejected(err); ok {
+			if r.Status == http.StatusNotFound || r.Status == http.StatusConflict {
+				return sess, ycerrors.Conflict("That delivery slot is no longer available; choose another").Wrap(err)
+			}
+			return sess, ycerrors.Validation().Field("slot_id", "invalid", r.Problem.Detail).Wrap(err)
+		}
+		return sess, err
+	}
+	if sl.RemainingCapacity < 1 {
+		return sess, ycerrors.Conflict("That delivery slot is full; choose another")
+	}
+	bound := domain.NormaliseDeliverySlot(domain.DeliverySlot{
+		SlotID: sl.SlotID, StartAt: sl.StartAt, EndAt: sl.EndAt, Timezone: sl.Timezone,
+		Label: sl.Label, ScheduleID: firstNonEmpty(sl.ScheduleID, opt.ScheduleID),
+	})
+	var out domain.Session
+	err = s.asOwner(ctx, id, true, func(tx pgx.Tx, tenantID string, sess *domain.Session) error {
+		if err := s.requireQuote(*sess); err != nil {
+			return err
+		}
+		opt, ok := sess.SelectedShipping()
+		if !ok || !opt.RequiresDeliverySlot {
+			return ycerrors.Validation().Field("shipping_option_id", "invalid",
+				"Select a shipping option that requires a delivery slot first").Build()
+		}
+		sess.DeliverySlot = &bound
+		sess.UpdatedAt = s.now().UTC()
+		if err := s.repo.UpdateSession(ctx, tx, tenantID, *sess); err != nil {
+			return err
+		}
+		if err := s.history(ctx, tx, tenantID, sess.ID, "slot_selected", "", "", map[string]any{
+			"slot_id": bound.SlotID, "start_at": bound.StartAt, "end_at": bound.EndAt,
+		}); err != nil {
+			return err
+		}
+		out = *sess
+		return nil
+	})
+	return out, err
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// ensureSlotStillAvailable re-checks capacity at confirm (issue #30).
+func (s *Service) ensureSlotStillAvailable(ctx context.Context, sess domain.Session) error {
+	if !sess.NeedsDeliverySlot() || sess.DeliverySlot == nil {
+		return nil
+	}
+	sl, err := s.p.GetSlot(ctx, sess.DeliverySlot.SlotID)
+	if err != nil {
+		if r, ok := integration.Rejected(err); ok {
+			return ycerrors.Conflict("The chosen delivery slot is no longer available; choose another").Wrap(err).
+				With("status", r.Status)
+		}
+		return err
+	}
+	if sl.RemainingCapacity < 1 {
+		return ycerrors.Conflict("The chosen delivery slot is full; choose another")
+	}
+	return nil
+}
+
+// slotRange normalises YYYY-MM-DD from/to (default from = today UTC date)
+// and enforces MaxSlotListDays.
+func slotRange(from, to string, now time.Time) (string, string, error) {
+	v := ycerrors.Validation()
+	today := now.UTC().Format("2006-01-02")
+	if from == "" {
+		from = today
+	}
+	fromDay, err := time.Parse("2006-01-02", from)
+	if err != nil {
+		v.Field("from", "invalid", "from is YYYY-MM-DD")
+	}
+	if to == "" {
+		to = fromDay.AddDate(0, 0, domain.MaxSlotListDays-1).Format("2006-01-02")
+	}
+	toDay, err := time.Parse("2006-01-02", to)
+	if err != nil {
+		v.Field("to", "invalid", "to is YYYY-MM-DD")
+	}
+	if !v.HasErrors() {
+		if toDay.Before(fromDay) {
+			v.Field("to", "invalid", "to must not be before from")
+		} else if toDay.Sub(fromDay) > time.Duration(domain.MaxSlotListDays-1)*24*time.Hour {
+			v.Field("to", "invalid", fmt.Sprintf("List at most %d days at a time", domain.MaxSlotListDays))
+		}
+	}
+	if v.HasErrors() {
+		return "", "", v.Build()
+	}
+	return from, to, nil
 }
 
 // Confirm validates the customer's details (ADR-010) and runs the saga
@@ -312,6 +474,13 @@ func (s *Service) Confirm(ctx context.Context, id, key string, in domain.Confirm
 	route, routeErr := s.confirmRoute(ctx, id, in.PaymentGateway)
 	if _, ok := integration.Rejected(routeErr); routeErr != nil && !ok {
 		return domain.Session{}, routeErr
+	}
+	if pre, err := s.Session(ctx, id); err != nil {
+		return domain.Session{}, err
+	} else if pre.State == domain.StatePricing {
+		if err := s.ensureSlotStillAvailable(ctx, pre); err != nil {
+			return domain.Session{}, err
+		}
 	}
 	var sess domain.Session
 	var token string

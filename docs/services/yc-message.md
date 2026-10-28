@@ -68,6 +68,7 @@ Resolve channel for user:
 - A platform-wide default template exists for every message type as fallback
 - Rendering uses Go `text/template` (or `html/template` for HTML emails)
 - Template context is message-type-specific; schemas are documented per message type
+- Optional delivery-slot keys (issue #30; `order.placed.v1` unchanged): when the order has a snapshotted window, confirmation and later order messages may include `delivery_slot_id`, `delivery_slot_start`, `delivery_slot_end`, `delivery_slot_timezone`, and `delivery_slot_label` (enriched from the order row)
 
 ### Example Message Types (v1)
 
