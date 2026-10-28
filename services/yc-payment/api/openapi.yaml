@@ -19,17 +19,11 @@ info:
     timeout or a pending (3-D Secure) result learns the real outcome.
     Capture and void are idempotent by state.
 
-    POST /webhooks/stripe and POST /webhooks/yoco take the gateways'
-    signed webhooks on the shop's host. They are gateway callback routes
-    (no token); the body is verified with the shop's webhook secret
-    (Stripe-Signature with a 5-minute tolerance; Yoco's Standard Webhooks
-    headers with 3 minutes). They answer 200 to anything verified,
-    including redeliveries (deduplicated by event ID) and events about
-    unknown payments, and 401 to a bad signature.
-
-    Card data never reaches yc-payment (ADR-009): payment_token is the
-    gateway SDK's payment method and is passed through, not stored.
-    Errors are application/problem+json (error-handling.md).
+    Gateway callbacks are POST /webhooks/stripe and POST /webhooks/yoco
+    (documented under paths). Card data never reaches yc-payment
+    (ADR-009): payment_token is the gateway SDK's payment method and is
+    passed through, not stored. Errors are application/problem+json
+    (error-handling.md).
 
 paths:
   /admin/gateway-config:
@@ -326,6 +320,64 @@ paths:
               schema: { $ref: '#/components/schemas/Capabilities' }
         '404': { $ref: '#/components/responses/Problem' }
 
+  /webhooks/stripe:
+    post:
+      summary: Stripe webhook callback
+      description: |
+        Signed Stripe callback on the shop's host (ADR-027 `/webhooks/*`).
+        No token. The raw body is verified with the shop's Stripe webhook
+        secret (`Stripe-Signature`, 5-minute tolerance). Answers 200 to
+        anything verified, including redeliveries (deduplicated by event
+        ID) and events about unknown payments, and 401 to a bad signature.
+        The body shape is Stripe's event envelope; yc-payment does not
+        validate it beyond the signature and the event fields it consumes.
+      operationId: stripeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Stripe event JSON (verified by signature, not by this schema).
+      responses:
+        '200':
+          description: Verified (including no-ops for redeliveries and unknown payments).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookAck' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /webhooks/yoco:
+    post:
+      summary: Yoco webhook callback
+      description: |
+        Signed Yoco callback on the shop's host (ADR-027 `/webhooks/*`).
+        No token. The raw body is verified with the shop's Yoco webhook
+        secret (Standard Webhooks headers `webhook-id`,
+        `webhook-timestamp`, `webhook-signature`; 3-minute tolerance).
+        Answers 200 to anything verified, including redeliveries
+        (deduplicated by event ID) and events about unknown payments, and
+        401 to a bad signature. The body shape is Yoco's event envelope;
+        yc-payment does not validate it beyond the signature and the
+        event fields it consumes.
+      operationId: yocoWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Yoco event JSON (verified by signature, not by this schema).
+      responses:
+        '200':
+          description: Verified (including no-ops for redeliveries and unknown payments).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookAck' }
+        '401': { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     Gateway:
@@ -565,6 +617,11 @@ components:
         cursor: { type: string }
         next_cursor: { type: string }
         total_available: { type: integer }
+    WebhookAck:
+      type: object
+      required: [received]
+      properties:
+        received: { type: boolean, description: Always true on a verified callback. }
     Problem:
       type: object
       description: RFC 9457 problem details (docs/standards/error-handling.md).

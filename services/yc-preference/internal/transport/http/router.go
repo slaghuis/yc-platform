@@ -93,7 +93,10 @@ func (h handlers) GetMyPreferences(ctx context.Context, _ api.GetMyPreferencesRe
 }
 
 func (h handlers) UpdateMyPreferences(ctx context.Context, req api.UpdateMyPreferencesRequestObject) (api.UpdateMyPreferencesResponseObject, error) {
-	patch := domain.Patch{DisplayCurrency: req.Body.DisplayCurrency, Locale: req.Body.Locale}
+	patch := domain.Patch{
+		DisplayCurrency: req.Body.DisplayCurrency, Locale: req.Body.Locale,
+		Newsletter: req.Body.Newsletter, Marketing: req.Body.Marketing, NewProducts: req.Body.NewProducts,
+	}
 	if c := req.Body.PrimaryChannel; c != nil {
 		dc := domain.Channel(*c)
 		patch.PrimaryChannel = &dc
@@ -140,17 +143,28 @@ func (h handlers) GetDefaults(ctx context.Context, _ api.GetDefaultsRequestObjec
 }
 
 func (h handlers) PutDefaults(ctx context.Context, req api.PutDefaultsRequestObject) (api.PutDefaultsResponseObject, error) {
-	d, err := h.svc.PutDefaults(ctx, domain.Defaults{DisplayCurrency: req.Body.DisplayCurrency, Locale: req.Body.Locale})
+	d := domain.Defaults{DisplayCurrency: req.Body.DisplayCurrency, Locale: req.Body.Locale}
+	if req.Body.Newsletter != nil {
+		d.Newsletter = *req.Body.Newsletter
+	}
+	if req.Body.Marketing != nil {
+		d.Marketing = *req.Body.Marketing
+	}
+	if req.Body.NewProducts != nil {
+		d.NewProducts = *req.Body.NewProducts
+	}
+	out, err := h.svc.PutDefaults(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	return api.PutDefaults200JSONResponse(defaults(d)), nil
+	return api.PutDefaults200JSONResponse(defaults(out)), nil
 }
 
 func preferences(p domain.Preferences) api.Preferences {
 	id, _ := uuid.Parse(p.UserID)
 	out := api.Preferences{
 		UserID: id, DisplayCurrency: p.DisplayCurrency, Locale: p.Locale,
+		Newsletter: p.Newsletter, Marketing: p.Marketing, NewProducts: p.NewProducts,
 		Channels: channels(p.Channels), Stored: p.Stored,
 	}
 	if p.PrimaryChannel != "" {
@@ -180,7 +194,10 @@ func channel(c domain.MessagingChannel) api.MessagingChannel {
 }
 
 func defaults(d domain.Defaults) api.Defaults {
-	out := api.Defaults{DisplayCurrency: d.DisplayCurrency, Locale: d.Locale}
+	out := api.Defaults{
+		DisplayCurrency: d.DisplayCurrency, Locale: d.Locale,
+		Newsletter: d.Newsletter, Marketing: d.Marketing, NewProducts: d.NewProducts,
+	}
 	if !d.UpdatedAt.IsZero() {
 		t := d.UpdatedAt.UTC()
 		out.UpdatedAt = &t

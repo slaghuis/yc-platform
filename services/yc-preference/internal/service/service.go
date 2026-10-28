@@ -54,7 +54,7 @@ func (s *Service) Get(ctx context.Context) (domain.Preferences, error) {
 			return err
 		}
 		d, err := s.defaults(ctx, tx, tenantID)
-		p = domain.Preferences{UserID: userID, DisplayCurrency: d.DisplayCurrency, Locale: d.Locale}
+		p = prefsFromDefaults(userID, d)
 		return err
 	})
 	return p, err
@@ -78,7 +78,9 @@ func (s *Service) Update(ctx context.Context, patch domain.Patch) (domain.Prefer
 				return ycerrors.Validation().Field("primary_channel", "unknown", "Add the channel before making it primary").Build()
 			}
 		}
-		if p.DisplayCurrency == old.DisplayCurrency && p.Locale == old.Locale && p.PrimaryChannel == old.PrimaryChannel {
+		unchanged := p.DisplayCurrency == old.DisplayCurrency && p.Locale == old.Locale &&
+			p.PrimaryChannel == old.PrimaryChannel && domain.MarketingEqual(p, old)
+		if unchanged {
 			return nil
 		}
 		now := s.now()
@@ -104,6 +106,16 @@ func (s *Service) publishChanges(ctx context.Context, tx pgx.Tx, tenantID string
 	if p.Locale != old.Locale {
 		err := s.publish(ctx, tx, tenantID, events.TypePreferenceLocaleChangedV1, events.PreferenceLocaleChangedV1{
 			UserID: p.UserID, Locale: p.Locale, PreviousLocale: &old.Locale, ChangedAt: at,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if !domain.MarketingEqual(p, old) {
+		err := s.publish(ctx, tx, tenantID, events.TypePreferenceMarketingChangedV1, events.PreferenceMarketingChangedV1{
+			UserID: p.UserID, Newsletter: p.Newsletter, Marketing: p.Marketing, NewProducts: p.NewProducts,
+			PreviousNewsletter: &old.Newsletter, PreviousMarketing: &old.Marketing, PreviousNewProducts: &old.NewProducts,
+			ChangedAt: at,
 		})
 		if err != nil {
 			return err
@@ -290,7 +302,7 @@ func (s *Service) ensure(ctx context.Context, tx pgx.Tx, tenantID, userID string
 		return domain.Preferences{}, err
 	}
 	now := s.now()
-	p = domain.Preferences{UserID: userID, DisplayCurrency: d.DisplayCurrency, Locale: d.Locale}
+	p = prefsFromDefaults(userID, d)
 	inserted, err := s.repo.Insert(ctx, tx, tenantID, p, now)
 	if err != nil {
 		return domain.Preferences{}, err
@@ -313,6 +325,13 @@ func (s *Service) defaults(ctx context.Context, tx pgx.Tx, tenantID string) (dom
 		return d, err
 	}
 	return s.fallback, nil
+}
+
+func prefsFromDefaults(userID string, d domain.Defaults) domain.Preferences {
+	return domain.Preferences{
+		UserID: userID, DisplayCurrency: d.DisplayCurrency, Locale: d.Locale,
+		Newsletter: d.Newsletter, Marketing: d.Marketing, NewProducts: d.NewProducts,
+	}
 }
 
 // asUser runs fn for the calling customer or shop admin in their shop.

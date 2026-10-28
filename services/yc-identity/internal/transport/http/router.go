@@ -443,6 +443,12 @@ func user(u domain.User) api.User {
 	if u.DisplayName != "" {
 		out.DisplayName = &u.DisplayName
 	}
+	if u.PhoneE164 != "" {
+		out.PhoneE164 = &u.PhoneE164
+	}
+	if u.ProfileImage != "" {
+		out.ProfileImageURL = &u.ProfileImage
+	}
 	return out
 }
 

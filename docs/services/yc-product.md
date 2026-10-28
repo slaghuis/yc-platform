@@ -16,7 +16,7 @@
 2. Maintain a catalog of products per supplier
 3. Maintain variants per product (color, size, etc.)
 4. Maintain SKUs (product + variant combination)
-5. Maintain a category hierarchy per tenant, and an ordered set of banners that present those categories
+5. Maintain category hierarchies per tenant (multi-root forest; products many-to-many), and an ordered set of banners that present those categories
 6. Attach images (by `image_id` from yc-image) to products and SKUs
 7. Expose CRUD APIs for suppliers, products and SKUs to the shop admin
 8. Provide a faceted search API, contextualized by actor role
@@ -98,10 +98,11 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/products` | Faceted search; returns product list | any |
-| GET | `/products/{id}` | Get product with variants and SKUs | any |
+| GET | `/products` | Faceted search; repeatable `category` (AND + subtree) and `exclude_category` | any |
+| GET | `/products/{id}` | Get product with variants, SKUs and `related_product_ids` | any |
+| GET | `/products/{id}/also-bought` | Products customers ordered together with this one (`limit` 1-24, default 8) | any |
 | GET | `/skus/{id}` | Get SKU details | any |
-| GET | `/categories` | Get category tree, including each category's icon `image_id` | any |
+| GET | `/categories` | Category forest (multi-root = multi-hierarchy); each node may have icon `image_id` | any |
 | GET | `/banners` | Ordered banners: category id and name, text, two image ids | any |
 | GET | `/suppliers` | List suppliers (minimal fields for public) | any |
 
@@ -111,7 +112,8 @@ When Postgres FTS becomes insufficient (likely around 100k products or complex m
 |---|---|---|---|
 | POST | `/admin/products` | Create product | shop_admin |
 | PUT | `/admin/products/{id}` | Update product | shop_admin |
-| DELETE | `/admin/products/{id}` | Soft-delete product | shop_admin |
+| DELETE | `/admin/products/{id}` | Soft-delete product. Removes its related links in both directions | shop_admin |
+| PUT | `/admin/products/{id}/related` | Replace the ordered related-product list (max 20; empty clears) | shop_admin |
 | POST | `/admin/products/{id}/variants` | Add variant axis | shop_admin |
 | POST | `/admin/products/{id}/skus` | Create SKU | shop_admin |
 | PUT | `/admin/skus/{id}` | Update SKU (incl. `inventory.tracked`, `tax_class`) | shop_admin |
@@ -146,7 +148,7 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **/admin/** endpoints act on the caller's own shop and require `shop_admin`; a system admin's `_platform` token gets 403 there.
 - **Variant axes** can be added only before the product has SKUs (409 afterwards): an existing SKU would have no value on the new axis. A SKU names exactly one allowed value on every axis, and no two live SKUs of a product share a combination. `product.variant.removed.v1` is not implemented.
 - **Soft deletes** set `status = 'deleted'`; a deleted SKU releases its `sku_code`. Deleting a product deletes its SKUs and lists them in `product.deleted.v1`.
-- **Browse** (`GET /products`) returns active products with at least one active SKU, newest first, with cursor pagination. `q` is a web-style query over the projection's `tsv` (English stemming on name and description, plain tokens for SKU code and variant values); `category` includes subcategories. Products carry SKU IDs but no prices: clients call yc-pricing's `POST /prices/evaluate`.
+- **Browse** (`GET /products`) returns active products with at least one active SKU, newest first, with cursor pagination. `q` is a web-style query over the projection's `tsv` (English stemming on name and description, plain tokens for SKU code and variant values). Repeatable `category` ids are AND'd; each expands to that category and its descendants. Repeatable `exclude_category` ids drop products in any listed subtree (AND NOT). At most 16 distinct ids per parameter. Products carry SKU IDs but no prices: clients call yc-pricing's `POST /prices/evaluate`.
 - **`sku_search_projection`** is rewritten in the same transaction as every product, SKU and category change. Its event-fed columns (price, stock, popularity, rating) stayed empty in Phase 2; see Phase 3 for price and popularity.
 - **Images** hold yc-image IDs only; clients resolve URLs with yc-image `GET /images/{id}`. SKU images and `image.deleted.v1` handling are deferred.
 - **Internal SKU endpoints** are deferred; yc-pricing learns each SKU's tax class from `product.sku.*` events (ADR-016).
@@ -174,6 +176,19 @@ The contract is `services/yc-product/api/openapi.yaml`. Differences from the tab
 - **Popularity and favourites** come from `order.placed.v1`, which replaces `cart.item.added.v1` (no longer subscribed): each SKU of an order gains 1 popularity point, and a customer's order (not a guest's) records its products in `customer_favourites` (per customer and product: order count and last order time; resolved from the SKUs). `GET /products?favourites=true` (customers only; 400 otherwise) keeps the customer's ordered products, and `facets.favourites.product_count` counts those still active, regardless of the other filters. Likes are not favourites (ADR-024 rule 5).
 - **Ratings and likes** are per product in `product_review_stats` (`rating_count`, `rating_sum`, `like_count`, `version`), from the `product_stats` carried by `review.submitted/edited/approved/rejected/deleted.v1` and `review.like.added/removed.v1`; a lower or equal version is ignored (ADR-024 rule 4). The unused per-SKU `avg_rating`, `rating_count` and `like_count` columns were dropped. Every product summary has `reviews` (`rating_count`, `rating_average` when rated, `like_count`), and `sort=rating` orders by the average (to three decimals), unrated products last, ties newest first.
 - **`identity.user.deleted.v1`** deletes the customer's favourites (GDPR cascade, ADR-025).
+
+### Multi-category browse (issues #23 / #24)
+
+- **`GET /products`** accepts repeatable `category` (AND of subtrees) and `exclude_category` (AND NOT of subtrees), at most 16 distinct ids each. Membership is the existing `product_categories` / projection `category_ids`. `GET /categories` `items` is the multi-root forest used for multi-hierarchy navigation. See `docs/features/Multi-category browse and exclude filters.md`.
+
+### Related products and also-bought (issues #25 / #26)
+
+Two separate PDP rails with separate storage and APIs.
+
+- **Editorial related** (`product_related`, migration 009). `PUT /admin/products/{id}/related` with `{"product_ids": [...]}` replaces the whole ordered list and returns it. At most 20 distinct ids; a repeated id keeps its first place; the product itself, non-UUIDs and ids that are not live products of the shop (unknown, deleted, other shop) are 400. Inactive targets are allowed. The product and its targets are locked together so a concurrent soft-delete cannot leave a link behind. `GET /products/{id}` always carries `related_product_ids` (ids only): visitors and customers see targets that are active with an active SKU, shop admins the stored list including inactive targets. Links are directed. Soft-deleting a product deletes its links in both directions (links to a reactivated target are not restored); no event is published for the inbound links removed from other products. Event: `product.related.updated.v1`.
+- **Also-bought** (`product_also_bought`, migration 009). Each `order.placed.v1` (guest and customer) resolves its SKUs to distinct products and, for every pair, adds 1 to both directions. `GET /products/{id}/also-bought?limit=` returns `{items: ProductSummary[]}` by order count descending, ties by product id: active products with an active SKU only, never the seed. An unknown or deleted seed, or an inactive one for non-admins, is 404; a cold product gets `items: []`. The projection is eventually consistent and cancellations/refunds are not subtracted (known bias).
+
+See `docs/features/Related products and also-bought.md`. The OpenAPI contract feeds the yc-platform-mcp sync (ADR-028).
 
 ### Banners
 
@@ -260,6 +275,25 @@ CREATE TABLE banners (
     sort_order          INT NOT NULL DEFAULT 0,
     UNIQUE (tenant_id, category_id)
 );
+
+CREATE TABLE product_related (        -- migration 009; directed, RLS
+    tenant_id          TEXT NOT NULL,
+    product_id         UUID NOT NULL,   -- (tenant_id, id) FKs to products, ON DELETE CASCADE
+    related_product_id UUID NOT NULL,
+    sort_order         INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (product_id, related_product_id),
+    CHECK (product_id <> related_product_id)
+);
+
+CREATE TABLE product_also_bought (     -- migration 009; projection of order.placed.v1, RLS
+    tenant_id        TEXT NOT NULL,
+    product_id       UUID NOT NULL,
+    other_product_id UUID NOT NULL,
+    order_count      BIGINT NOT NULL DEFAULT 0,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, product_id, other_product_id),
+    CHECK (product_id <> other_product_id)
+);  -- index (tenant_id, product_id, order_count DESC)
 
 CREATE TABLE product_categories (
     product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -351,6 +385,7 @@ CREATE POLICY tenant_isolation ON products
 | `product.banner.updated.v1` | Banner's category, text or images replaced |
 | `product.banner.deleted.v1` | Banner deleted, including when its category is deleted |
 | `product.banners.reordered.v1` | Banner display order changed |
+| `product.related.updated.v1` | Admin replaced a product's related list (`product_id`, `related_product_ids`, `updated_at`) |
 
 ## Subscribed Events
 
@@ -365,7 +400,7 @@ CREATE POLICY tenant_isolation ON products
 | `inventory.stock.restored.v1` | `in_stock = true` for affected SKU |
 | `review.submitted/edited/approved/rejected/deleted.v1` | Store the product's `product_stats` if newer (`product_review_stats`) |
 | `review.like.added.v1`, `review.like.removed.v1` | Same |
-| `order.placed.v1` | Increment `popularity_score` per SKU; record the customer's products in `customer_favourites` |
+| `order.placed.v1` | Increment `popularity_score` per SKU; record the customer's products in `customer_favourites`; add 1 to both directions of every product pair in `product_also_bought` |
 | `platform.tenant.deleted.v1` | Delete all tenant catalog |
 | `identity.user.deleted.v1` | Delete rows in `customer_favourites_projection` for that user; publish `platform.gdpr.cascade_completed.v1` |
 | `image.deleted.v1` | Remove references from `product_images`, `sku_images` |
@@ -412,12 +447,12 @@ None are startup-blocking — the projection is eventually consistent.
 
 ## Open Questions / Future Scope
 
-- Product bundles (one SKU composed of other SKUs)
+- Product bundles / kits as a sellable SKU
 - Subscription products (recurring)
 - Shared/global catalog across tenants (franchise model)
 - Multi-language product content
 - External search engine integration (OpenSearch/Meilisearch)
 - SEO metadata per product/category
-- Related products / "frequently bought together" (needs explicit modeling)
+- Also-bought cancel/refund decrement
 - Product import/export CSV
 - Supplier portal (suppliers self-manage their products)

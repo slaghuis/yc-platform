@@ -186,9 +186,14 @@ paths:
         in. Otherwise a user with the same email is linked only when the
         provider reports the email verified (409 if not); with no such user,
         the visitor that started the flow becomes a customer in place, or a
-        new customer is created. Publishes identity.user.registered.v1,
-        identity.oauth_linked.v1 and identity.user.logged_in.v1 as
-        applicable.
+        new customer is created. Google (openid/email/profile) and Facebook
+        (email/public_profile) may supply a picture URL; phone is uncommon
+        and never invented. When present, phone fills only if the user has
+        none; the image URL is refreshed. Omitted claims do not clear
+        stored values. Invalid claims are skipped. Publishes
+        identity.user.registered.v1, identity.oauth_linked.v1 and
+        identity.user.logged_in.v1 as applicable. Call GET /me for the
+        enriched profile.
       operationId: completeOAuth
       parameters:
         - $ref: '#/components/parameters/Provider'
@@ -714,6 +719,17 @@ components:
         tenant_id: { type: string }
         email: { type: string, description: Absent for visitors. }
         display_name: { type: string }
+        phone_e164:
+          type: string
+          description: |
+            Optional E.164 phone from OAuth when the provider supplied one.
+            Absent when unset. Password registration does not set it; there
+            is no customer PATCH /me in this release.
+        profile_image_url:
+          type: string
+          description: |
+            Optional https avatar URL from OAuth. Absent when unset. Not a
+            yc-image id. Re-login refreshes the URL when the provider sends one.
         role: { $ref: '#/components/schemas/Role' }
         status: { type: string, enum: [active, suspended, deleted] }
         created_at: { type: string, format: date-time }

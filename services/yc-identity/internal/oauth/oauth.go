@@ -95,7 +95,7 @@ func New(name string, c ProviderConfig, timeout time.Duration) (Provider, error)
 				},
 				Scopes: []string{"email", "public_profile"},
 			},
-			userInfo: or(c.UserInfoURL, "https://graph.facebook.com/me?fields=id,name,email"),
+			userInfo: or(c.UserInfoURL, "https://graph.facebook.com/me?fields=id,name,email,picture.type(large)"),
 			client:   client,
 			parse:    parseFacebook,
 		}, nil
@@ -161,28 +161,35 @@ func parseGoogle(b []byte) (domain.OAuthProfile, error) {
 		Email         string `json:"email"`
 		EmailVerified bool   `json:"email_verified"`
 		Name          string `json:"name"`
+		Picture       string `json:"picture"`
+		PhoneNumber   string `json:"phone_number"`
 	}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return domain.OAuthProfile{}, err
 	}
-	return profile(v.Sub, v.Email, v.EmailVerified, v.Name)
+	return profile(v.Sub, v.Email, v.EmailVerified, v.Name, v.PhoneNumber, v.Picture)
 }
 
 // parseFacebook never reports the email verified: Facebook does not say, so
 // a Facebook account is never linked to an existing account by email.
 func parseFacebook(b []byte) (domain.OAuthProfile, error) {
 	var v struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		ID      string `json:"id"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Picture struct {
+			Data struct {
+				URL string `json:"url"`
+			} `json:"data"`
+		} `json:"picture"`
 	}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return domain.OAuthProfile{}, err
 	}
-	return profile(v.ID, v.Email, false, v.Name)
+	return profile(v.ID, v.Email, false, v.Name, "", v.Picture.Data.URL)
 }
 
-func profile(sub, email string, verified bool, name string) (domain.OAuthProfile, error) {
+func profile(sub, email string, verified bool, name, phone, imageURL string) (domain.OAuthProfile, error) {
 	if sub == "" {
 		return domain.OAuthProfile{}, errors.New("profile has no subject")
 	}
@@ -194,7 +201,14 @@ func profile(sub, email string, verified bool, name string) (domain.OAuthProfile
 	if len([]rune(name)) > 100 {
 		name = string([]rune(name)[:100])
 	}
-	return domain.OAuthProfile{Subject: sub, Email: norm, EmailVerified: verified, Name: name}, nil
+	out := domain.OAuthProfile{Subject: sub, Email: norm, EmailVerified: verified, Name: name}
+	if p, ok := domain.NormalisePhoneE164(phone); ok {
+		out.PhoneE164 = p
+	}
+	if img, ok := domain.NormaliseProfileImageURL(imageURL); ok {
+		out.ProfileImage = img
+	}
+	return out, nil
 }
 
 // fake signs in the login_hint email without a provider. Its "code" is the
@@ -202,8 +216,10 @@ func profile(sub, email string, verified bool, name string) (domain.OAuthProfile
 type fake struct{}
 
 type fakeCode struct {
-	Sub   string `json:"sub"`
-	Email string `json:"email"`
+	Sub     string `json:"sub"`
+	Email   string `json:"email"`
+	Phone   string `json:"phone,omitempty"`
+	Picture string `json:"picture,omitempty"`
 }
 
 func (fake) AuthCodeURL(state, _, redirectURL, loginHint string) string {
@@ -221,7 +237,7 @@ func (fake) Exchange(_ context.Context, code, _, _ string) (domain.OAuthProfile,
 	if err := json.Unmarshal(b, &c); err != nil {
 		return domain.OAuthProfile{}, fmt.Errorf("%w: fake code: %w", ErrExchange, err)
 	}
-	p, err := profile(c.Sub, c.Email, true, "")
+	p, err := profile(c.Sub, c.Email, true, "", c.Phone, c.Picture)
 	if err != nil {
 		return domain.OAuthProfile{}, fmt.Errorf("%w: %w", ErrExchange, err)
 	}

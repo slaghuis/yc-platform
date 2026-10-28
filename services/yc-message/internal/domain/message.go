@@ -42,6 +42,26 @@ var Types = []Type{
 // Valid reports whether t is a known message type.
 func (t Type) Valid() bool { return slices.Contains(Types, t) }
 
+// MarketingTopic is the preference flag a marketing message requires
+// ("newsletter", "marketing", or "new_products"). Empty means transactional
+// — always allowed to enqueue (docs/features/OAuth profile and marketing preferences.md).
+// No current Type returns a topic; future campaign templates will.
+func (t Type) MarketingTopic() string { return "" }
+
+// AllowsMarketing reports whether prefs opt in to topic. Unknown topics are refused.
+func AllowsMarketing(topic string, newsletter, marketing, newProducts bool) bool {
+	switch topic {
+	case "newsletter":
+		return newsletter
+	case "marketing":
+		return marketing
+	case "new_products":
+		return newProducts
+	default:
+		return false
+	}
+}
+
 // Sensitive types carry a secret (a reset link or a code). Their body and
 // context are redacted once the message has been sent or has failed, so
 // shop admins never see the secret.

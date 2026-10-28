@@ -37,6 +37,9 @@ func (c Channel) Valid() bool {
 type Defaults struct {
 	DisplayCurrency string
 	Locale          string
+	Newsletter      bool
+	Marketing       bool
+	NewProducts     bool
 	UpdatedAt       time.Time
 }
 
@@ -57,6 +60,9 @@ type Preferences struct {
 	DisplayCurrency string
 	Locale          string
 	PrimaryChannel  Channel // "" when none is chosen
+	Newsletter      bool
+	Marketing       bool
+	NewProducts     bool
 	Channels        []MessagingChannel
 	// Stored is false for a user with no row yet: the values are the
 	// shop's defaults.
@@ -90,6 +96,9 @@ type Patch struct {
 	DisplayCurrency *string
 	Locale          *string
 	PrimaryChannel  *Channel
+	Newsletter      *bool
+	Marketing       *bool
+	NewProducts     *bool
 }
 
 // Validate checks the fields present. Whether the primary channel exists
@@ -122,7 +131,21 @@ func (p Patch) Apply(prefs Preferences) Preferences {
 	if p.PrimaryChannel != nil {
 		prefs.PrimaryChannel = *p.PrimaryChannel
 	}
+	if p.Newsletter != nil {
+		prefs.Newsletter = *p.Newsletter
+	}
+	if p.Marketing != nil {
+		prefs.Marketing = *p.Marketing
+	}
+	if p.NewProducts != nil {
+		prefs.NewProducts = *p.NewProducts
+	}
 	return prefs
+}
+
+// MarketingEqual reports whether the marketing flags match.
+func MarketingEqual(a, b Preferences) bool {
+	return a.Newsletter == b.Newsletter && a.Marketing == b.Marketing && a.NewProducts == b.NewProducts
 }
 
 var (

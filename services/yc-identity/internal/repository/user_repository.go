@@ -17,7 +17,7 @@ import (
 // Users reads and writes the users table.
 type Users struct{}
 
-const userColumns = "id, tenant_id, COALESCE(email, ''), COALESCE(display_name, ''), COALESCE(password_hash, ''), role, status, created_at"
+const userColumns = "id, tenant_id, COALESCE(email, ''), COALESCE(display_name, ''), COALESCE(phone_e164, ''), COALESCE(profile_image_url, ''), COALESCE(password_hash, ''), role, status, created_at"
 
 // ErrEmailTaken is returned when (tenant_id, email) already exists.
 var ErrEmailTaken = ycerrors.Conflict("Email is already registered")
@@ -235,8 +235,8 @@ func (Users) CountActive(ctx context.Context, tx pgx.Tx, tenantID string, role d
 // phone, display name and password. The row stays so its ID is never
 // reused and tokens naming it stop validating.
 func (Users) Anonymise(ctx context.Context, tx pgx.Tx, id string, at time.Time) error {
-	tag, err := tx.Exec(ctx, `UPDATE users SET email = NULL, phone_e164 = NULL, display_name = NULL,
-			password_hash = NULL, status = 'deleted', deleted_at = $2, updated_at = $2
+	tag, err := tx.Exec(ctx, `UPDATE users SET email = NULL, phone_e164 = NULL, profile_image_url = NULL,
+			display_name = NULL, password_hash = NULL, status = 'deleted', deleted_at = $2, updated_at = $2
 		WHERE id = $1`, id, at)
 	if err != nil {
 		return fmt.Errorf("anonymise user: %w", err)
@@ -299,6 +299,16 @@ func (Users) List(ctx context.Context, tx pgx.Tx, f Filter, after *Cursor, limit
 
 func scanUser(row pgx.Row) (domain.User, error) {
 	var u domain.User
-	err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Status, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.TenantID, &u.Email, &u.DisplayName, &u.PhoneE164, &u.ProfileImage, &u.PasswordHash, &u.Role, &u.Status, &u.CreatedAt)
 	return u, err
+}
+
+// ApplyOAuthProfile persists phone/image merge rules for an existing user.
+func (Users) ApplyOAuthProfile(ctx context.Context, tx pgx.Tx, u domain.User) error {
+	_, err := tx.Exec(ctx, `UPDATE users SET phone_e164 = NULLIF($2, ''), profile_image_url = NULLIF($3, ''),
+		updated_at = NOW() WHERE id = $1`, u.ID, u.PhoneE164, u.ProfileImage)
+	if err != nil {
+		return fmt.Errorf("apply oauth profile: %w", err)
+	}
+	return nil
 }

@@ -124,6 +124,13 @@ func (s *Service) CompleteOAuth(ctx context.Context, provider, code, state strin
 		if err != nil {
 			return err
 		}
+		before := user
+		user.MergeOAuthProfile(profile)
+		if user.PhoneE164 != before.PhoneE164 || user.ProfileImage != before.ProfileImage {
+			if err := s.users.ApplyOAuthProfile(ctx, tx, user); err != nil {
+				return err
+			}
+		}
 		if sess, _, err = s.issueSession(ctx, tx, user, ""); err != nil {
 			return err
 		}

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,11 +14,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
+	dbkit "github.com/slaghuis/yc-platform/libs/yc-dbkit"
 	eventbus "github.com/slaghuis/yc-platform/libs/yc-eventbus"
 	events "github.com/slaghuis/yc-platform/libs/yc-events"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
@@ -653,6 +656,354 @@ func TestProduct(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-b", "shop_admin").do("DELETE", "/admin/skus/"+red.SkuID.String(), nil, nil))
 	})
 
+	t.Run("multi-category browse ANDs positives and excludes", func(t *testing.T) {
+		var lifestyle, allergens, vegan, nuts api.Category
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/categories",
+			map[string]any{"name": "Lifestyle", "slug": "lifestyle"}, &lifestyle))
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/categories",
+			map[string]any{"name": "Allergens", "slug": "allergens"}, &allergens))
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/categories",
+			map[string]any{"name": "Vegan", "slug": "vegan", "parent_id": lifestyle.CategoryID}, &vegan))
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/categories",
+			map[string]any{"name": "Nuts", "slug": "nuts", "parent_id": allergens.CategoryID}, &nuts))
+
+		mk := func(name string, cats ...uuid.UUID) {
+			t.Helper()
+			ids := make([]any, len(cats))
+			for i, c := range cats {
+				ids[i] = c
+			}
+			var p api.Product
+			require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/products",
+				map[string]any{"name": name, "category_ids": ids}, &p))
+			require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/products/"+p.ProductID.String()+"/skus",
+				map[string]any{"sku_code": name, "tax_class": "za-standard"}, nil))
+		}
+		mk("Vegan Bowl", vegan.CategoryID)
+		mk("Nut Mix", nuts.CategoryID)
+		mk("Vegan Nut Bar", vegan.CategoryID, nuts.CategoryID)
+		mk("Plain Rice")
+
+		names := func(path string) []string {
+			t.Helper()
+			var list api.ProductList
+			require.Equal(t, http.StatusOK, visitor.do("GET", path, nil, &list))
+			out := make([]string, len(list.Items))
+			for i, it := range list.Items {
+				out[i] = it.Name
+			}
+			return out
+		}
+		assert.ElementsMatch(t, []string{"Vegan Bowl", "Vegan Nut Bar"},
+			names("/products?category="+vegan.CategoryID.String()))
+		assert.ElementsMatch(t, []string{"Vegan Bowl", "Vegan Nut Bar"},
+			names("/products?category="+lifestyle.CategoryID.String()), "parent includes descendants")
+		assert.Equal(t, []string{"Vegan Nut Bar"},
+			names("/products?category="+vegan.CategoryID.String()+"&category="+nuts.CategoryID.String()), "AND")
+		assert.Equal(t, []string{"Vegan Bowl"},
+			names("/products?category="+vegan.CategoryID.String()+"&exclude_category="+nuts.CategoryID.String()))
+		assert.NotContains(t, names("/products?exclude_category="+nuts.CategoryID.String()), "Nut Mix")
+		assert.NotContains(t, names("/products?exclude_category="+nuts.CategoryID.String()), "Vegan Nut Bar")
+		assert.Contains(t, names("/products?exclude_category="+nuts.CategoryID.String()), "Vegan Bowl")
+
+		unknown := uuid.MustParse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+		assert.Empty(t, names("/products?category="+unknown.String()), "unknown positive id matches nothing")
+
+		q := "/products?"
+		for i := 0; i < 17; i++ {
+			if i > 0 {
+				q += "&"
+			}
+			q += "category=" + uuid.MustParse(fmt.Sprintf("bbbbbbbb-bbbb-4bbb-8bbb-%012d", i+1)).String()
+		}
+		assert.Equal(t, http.StatusBadRequest, visitor.do("GET", q, nil, nil), "cap of 16")
+	})
+
+	// merch creates a product of shop-a with one SKU per code.
+	type merch struct {
+		product api.Product
+		skus    []string
+	}
+	merchandise := func(c client, name string, codes ...string) merch {
+		t.Helper()
+		var m merch
+		require.Equal(t, http.StatusCreated, c.do("POST", "/admin/products", map[string]any{"name": name}, &m.product))
+		if len(codes) > 1 { // SKUs of one product need distinct variant values
+			require.Equal(t, http.StatusCreated, c.do("POST", "/admin/products/"+m.product.ProductID.String()+"/variants",
+				map[string]any{"axis_name": "pack", "values": codes}, nil))
+		}
+		for _, code := range codes {
+			body := map[string]any{"sku_code": code, "tax_class": "za-standard"}
+			if len(codes) > 1 {
+				body["variant_values"] = map[string]string{"pack": code}
+			}
+			var s api.SKU
+			require.Equal(t, http.StatusCreated, c.do("POST", "/admin/products/"+m.product.ProductID.String()+"/skus", body, &s))
+			m.skus = append(m.skus, s.SkuID.String())
+		}
+		return m
+	}
+	setStatus := func(m merch, status string) {
+		t.Helper()
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/products/"+m.product.ProductID.String(),
+			map[string]any{"name": m.product.Name, "status": status}, nil))
+	}
+	idOf := func(m merch) string { return m.product.ProductID.String() }
+
+	t.Run("shop admin curates related products", func(t *testing.T) {
+		src := merchandise(admin, "Rel Source", "REL-SRC")
+		a := merchandise(admin, "Rel A", "REL-A")
+		b := merchandise(admin, "Rel B", "REL-B")
+		dormant := merchandise(admin, "Rel Dormant", "REL-D")
+		doomed := merchandise(admin, "Rel Doomed", "REL-X")
+		setStatus(dormant, "inactive")
+		foreign := merchandise(as(t, srv, "shop-b", "shop_admin"), "Other Shop Product", "OTHER-REL")
+
+		path := "/admin/products/" + idOf(src) + "/related"
+		put := func(c client, ids ...string) (int, api.RelatedProducts) {
+			t.Helper()
+			var out api.RelatedProducts
+			status := c.do("PUT", path, map[string]any{"product_ids": ids}, &out)
+			return status, out
+		}
+		manyIDs := func(n int) []string {
+			out := make([]string, n)
+			for i := range out {
+				out[i] = uuid.NewString()
+			}
+			return out
+		}
+		toStrings := func(ids []uuid.UUID) []string {
+			out := make([]string, len(ids))
+			for i, id := range ids {
+				out[i] = id.String()
+			}
+			return out
+		}
+		related := func(c client, id string) []string {
+			t.Helper()
+			var p api.Product
+			require.Equal(t, http.StatusOK, c.do("GET", "/products/"+id, nil, &p))
+			require.NotNil(t, p.RelatedProductIds)
+			return toStrings(p.RelatedProductIds)
+		}
+		customer := as(t, srv, "shop-a", "customer")
+		stored := func(id string) int {
+			var n int
+			require.NoError(t, dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT count(*) FROM product_related
+					WHERE product_id = $1 OR related_product_id = $1`, id).Scan(&n)
+			}))
+			return n
+		}
+
+		status, _ := put(visitor, idOf(a))
+		assert.Equal(t, http.StatusForbidden, status)
+		status, _ = put(sys, idOf(a))
+		assert.Equal(t, http.StatusForbidden, status, "system admins cannot use /admin")
+		assert.Empty(t, related(visitor, idOf(src)), "no related products yet")
+		var raw map[string]json.RawMessage
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products/"+idOf(src), nil, &raw))
+		assert.JSONEq(t, `[]`, string(raw["related_product_ids"]), "the field is always present")
+
+		status, got := put(admin, idOf(b), idOf(a), idOf(dormant), idOf(doomed))
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant), idOf(doomed)}, toStrings(got.ProductIds))
+		assert.Equal(t, 1, eventsOf("shop-a", "product.related.updated.v1"))
+		var evt []byte
+		require.NoError(t, db.QueryRow(ctx, `SELECT envelope->'payload' FROM outbox
+			WHERE envelope->>'event_type' = 'product.related.updated.v1'`).Scan(&evt))
+		var payload events.ProductRelatedUpdatedV1
+		require.NoError(t, json.Unmarshal(evt, &payload))
+		assert.Equal(t, idOf(src), payload.ProductID)
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant), idOf(doomed)}, payload.RelatedProductIds)
+
+		for name, ids := range map[string][]string{
+			"itself":        {idOf(a), idOf(src)},
+			"unknown":       {uuid.NewString()},
+			"another shop":  {idOf(foreign)},
+			"not a UUID":    {"nope"},
+			"twenty-one":    manyIDs(21),
+			"one bad entry": {idOf(a), idOf(foreign), idOf(b)},
+		} {
+			status, _ := put(admin, ids...)
+			assert.Equal(t, http.StatusBadRequest, status, name)
+		}
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant), idOf(doomed)}, related(admin, idOf(src)),
+			"a rejected list changes nothing")
+		assert.Equal(t, 1, eventsOf("shop-a", "product.related.updated.v1"), "and publishes nothing")
+
+		missing := "/admin/products/" + uuid.NewString() + "/related"
+		assert.Equal(t, http.StatusNotFound, admin.do("PUT", missing, map[string]any{"product_ids": []string{idOf(a)}}, nil))
+		assert.Equal(t, http.StatusNotFound, as(t, srv, "shop-b", "shop_admin").do("PUT", path,
+			map[string]any{"product_ids": []string{idOf(foreign)}}, nil), "another shop's admin cannot reach the product")
+
+		for _, c := range []client{visitor, customer} {
+			assert.Equal(t, []string{idOf(b), idOf(a), idOf(doomed)}, related(c, idOf(src)),
+				"shoppers get active targets in the admin's order")
+		}
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant), idOf(doomed)}, related(admin, idOf(src)),
+			"admins get the stored list, inactive included")
+		assert.Empty(t, related(visitor, idOf(a)), "links are directed")
+		var updated api.Product
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/products/"+idOf(src),
+			map[string]any{"name": src.product.Name}, &updated))
+		assert.Len(t, updated.RelatedProductIds, 4, "updating the product keeps its related list")
+
+		setStatus(dormant, "active")
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant), idOf(doomed)}, related(visitor, idOf(src)),
+			"a target shows once it is active")
+		setStatus(dormant, "inactive")
+
+		status, got = put(admin, idOf(a), idOf(a), idOf(b))
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{idOf(a), idOf(b)}, toStrings(got.ProductIds), "repeats collapse")
+		status, _ = put(admin, idOf(b), idOf(a), idOf(dormant), idOf(doomed))
+		require.Equal(t, http.StatusOK, status)
+
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/products/"+idOf(doomed), nil, nil))
+		assert.Equal(t, 0, stored(idOf(doomed)), "deleting a target removes the links to it")
+		assert.Equal(t, []string{idOf(b), idOf(a)}, related(visitor, idOf(src)))
+		assert.Equal(t, []string{idOf(b), idOf(a), idOf(dormant)}, related(admin, idOf(src)))
+		status, _ = put(admin, idOf(doomed))
+		assert.Equal(t, http.StatusBadRequest, status, "a deleted product cannot be a target")
+
+		holder := merchandise(admin, "Rel Holder", "REL-H")
+		require.Equal(t, http.StatusOK, admin.do("PUT", "/admin/products/"+idOf(holder)+"/related",
+			map[string]any{"product_ids": []string{idOf(a)}}, nil))
+		assert.Equal(t, 1, stored(idOf(holder)))
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/products/"+idOf(holder), nil, nil))
+		assert.Equal(t, 0, stored(idOf(holder)), "deleting the product removes its links")
+		assert.Equal(t, http.StatusNotFound, admin.do("PUT", "/admin/products/"+idOf(holder)+"/related",
+			map[string]any{"product_ids": []string{}}, nil))
+
+		status, got = put(admin)
+		require.Equal(t, http.StatusOK, status)
+		assert.Empty(t, got.ProductIds, "an empty list clears")
+		assert.Empty(t, related(admin, idOf(src)))
+		assert.Equal(t, 0, stored(idOf(src)))
+	})
+
+	t.Run("also-bought ranks products ordered together", func(t *testing.T) {
+		seed := merchandise(admin, "AB Seed", "AB-SEED-1", "AB-SEED-2")
+		q := merchandise(admin, "AB Q", "AB-Q")
+		r := merchandise(admin, "AB R", "AB-R")
+		cold := merchandise(admin, "AB Cold", "AB-COLD")
+		merchandise(admin, "AB Never", "AB-NEVER")
+
+		validator, err := events.NewValidator()
+		require.NoError(t, err)
+		upstream, err := eventbus.NewClient(ctx, eventbus.Config{
+			NATSURL: natsURL, ServiceName: "yc-upstream-also-bought", Validator: validator,
+			Streams: []eventbus.StreamConfig{eventbus.OrderStream()},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = upstream.Close(context.Background()) })
+		zar := events.Money{AmountMinor: 100, Currency: "ZAR"}
+		placed := func(userID, userType string, skus ...string) {
+			t.Helper()
+			o := events.OrderPlacedV1{
+				OrderID: uuid.NewString(), OrderNumber: "SHOP-A-AB", UserID: userID, UserType: userType,
+				CheckoutSessionID: uuid.NewString(), ItemsTotal: zar, Shipping: zar, TaxTotal: zar, Total: zar,
+				PlacedAt: time.Now().UTC(),
+			}
+			if userType == "visitor" {
+				o.GuestContact = &events.GuestContact{Email: "guest@example.com", PhoneE164: "+27820000000"}
+			}
+			for _, id := range skus {
+				o.Items = append(o.Items, events.OrderPlacedV1ItemsItem{
+					SKUID: id, SKUCode: id, NameSnapshot: id, Quantity: 5, UnitPrice: zar, LineTotal: zar,
+				})
+			}
+			require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+				EventType: events.TypeOrderPlacedV1, TenantID: "shop-a",
+				Actor: eventbus.Actor{Type: "service", ID: "yc-upstream"}, Payload: o,
+			}))
+		}
+		pair := func(a, b merch) int {
+			var n int
+			err := dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT order_count FROM product_also_bought
+					WHERE product_id = $1 AND other_product_id = $2`, idOf(a), idOf(b)).Scan(&n)
+			})
+			if err != nil {
+				return 0
+			}
+			return n
+		}
+		customerID := "00000000-0000-0000-0000-0000000000b2"
+		placed(customerID, "customer", q.skus[0], seed.skus[0])
+		placed(uuid.NewString(), "visitor", seed.skus[0], q.skus[0], r.skus[0])
+		placed(uuid.NewString(), "visitor", r.skus[0], seed.skus[0])
+		placed(customerID, "customer", seed.skus[0], seed.skus[1], q.skus[0], q.skus[0])
+		placed(customerID, "customer", cold.skus[0])
+		require.Eventually(t, func() bool {
+			return pair(seed, q) == 3 && pair(seed, r) == 2 && pair(r, q) == 1
+		}, 10*time.Second, 50*time.Millisecond, "pairs are counted once per order, guests and customers alike")
+		assert.Equal(t, 3, pair(q, seed), "both directions are counted")
+		assert.Equal(t, 2, pair(r, seed))
+		assert.Equal(t, 1, pair(q, r))
+		assert.Zero(t, pair(seed, seed), "a product is not paired with itself")
+		assert.Zero(t, pair(cold, seed), "a one-product order pairs nothing")
+
+		alsoBought := func(c client, id merch, query string) (int, []string) {
+			t.Helper()
+			var out api.AlsoBoughtList
+			status := c.do("GET", "/products/"+idOf(id)+"/also-bought"+query, nil, &out)
+			names := make([]string, len(out.Items))
+			for i, it := range out.Items {
+				names[i] = it.Name
+			}
+			return status, names
+		}
+		status, names := alsoBought(visitor, seed, "")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{"AB Q", "AB R"}, names, "most orders first; the seed is absent")
+		status, names = alsoBought(visitor, q, "")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{"AB Seed", "AB R"}, names)
+
+		var full api.AlsoBoughtList
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products/"+idOf(seed)+"/also-bought", nil, &full))
+		require.NotEmpty(t, full.Items)
+		assert.Len(t, full.Items[0].Skus, 1, "items are product summaries")
+		assert.Equal(t, q.product.ProductID, full.Items[0].ProductID)
+
+		status, names = alsoBought(visitor, seed, "?limit=1")
+		require.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{"AB Q"}, names, "limit is respected")
+		for _, bad := range []string{"0", "-1", "25", "many"} {
+			status, _ = alsoBought(visitor, seed, "?limit="+bad)
+			assert.Equal(t, http.StatusBadRequest, status, "limit="+bad)
+		}
+		status, _ = alsoBought(visitor, seed, "?limit=24")
+		assert.Equal(t, http.StatusOK, status)
+
+		var empty map[string]json.RawMessage
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products/"+idOf(cold)+"/also-bought", nil, &empty))
+		assert.JSONEq(t, `[]`, string(empty["items"]), "a cold product gets an empty list")
+
+		setStatus(r, "inactive")
+		_, names = alsoBought(visitor, seed, "")
+		assert.Equal(t, []string{"AB Q"}, names, "inactive products are omitted")
+		setStatus(r, "active")
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/products/"+idOf(q), nil, nil))
+		_, names = alsoBought(visitor, seed, "")
+		assert.Equal(t, []string{"AB R"}, names, "deleted products are omitted")
+
+		status, _ = alsoBought(otherShop, seed, "")
+		assert.Equal(t, http.StatusNotFound, status, "another shop's product")
+		unknown := merch{product: api.Product{ProductID: uuid.New()}}
+		status, _ = alsoBought(visitor, unknown, "")
+		assert.Equal(t, http.StatusNotFound, status)
+		setStatus(seed, "inactive")
+		status, _ = alsoBought(visitor, seed, "")
+		assert.Equal(t, http.StatusNotFound, status, "an inactive seed is hidden from visitors")
+		status, names = alsoBought(admin, seed, "")
+		assert.Equal(t, http.StatusOK, status)
+		assert.Equal(t, []string{"AB R"}, names)
+	})
+
 	t.Run("deletes", func(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/skus/"+blue.SkuID.String(), nil, nil))
 		assert.Equal(t, 1, eventsOf("shop-a", "product.sku.deleted.v1"))
@@ -663,7 +1014,8 @@ func TestProduct(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/products/"+shirt.ProductID.String(), nil, nil))
 		var raw []byte
 		require.NoError(t, db.QueryRow(ctx, `SELECT envelope->'payload'->'sku_ids' FROM outbox
-			WHERE envelope->>'event_type' = 'product.deleted.v1'`).Scan(&raw))
+			WHERE envelope->>'event_type' = 'product.deleted.v1'
+			AND envelope->'payload'->>'product_id' = $1`, shirt.ProductID.String()).Scan(&raw))
 		var skuIDs []string
 		require.NoError(t, json.Unmarshal(raw, &skuIDs))
 		assert.Len(t, skuIDs, 2)

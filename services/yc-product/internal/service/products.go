@@ -25,6 +25,7 @@ func (s *Service) CreateProduct(ctx context.Context, in domain.ProductInput) (do
 			return err
 		}
 		p.Variants, p.SKUs, p.Images = []domain.Variant{}, []domain.SKU{}, []domain.Image{}
+		p.RelatedProductIDs = []string{}
 		return s.publish(ctx, tx, tenantID, events.TypeProductCreatedV1, events.ProductCreatedV1{
 			ProductID: p.ID, SupplierID: optional(p.SupplierID), Name: p.Name, Status: string(p.Status),
 			IsDigital: p.IsDigital, CategoryIds: p.CategoryIDs, CreatedAt: p.CreatedAt.UTC(),
@@ -212,8 +213,8 @@ func (s *Service) DetachImage(ctx context.Context, productID, imageID string) er
 	})
 }
 
-// GetProduct returns a product with its children. Inactive products and
-// SKUs are visible to admins only.
+// GetProduct returns a product with its children. Inactive products, SKUs
+// and related products are visible to admins only.
 func (s *Service) GetProduct(ctx context.Context, id string) (domain.Product, error) {
 	admin := isAdmin(ctx)
 	var p domain.Product

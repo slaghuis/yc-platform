@@ -107,6 +107,7 @@ const (
 	TypePreferenceChannelVerifiedV1          = "preference.channel.verified.v1"
 	TypePreferenceCurrencyChangedV1          = "preference.currency.changed.v1"
 	TypePreferenceLocaleChangedV1            = "preference.locale.changed.v1"
+	TypePreferenceMarketingChangedV1         = "preference.marketing.changed.v1"
 	TypePricingBasePriceRemovedV1            = "pricing.base_price.removed.v1"
 	TypePricingBasePriceSetV1                = "pricing.base_price.set.v1"
 	TypePricingConfigChangedV1               = "pricing.config.changed.v1"
@@ -128,6 +129,7 @@ const (
 	TypeProductDeletedV1                     = "product.deleted.v1"
 	TypeProductImageAttachedV1               = "product.image_attached.v1"
 	TypeProductImageDetachedV1               = "product.image_detached.v1"
+	TypeProductRelatedUpdatedV1              = "product.related.updated.v1"
 	TypeProductSKUCreatedV1                  = "product.sku.created.v1"
 	TypeProductSKUDeletedV1                  = "product.sku.deleted.v1"
 	TypeProductSKUUpdatedV1                  = "product.sku.updated.v1"
@@ -253,6 +255,7 @@ var EventTypes = []string{
 	TypePreferenceChannelVerifiedV1,
 	TypePreferenceCurrencyChangedV1,
 	TypePreferenceLocaleChangedV1,
+	TypePreferenceMarketingChangedV1,
 	TypePricingBasePriceRemovedV1,
 	TypePricingBasePriceSetV1,
 	TypePricingConfigChangedV1,
@@ -274,6 +277,7 @@ var EventTypes = []string{
 	TypeProductDeletedV1,
 	TypeProductImageAttachedV1,
 	TypeProductImageDetachedV1,
+	TypeProductRelatedUpdatedV1,
 	TypeProductSKUCreatedV1,
 	TypeProductSKUDeletedV1,
 	TypeProductSKUUpdatedV1,
@@ -2230,6 +2234,23 @@ type PreferenceLocaleChangedV1 struct {
 // EventType returns preference.locale.changed.v1.
 func (PreferenceLocaleChangedV1) EventType() string { return TypePreferenceLocaleChangedV1 }
 
+// PreferenceMarketingChangedV1 is the payload of preference.marketing.changed.v1.
+//
+// A user's newsletter, marketing, or new_products preference flags changed.
+type PreferenceMarketingChangedV1 struct {
+	UserID              string    `json:"user_id"`
+	Newsletter          bool      `json:"newsletter"`
+	Marketing           bool      `json:"marketing"`
+	NewProducts         bool      `json:"new_products"`
+	PreviousNewsletter  *bool     `json:"previous_newsletter,omitempty"`
+	PreviousMarketing   *bool     `json:"previous_marketing,omitempty"`
+	PreviousNewProducts *bool     `json:"previous_new_products,omitempty"`
+	ChangedAt           time.Time `json:"changed_at"`
+}
+
+// EventType returns preference.marketing.changed.v1.
+func (PreferenceMarketingChangedV1) EventType() string { return TypePreferenceMarketingChangedV1 }
+
 // PricingBasePriceRemovedV1 is the payload of pricing.base_price.removed.v1.
 //
 // A SKU no longer has a base price, because the SKU was deleted. It cannot be priced until a new price is set.
@@ -2541,6 +2562,19 @@ type ProductImageDetachedV1 struct {
 
 // EventType returns product.image_detached.v1.
 func (ProductImageDetachedV1) EventType() string { return TypeProductImageDetachedV1 }
+
+// ProductRelatedUpdatedV1 is the payload of product.related.updated.v1.
+//
+// A shop admin replaced a product's editorial related-product list.
+type ProductRelatedUpdatedV1 struct {
+	ProductID string `json:"product_id"`
+	// Ordered related product ids after the replace.
+	RelatedProductIds []string  `json:"related_product_ids"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// EventType returns product.related.updated.v1.
+func (ProductRelatedUpdatedV1) EventType() string { return TypeProductRelatedUpdatedV1 }
 
 // ProductSKUCreatedV1 is the payload of product.sku.created.v1.
 //

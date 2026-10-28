@@ -3,6 +3,7 @@ package domain
 
 import (
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -72,6 +73,8 @@ type User struct {
 	TenantID     string
 	Email        string // "" for visitors
 	DisplayName  string
+	PhoneE164    string // "" when unset; E.164 when set
+	ProfileImage string // "" when unset; https URL from OAuth
 	PasswordHash string // never leaves the service
 	Role         Role
 	Status       Status
@@ -99,6 +102,51 @@ type OAuthProfile struct {
 	Email         string // normalised; "" if the provider gave none
 	EmailVerified bool
 	Name          string
+	PhoneE164     string // normalised E.164; "" if absent or invalid (skipped)
+	ProfileImage  string // https URL; "" if absent or invalid (skipped)
+}
+
+// MaxProfileImageURL caps OAuth profile image URLs (OpenAPI / storage).
+const MaxProfileImageURL = 2048
+
+var e164Re = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+
+// NormalisePhoneE164 trims and validates an E.164 number. Empty in → empty out.
+// Invalid non-empty values return ok=false so callers can skip the claim.
+func NormalisePhoneE164(phone string) (string, bool) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return "", true
+	}
+	if !e164Re.MatchString(phone) {
+		return "", false
+	}
+	return phone, true
+}
+
+// NormaliseProfileImageURL accepts https URLs only. Empty in → empty out.
+// Invalid non-empty values return ok=false so callers can skip the claim.
+func NormaliseProfileImageURL(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", true
+	}
+	if len(raw) > MaxProfileImageURL || !strings.HasPrefix(raw, "https://") {
+		return "", false
+	}
+	return raw, true
+}
+
+// MergeOAuthProfile applies provider phone/image per WP3 rules: set phone
+// only when the user has none; always refresh image when the provider sends
+// one. Omitted claims do not clear existing values. Invalid claims are ignored.
+func (u *User) MergeOAuthProfile(p OAuthProfile) {
+	if phone, ok := NormalisePhoneE164(p.PhoneE164); ok && phone != "" && u.PhoneE164 == "" {
+		u.PhoneE164 = phone
+	}
+	if img, ok := NormaliseProfileImageURL(p.ProfileImage); ok && img != "" {
+		u.ProfileImage = img
+	}
 }
 
 // Password length limits. The upper bound keeps hashing cost bounded.

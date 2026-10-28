@@ -174,13 +174,11 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 		q := arg(f.Query)
 		sku = append(sku, fmt.Sprintf(`sp.tsv @@ (websearch_to_tsquery('english', %s) || websearch_to_tsquery('simple', %s))`, q, q))
 	}
-	if f.CategoryID != "" {
-		sku = append(sku, `sp.category_ids && ARRAY(
-			WITH RECURSIVE sub AS (
-				SELECT id FROM categories WHERE id = `+arg(f.CategoryID)+`::uuid
-				UNION
-				SELECT ch.id FROM categories ch JOIN sub ON ch.parent_id = sub.id
-			) SELECT id FROM sub)`)
+	for _, id := range f.CategoryIDs {
+		sku = append(sku, categorySubtreeOverlap(arg, id))
+	}
+	for _, id := range f.ExcludeCategoryIDs {
+		sku = append(sku, `NOT (`+categorySubtreeOverlap(arg, id)+`)`)
 	}
 	if f.InStock {
 		sku = append(sku, `COALESCE(sp.in_stock, true)`)
@@ -235,9 +233,27 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 	if cursor != "" {
 		cursor = ` WHERE ` + cursor
 	}
-	q := `SELECT b.id, b.supplier_id, b.name, b.description, b.is_digital, b.created_at, b.category_ids,
-			b.popularity, b.min_price, b.in_stock, b.rating_count, b.rating_sum, b.like_count
-		FROM (SELECT p.id, COALESCE(p.supplier_id::text, '') AS supplier_id, p.name, p.description, p.is_digital,
+	q := summarySelect + ` FROM ` + summaryFrom(strings.Join(where, " AND ")) + cursor +
+		fmt.Sprintf(` ORDER BY %s LIMIT %d`, order, limit)
+
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("browse: %w", err)
+	}
+	out, err := collectSummaries(rows)
+	if err != nil {
+		return nil, fmt.Errorf("browse: %w", err)
+	}
+	return c.hydrateSummaries(ctx, tx, out)
+}
+
+// summarySelect and summaryFrom build the product-summary query shared by
+// Browse and AlsoBought: summaryFrom's where clause filters products p.
+const summarySelect = `SELECT b.id, b.supplier_id, b.name, b.description, b.is_digital, b.created_at, b.category_ids,
+			b.popularity, b.min_price, b.in_stock, b.rating_count, b.rating_sum, b.like_count`
+
+func summaryFrom(where string) string {
+	return `(SELECT p.id, COALESCE(p.supplier_id::text, '') AS supplier_id, p.name, p.description, p.is_digital,
 				p.created_at,
 				COALESCE(r.rating_count, 0)::bigint AS rating_count, COALESCE(r.rating_sum, 0)::bigint AS rating_sum,
 				COALESCE(r.like_count, 0)::bigint AS like_count,
@@ -250,26 +266,23 @@ func (c Catalog) Browse(ctx context.Context, tx pgx.Tx, f domain.BrowseFilter, a
 				(SELECT MIN(sp.base_price) FROM sku_search_projection sp
 					WHERE sp.product_id = p.id AND sp.status = 'active') AS min_price
 			FROM products p LEFT JOIN product_review_stats r ON r.product_id = p.id
-			WHERE ` + strings.Join(where, " AND ") + `) b` + cursor +
-		fmt.Sprintf(` ORDER BY %s LIMIT %d`, order, limit)
+			WHERE ` + where + `) b`
+}
 
-	rows, err := tx.Query(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("browse: %w", err)
-	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ProductSummary, error) {
+func collectSummaries(rows pgx.Rows) ([]domain.ProductSummary, error) {
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.ProductSummary, error) {
 		var p domain.ProductSummary
 		err := r.Scan(&p.ID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.CreatedAt, &p.CategoryIDs,
 			&p.Popularity, &p.MinBasePrice, &p.InStock, &p.Reviews.RatingCount, &p.Reviews.RatingSum, &p.Reviews.LikeCount)
 		return p, err
 	})
-	if err != nil {
-		return nil, fmt.Errorf("browse: %w", err)
-	}
+}
+
+// hydrateSummaries adds the active SKUs and primary image to out.
+func (c Catalog) hydrateSummaries(ctx context.Context, tx pgx.Tx, out []domain.ProductSummary) ([]domain.ProductSummary, error) {
 	if len(out) == 0 {
 		return out, nil
 	}
-
 	ids := make([]string, len(out))
 	for i, p := range out {
 		ids[i] = p.ID
@@ -296,4 +309,15 @@ func prefixAnd(conds []string) string {
 		return ""
 	}
 	return " AND " + strings.Join(conds, " AND ")
+}
+
+// categorySubtreeOverlap is true when sp.category_ids intersects the
+// category id and its descendants. arg must be the Browse query's binder.
+func categorySubtreeOverlap(arg func(any) string, categoryID string) string {
+	return `sp.category_ids && ARRAY(
+			WITH RECURSIVE sub AS (
+				SELECT id FROM categories WHERE id = ` + arg(categoryID) + `::uuid
+				UNION
+				SELECT ch.id FROM categories ch JOIN sub ON ch.parent_id = sub.id
+			) SELECT id FROM sub)`
 }

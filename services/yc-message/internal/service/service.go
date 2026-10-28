@@ -100,6 +100,16 @@ func (s *Service) queue(ctx context.Context, tx pgx.Tx, tenantID string, r reque
 	if m, ok, err := s.repo.MessageByReference(ctx, tx, tenantID, r.Reference); err != nil || ok {
 		return m, err
 	}
+	if topic := r.Type.MarketingTopic(); topic != "" {
+		ok, err := s.marketingAllowed(ctx, r.To.UserID, topic)
+		if err != nil {
+			return domain.Message{}, err
+		}
+		if !ok {
+			// Opt-out: acknowledge without enqueueing (idempotent no-op).
+			return domain.Message{}, nil
+		}
+	}
 	if !s.hasDriver(r.To.Channel) {
 		return domain.Message{}, ycerrors.Validation().
 			Field("channel", "unsupported", "Messages cannot be sent by "+string(r.To.Channel)+" yet").Build()
@@ -150,6 +160,22 @@ func (s *Service) template(ctx context.Context, tx pgx.Tx, tenantID string, t do
 		}
 	}
 	return domain.Template{}, ycerrors.NotFound("template", string(t)+"/"+string(ch))
+}
+
+// marketingAllowed reports whether userID has opted in to topic. Guests
+// (no user) cannot receive marketing.
+func (s *Service) marketingAllowed(ctx context.Context, userID, topic string) (bool, error) {
+	if userID == "" {
+		return false, nil
+	}
+	p, err := s.upstream.Preferences(ctx, userID)
+	if httpkit.UpstreamStatus(err) == http.StatusNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return domain.AllowsMarketing(topic, p.Newsletter, p.Marketing, p.NewProducts), nil
 }
 
 // customer resolves a customer's channel from yc-preference. ok is false

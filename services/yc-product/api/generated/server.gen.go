@@ -84,6 +84,11 @@ func (e Status) Valid() bool {
 	}
 }
 
+// AlsoBoughtList defines model for AlsoBoughtList.
+type AlsoBoughtList struct {
+	Items []ProductSummary `json:"items"`
+}
+
 // AttachImageRequest defines model for AttachImageRequest.
 type AttachImageRequest struct {
 	ImageID   openapi_types.UUID `json:"image_id"`
@@ -211,11 +216,16 @@ type Product struct {
 	IsDigital   bool                 `json:"is_digital"`
 	Name        string               `json:"name"`
 	ProductID   openapi_types.UUID   `json:"product_id"`
-	Skus        []SKU                `json:"skus"`
-	Status      Status               `json:"status"`
-	SupplierID  *openapi_types.UUID  `json:"supplier_id,omitempty"`
-	UpdatedAt   time.Time            `json:"updated_at"`
-	Variants    []Variant            `json:"variants"`
+
+	// RelatedProductIds Editorial related products, in display order. Shoppers get active
+	// targets only; shop admins the stored list. Set with
+	// PUT /admin/products/{id}/related.
+	RelatedProductIds []openapi_types.UUID `json:"related_product_ids"`
+	Skus              []SKU                `json:"skus"`
+	Status            Status               `json:"status"`
+	SupplierID        *openapi_types.UUID  `json:"supplier_id,omitempty"`
+	UpdatedAt         time.Time            `json:"updated_at"`
+	Variants          []Variant            `json:"variants"`
 }
 
 // ProductImage defines model for ProductImage.
@@ -267,6 +277,17 @@ type ProductSummary struct {
 	// Skus Active SKUs; pass their IDs to POST /prices/evaluate.
 	Skus       []SKUSummary        `json:"skus"`
 	SupplierID *openapi_types.UUID `json:"supplier_id,omitempty"`
+}
+
+// RelatedProducts defines model for RelatedProducts.
+type RelatedProducts struct {
+	ProductIds []openapi_types.UUID `json:"product_ids"`
+}
+
+// RelatedProductsInput defines model for RelatedProductsInput.
+type RelatedProductsInput struct {
+	// ProductIds The full ordered related list; at most 20 distinct ids. Empty clears.
+	ProductIds []openapi_types.UUID `json:"product_ids"`
 }
 
 // ReviewStats Approved reviews and likes (yc-review).
@@ -432,9 +453,17 @@ type GetSKUsBatchParams struct {
 
 // BrowseProductsParams defines parameters for BrowseProducts.
 type BrowseProductsParams struct {
-	Q          *string             `form:"q,omitempty" json:"q,omitempty"`
-	Category   *openapi_types.UUID `form:"category,omitempty" json:"category,omitempty"`
-	SupplierID *openapi_types.UUID `form:"supplier_id,omitempty" json:"supplier_id,omitempty"`
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Category Include products in each listed category's subtree (AND).
+	// Repeat the parameter for multiple ids. A single value keeps
+	// the previous single-category behaviour.
+	Category *[]openapi_types.UUID `form:"category,omitempty" json:"category,omitempty"`
+
+	// ExcludeCategory Exclude products in each listed category's subtree. Repeat for
+	// multiple ids. Composed with category as AND NOT.
+	ExcludeCategory *[]openapi_types.UUID `form:"exclude_category,omitempty" json:"exclude_category,omitempty"`
+	SupplierID      *openapi_types.UUID   `form:"supplier_id,omitempty" json:"supplier_id,omitempty"`
 
 	// InStock true keeps only products with an active SKU in stock.
 	InStock *bool `form:"in_stock,omitempty" json:"in_stock,omitempty"`
@@ -450,6 +479,12 @@ type BrowseProductsParams struct {
 	Sort     *Sort     `form:"sort,omitempty" json:"sort,omitempty"`
 	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetAlsoBoughtParams defines parameters for GetAlsoBought.
+type GetAlsoBoughtParams struct {
+	// Limit Most products to return, 1 to 24. Default 8.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // CreateBannerJSONRequestBody defines body for CreateBanner for application/json ContentType.
@@ -475,6 +510,9 @@ type UpdateProductJSONRequestBody = ProductInput
 
 // AttachImageJSONRequestBody defines body for AttachImage for application/json ContentType.
 type AttachImageJSONRequestBody = AttachImageRequest
+
+// PutRelatedProductsJSONRequestBody defines body for PutRelatedProducts for application/json ContentType.
+type PutRelatedProductsJSONRequestBody = RelatedProductsInput
 
 // CreateSKUJSONRequestBody defines body for CreateSKU for application/json ContentType.
 type CreateSKUJSONRequestBody = SKUInput
@@ -529,6 +567,9 @@ type ServerInterface interface {
 	// DetachImage Detach an image
 	// (DELETE /admin/products/{id}/images/{image_id})
 	DetachImage(w http.ResponseWriter, r *http.Request, id ID, imageID openapi_types.UUID)
+	// PutRelatedProducts Replace a product's related products
+	// (PUT /admin/products/{id}/related)
+	PutRelatedProducts(w http.ResponseWriter, r *http.Request, id ID)
 	// CreateSKU Create a SKU
 	// (POST /admin/products/{id}/skus)
 	CreateSKU(w http.ResponseWriter, r *http.Request, id ID)
@@ -568,9 +609,12 @@ type ServerInterface interface {
 	// BrowseProducts Browse active products
 	// (GET /products)
 	BrowseProducts(w http.ResponseWriter, r *http.Request, params BrowseProductsParams)
-	// GetProduct Get a product with its variants, SKUs, categories and images
+	// GetProduct Get a product with its variants, SKUs, categories, images and related product ids
 	// (GET /products/{id})
 	GetProduct(w http.ResponseWriter, r *http.Request, id ID)
+	// GetAlsoBought Products customers also bought with this one
+	// (GET /products/{id}/also-bought)
+	GetAlsoBought(w http.ResponseWriter, r *http.Request, id ID, params GetAlsoBoughtParams)
 	// GetSKU Get a SKU
 	// (GET /skus/{id})
 	GetSKU(w http.ResponseWriter, r *http.Request, id ID)
@@ -655,6 +699,12 @@ func (_ Unimplemented) DetachImage(w http.ResponseWriter, r *http.Request, id ID
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// PutRelatedProducts Replace a product's related products
+// (PUT /admin/products/{id}/related)
+func (_ Unimplemented) PutRelatedProducts(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // CreateSKU Create a SKU
 // (POST /admin/products/{id}/skus)
 func (_ Unimplemented) CreateSKU(w http.ResponseWriter, r *http.Request, id ID) {
@@ -733,9 +783,15 @@ func (_ Unimplemented) BrowseProducts(w http.ResponseWriter, r *http.Request, pa
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// GetProduct Get a product with its variants, SKUs, categories and images
+// GetProduct Get a product with its variants, SKUs, categories, images and related product ids
 // (GET /products/{id})
 func (_ Unimplemented) GetProduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAlsoBought Products customers also bought with this one
+// (GET /products/{id}/also-bought)
+func (_ Unimplemented) GetAlsoBought(w http.ResponseWriter, r *http.Request, id ID, params GetAlsoBoughtParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1024,6 +1080,32 @@ func (siw *ServerInterfaceWrapper) DetachImage(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DetachImage(w, r, id, imageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutRelatedProducts operation middleware
+func (siw *ServerInterfaceWrapper) PutRelatedProducts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutRelatedProducts(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1360,13 +1442,26 @@ func (siw *ServerInterfaceWrapper) BrowseProducts(w http.ResponseWriter, r *http
 
 	// ------------- Optional query parameter "category" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "category", r.URL.Query(), &params.Category, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category", r.URL.Query(), &params.Category, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "exclude_category" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "exclude_category", r.URL.Query(), &params.ExcludeCategory, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "exclude_category"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "exclude_category", Err: err})
 		}
 		return
 	}
@@ -1477,6 +1572,48 @@ func (siw *ServerInterfaceWrapper) GetProduct(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAlsoBought operation middleware
+func (siw *ServerInterfaceWrapper) GetAlsoBought(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAlsoBoughtParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAlsoBought(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1646,6 +1783,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/products/{id}", wrapper.GetProduct)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/products/{id}/also-bought", wrapper.GetAlsoBought)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/skus/{id}", wrapper.GetSKU)
 	})
 	r.Group(func(r chi.Router) {
@@ -1677,6 +1817,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/admin/skus/{id}", wrapper.UpdateSKU)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/products/{id}/related", wrapper.PutRelatedProducts)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/admin/products/{id}/images", wrapper.AttachImage)
@@ -2300,6 +2443,59 @@ func (response DetachImage404ApplicationProblemPlusJSONResponse) VisitDetachImag
 	return err
 }
 
+type PutRelatedProductsRequestObject struct {
+	ID   ID `json:"id"`
+	Body *PutRelatedProductsJSONRequestBody
+}
+
+type PutRelatedProductsResponseObject interface {
+	VisitPutRelatedProductsResponse(w http.ResponseWriter) error
+}
+
+type PutRelatedProducts200JSONResponse RelatedProducts
+
+func (response PutRelatedProducts200JSONResponse) VisitPutRelatedProductsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRelatedProducts400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PutRelatedProducts400ApplicationProblemPlusJSONResponse) VisitPutRelatedProductsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PutRelatedProducts404ApplicationProblemPlusJSONResponse Problem
+
+func (response PutRelatedProducts404ApplicationProblemPlusJSONResponse) VisitPutRelatedProductsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateSKURequestObject struct {
 	ID   ID `json:"id"`
 	Body *CreateSKUJSONRequestBody
@@ -2906,6 +3102,59 @@ func (response GetProduct404ApplicationProblemPlusJSONResponse) VisitGetProductR
 	return err
 }
 
+type GetAlsoBoughtRequestObject struct {
+	ID     ID `json:"id"`
+	Params GetAlsoBoughtParams
+}
+
+type GetAlsoBoughtResponseObject interface {
+	VisitGetAlsoBoughtResponse(w http.ResponseWriter) error
+}
+
+type GetAlsoBought200JSONResponse AlsoBoughtList
+
+func (response GetAlsoBought200JSONResponse) VisitGetAlsoBoughtResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlsoBought400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetAlsoBought400ApplicationProblemPlusJSONResponse) VisitGetAlsoBoughtResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAlsoBought404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetAlsoBought404ApplicationProblemPlusJSONResponse) VisitGetAlsoBoughtResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSKURequestObject struct {
 	ID ID `json:"id"`
 }
@@ -3005,6 +3254,9 @@ type StrictServerInterface interface {
 	// DetachImage Detach an image
 	// (DELETE /admin/products/{id}/images/{image_id})
 	DetachImage(ctx context.Context, request DetachImageRequestObject) (DetachImageResponseObject, error)
+	// PutRelatedProducts Replace a product's related products
+	// (PUT /admin/products/{id}/related)
+	PutRelatedProducts(ctx context.Context, request PutRelatedProductsRequestObject) (PutRelatedProductsResponseObject, error)
 	// CreateSKU Create a SKU
 	// (POST /admin/products/{id}/skus)
 	CreateSKU(ctx context.Context, request CreateSKURequestObject) (CreateSKUResponseObject, error)
@@ -3044,9 +3296,12 @@ type StrictServerInterface interface {
 	// BrowseProducts Browse active products
 	// (GET /products)
 	BrowseProducts(ctx context.Context, request BrowseProductsRequestObject) (BrowseProductsResponseObject, error)
-	// GetProduct Get a product with its variants, SKUs, categories and images
+	// GetProduct Get a product with its variants, SKUs, categories, images and related product ids
 	// (GET /products/{id})
 	GetProduct(ctx context.Context, request GetProductRequestObject) (GetProductResponseObject, error)
+	// GetAlsoBought Products customers also bought with this one
+	// (GET /products/{id}/also-bought)
+	GetAlsoBought(ctx context.Context, request GetAlsoBoughtRequestObject) (GetAlsoBoughtResponseObject, error)
 	// GetSKU Get a SKU
 	// (GET /skus/{id})
 	GetSKU(ctx context.Context, request GetSKURequestObject) (GetSKUResponseObject, error)
@@ -3455,6 +3710,39 @@ func (sh *strictHandler) DetachImage(w http.ResponseWriter, r *http.Request, id 
 	}
 }
 
+// PutRelatedProducts operation middleware
+func (sh *strictHandler) PutRelatedProducts(w http.ResponseWriter, r *http.Request, id ID) {
+	var request PutRelatedProductsRequestObject
+
+	request.ID = id
+
+	var body PutRelatedProductsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutRelatedProducts(ctx, request.(PutRelatedProductsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutRelatedProducts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutRelatedProductsResponseObject); ok {
+		if err := validResponse.VisitPutRelatedProductsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateSKU operation middleware
 func (sh *strictHandler) CreateSKU(w http.ResponseWriter, r *http.Request, id ID) {
 	var request CreateSKURequestObject
@@ -3841,6 +4129,33 @@ func (sh *strictHandler) GetProduct(w http.ResponseWriter, r *http.Request, id I
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetProductResponseObject); ok {
 		if err := validResponse.VisitGetProductResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAlsoBought operation middleware
+func (sh *strictHandler) GetAlsoBought(w http.ResponseWriter, r *http.Request, id ID, params GetAlsoBoughtParams) {
+	var request GetAlsoBoughtRequestObject
+
+	request.ID = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAlsoBought(ctx, request.(GetAlsoBoughtRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAlsoBought")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAlsoBoughtResponseObject); ok {
+		if err := validResponse.VisitGetAlsoBoughtResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

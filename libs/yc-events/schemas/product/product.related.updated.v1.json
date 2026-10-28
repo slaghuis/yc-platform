@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/product/product.related.updated.v1.json",
+  "title": "product.related.updated.v1",
+  "description": "A shop admin replaced a product's editorial related-product list.",
+  "type": "object",
+  "required": ["product_id", "related_product_ids", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "product_id": { "type": "string", "format": "uuid" },
+    "related_product_ids": {
+      "type": "array",
+      "items": { "type": "string", "format": "uuid" },
+      "description": "Ordered related product ids after the replace."
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

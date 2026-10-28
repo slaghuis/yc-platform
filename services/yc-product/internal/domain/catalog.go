@@ -45,6 +45,15 @@ const (
 	MaxAttributes     = 50
 	MaxContactFields  = 20
 	MaxQueryLen       = 200
+	// MaxBrowseCategoryFilters caps distinct category / exclude_category
+	// ids on GET /products (docs/features/Multi-category browse and exclude filters.md).
+	MaxBrowseCategoryFilters = 16
+	// MaxRelatedProducts caps a product's editorial related list
+	// (docs/features/Related products and also-bought.md).
+	MaxRelatedProducts = 20
+	// DefaultAlsoBought and MaxAlsoBought bound GET /products/{id}/also-bought.
+	DefaultAlsoBought = 8
+	MaxAlsoBought     = 24
 )
 
 var (
@@ -103,8 +112,11 @@ type Product struct {
 	Variants    []Variant
 	SKUs        []SKU
 	Images      []Image
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// RelatedProductIDs is the editorial related list in display order.
+	// Public views carry only active targets; admins see the stored list.
+	RelatedProductIDs []string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ProductInput is the settable part of a Product. Updates replace every
@@ -401,6 +413,50 @@ func ValidateBannerOrder(ids []string) error {
 	return nil
 }
 
+// ValidateRelatedIDs normalises the replacement related list of productID:
+// ids are trimmed, lower-cased UUIDs, and a repeated id keeps its first
+// place. It reports non-UUIDs, the product itself and lists longer than
+// MaxRelatedProducts. Whether the targets exist needs the database.
+func ValidateRelatedIDs(productID string, ids []string) ([]string, error) {
+	v := ycerrors.Validation()
+	self := strings.ToLower(strings.TrimSpace(productID))
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for i, raw := range ids {
+		field := fmt.Sprintf("product_ids[%d]", i)
+		id, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			v.Field(field, "invalid", "Must be a UUID")
+			continue
+		}
+		s := id.String()
+		if s == self {
+			v.Field(field, "self", "A product cannot be related to itself")
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) > MaxRelatedProducts {
+		v.Field("product_ids", "too_many", fmt.Sprintf("At most %d related products", MaxRelatedProducts))
+	}
+	if v.HasErrors() {
+		return nil, v.Build()
+	}
+	return out, nil
+}
+
+// ValidateAlsoBoughtLimit reports a limit outside 1 to MaxAlsoBought.
+func ValidateAlsoBoughtLimit(limit int) error {
+	if limit < 1 || limit > MaxAlsoBought {
+		return ycerrors.Validation().Field("limit", "invalid", fmt.Sprintf("1 to %d", MaxAlsoBought)).Build()
+	}
+	return nil
+}
+
 // CategoryNode is a category with its subcategories.
 type CategoryNode struct {
 	Category
@@ -521,9 +577,13 @@ func (s Sort) Valid() bool {
 
 // BrowseFilter narrows and orders GET /products.
 type BrowseFilter struct {
-	Query      string
-	CategoryID string
-	SupplierID string
+	Query string
+	// CategoryIDs are positive category constraints (AND): the product must
+	// match every id's subtree (self + descendants).
+	CategoryIDs []string
+	// ExcludeCategoryIDs drop products in any listed id's subtree.
+	ExcludeCategoryIDs []string
+	SupplierID         string
 	// InStock keeps only products with an active SKU in stock.
 	InStock bool
 	// FavouritesOf keeps only products this customer has ordered.
@@ -547,13 +607,48 @@ const MaxSKUBatch = 100
 // Validate normalises f. An empty Sort is left for the caller's default.
 func (f *BrowseFilter) Validate() error {
 	f.Query = strings.TrimSpace(f.Query)
+	v := ycerrors.Validation()
 	if utf8.RuneCountInString(f.Query) > MaxQueryLen {
-		return ycerrors.Validation().Field("q", "too_long", fmt.Sprintf("At most %d characters", MaxQueryLen)).Build()
+		v.Field("q", "too_long", fmt.Sprintf("At most %d characters", MaxQueryLen))
 	}
 	if f.Sort != "" && !f.Sort.Valid() {
-		return ycerrors.Validation().Field("sort", "invalid", "Use popular, newest, price_asc, price_desc or rating").Build()
+		v.Field("sort", "invalid", "Use popular, newest, price_asc, price_desc or rating")
+	}
+	f.CategoryIDs = normaliseBrowseCategoryIDs(v, "category", f.CategoryIDs)
+	f.ExcludeCategoryIDs = normaliseBrowseCategoryIDs(v, "exclude_category", f.ExcludeCategoryIDs)
+	if v.HasErrors() {
+		return v.Build()
 	}
 	return nil
+}
+
+// normaliseBrowseCategoryIDs dedupes ids, rejects non-UUIDs, and caps count.
+func normaliseBrowseCategoryIDs(v *ycerrors.ValidationBuilder, field string, ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			v.Field(field, "invalid", "Must be a UUID")
+			return nil
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) > MaxBrowseCategoryFilters {
+		v.Field(field, "too_many", fmt.Sprintf("At most %d categories", MaxBrowseCategoryFilters))
+		return nil
+	}
+	return out
 }
 
 // Browse is a page of products with the sort applied and the facets the

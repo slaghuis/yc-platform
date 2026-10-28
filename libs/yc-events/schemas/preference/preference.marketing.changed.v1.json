@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/preference/preference.marketing.changed.v1.json",
+  "title": "preference.marketing.changed.v1",
+  "description": "A user's newsletter, marketing, or new_products preference flags changed.",
+  "type": "object",
+  "required": ["user_id", "newsletter", "marketing", "new_products", "changed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "user_id": { "type": "string", "format": "uuid" },
+    "newsletter": { "type": "boolean" },
+    "marketing": { "type": "boolean" },
+    "new_products": { "type": "boolean" },
+    "previous_newsletter": { "type": "boolean" },
+    "previous_marketing": { "type": "boolean" },
+    "previous_new_products": { "type": "boolean" },
+    "changed_at": { "type": "string", "format": "date-time" }
+  }
+}

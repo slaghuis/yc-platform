@@ -119,10 +119,9 @@ queued → sent → delivered → opened (email only, best-effort)
 
 ## Marketing vs Transactional
 
-- **Transactional** messages: order confirmations, password resets, verifications — sent regardless of marketing consent
-- **Marketing** messages: cart abandonment, promotional campaigns — require consent
-- v1 scope: transactional only. Marketing campaigns future.
-- The `cart_abandoned` message is positioned as transactional in v1; tenants should consult local regulations.
+- **Transactional** messages (welcome, password reset, channel verification, order lifecycle, cart_abandoned, review_prompt, admin alerts/invite, milestone): sent regardless of marketing consent.
+- **Marketing** messages: require the matching yc-preference flag (`newsletter` / `marketing` / `new_products`). `Type.MarketingTopic()` returns the flag name; empty means transactional. No marketing templates ship yet; the enqueue gate is ready.
+- Opt-out skips enqueue without failing the publisher.
 
 ## API
 

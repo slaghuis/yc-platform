@@ -431,11 +431,20 @@ type User struct {
 	DisplayName *string   `json:"display_name,omitempty"`
 
 	// Email Absent for visitors.
-	Email    *string            `json:"email,omitempty"`
-	Role     Role               `json:"role"`
-	Status   UserStatus         `json:"status"`
-	TenantID string             `json:"tenant_id"`
-	UserID   openapi_types.UUID `json:"user_id"`
+	Email *string `json:"email,omitempty"`
+
+	// PhoneE164 Optional E.164 phone from OAuth when the provider supplied one.
+	// Absent when unset. Password registration does not set it; there
+	// is no customer PATCH /me in this release.
+	PhoneE164 *string `json:"phone_e164,omitempty"`
+
+	// ProfileImageURL Optional https avatar URL from OAuth. Absent when unset. Not a
+	// yc-image id. Re-login refreshes the URL when the provider sends one.
+	ProfileImageURL *string            `json:"profile_image_url,omitempty"`
+	Role            Role               `json:"role"`
+	Status          UserStatus         `json:"status"`
+	TenantID        string             `json:"tenant_id"`
+	UserID          openapi_types.UUID `json:"user_id"`
 }
 
 // UserStatus defines model for User.Status.

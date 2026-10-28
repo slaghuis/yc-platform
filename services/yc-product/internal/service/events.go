@@ -16,7 +16,8 @@ const serviceName = "yc-product"
 
 // RecordOrder counts a placed order (order.placed.v1) towards its SKUs'
 // popularity and, for a customer's order, the customer's favourites.
-// Visitors' orders count towards popularity only.
+// Visitors' orders count towards popularity only; every order, visitor's or
+// customer's, feeds the also-bought pairs of its products.
 func (s *Service) RecordOrder(ctx context.Context, tenantID, userID string, customer bool, skuIDs []string, at time.Time) error {
 	if err := validateShopTenant(tenantID); err != nil {
 		return err
@@ -25,7 +26,10 @@ func (s *Service) RecordOrder(ctx context.Context, tenantID, userID string, cust
 		userID = ""
 	}
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
-		return s.cat.RecordOrder(ctx, tx, tenantID, userID, skuIDs, at)
+		if err := s.cat.RecordOrder(ctx, tx, tenantID, userID, skuIDs, at); err != nil {
+			return err
+		}
+		return s.cat.RecordAlsoBought(ctx, tx, tenantID, skuIDs)
 	})
 }
 

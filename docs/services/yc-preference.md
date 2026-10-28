@@ -108,6 +108,11 @@ Channel verification follows ADR-023 rule 5: yc-message sends and checks the cod
 - **Internal:** `GET /internal/preferences/{user_id}` returns a user's stored preferences with each channel's address and `verified` flag, or 404 when none are stored; yc-message reads the recipient and locale from it. Registration stores them, so every customer has some.
 - **Events:** `preference.channel.verified.v1` when a code is confirmed. `message.verification_confirmed.v1` is also applied (idempotently). `message.bounced.v1` unverifies the bounced address, and a bounced primary channel other than email falls back to email, publishing `preference.channel.changed.v1`.
 
+### Marketing preferences (issue #28)
+
+- **`newsletter`**, **`marketing`**, **`new_products`** booleans on preferences and shop defaults (default false / opt-in). Exposed on `GET`/`PATCH /preferences/me`, defaults admin PUT, and `GET /internal/preferences/{user_id}`.
+- **`preference.marketing.changed.v1`** when any flag changes. yc-message gates future marketing message types on these flags; current templates stay transactional. See `docs/features/OAuth profile and marketing preferences.md`.
+
 ## Database Schema
 
 Database: **`yc_preference`**
@@ -206,7 +211,7 @@ yc-preference:
 
 ## Open Questions / Future Scope
 
-- Marketing consent flags (per channel, per category)
+- Per-channel / per-category marketing consent matrix (topic flags newsletter/marketing/new_products are implemented)
 - Theme / UI preferences
 - Multi-language catalog preferences
 - Notification scheduling (quiet hours, timezone-aware)

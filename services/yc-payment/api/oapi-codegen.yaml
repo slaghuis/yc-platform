@@ -6,3 +6,9 @@ generate:
   models: true
 output-options:
   name-normalizer: ToCamelCaseWithInitialisms
+  # Raw-body signature verification is registered by hand in the router
+  # (transport/http/router.go). Keep the operations in openapi.yaml for
+  # MCP and contract discovery.
+  exclude-operation-ids:
+    - stripeWebhook
+    - yocoWebhook

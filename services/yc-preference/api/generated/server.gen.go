@@ -59,6 +59,9 @@ type ChannelList struct {
 type Defaults struct {
 	DisplayCurrency string     `json:"display_currency"`
 	Locale          string     `json:"locale"`
+	Marketing       bool       `json:"marketing"`
+	NewProducts     bool       `json:"new_products"`
+	Newsletter      bool       `json:"newsletter"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 }
 
@@ -66,6 +69,9 @@ type Defaults struct {
 type DefaultsInput struct {
 	DisplayCurrency string `json:"display_currency"`
 	Locale          string `json:"locale"`
+	Marketing       *bool  `json:"marketing,omitempty"`
+	NewProducts     *bool  `json:"new_products,omitempty"`
+	Newsletter      *bool  `json:"newsletter,omitempty"`
 }
 
 // MessagingChannel defines model for MessagingChannel.
@@ -85,7 +91,16 @@ type Preferences struct {
 	DisplayCurrency string `json:"display_currency"`
 
 	// Locale BCP 47 language tag.
-	Locale         string   `json:"locale"`
+	Locale string `json:"locale"`
+
+	// Marketing Opt-in for promotional / campaign messages. Default false.
+	Marketing bool `json:"marketing"`
+
+	// NewProducts Opt-in for new-product announcements. Default false.
+	NewProducts bool `json:"new_products"`
+
+	// Newsletter Opt-in for periodic newsletter mail. Default false.
+	Newsletter     bool     `json:"newsletter"`
 	PrimaryChannel *Channel `json:"primary_channel,omitempty"`
 
 	// Stored False while the values are the shop's defaults.
@@ -98,6 +113,9 @@ type Preferences struct {
 type PreferencesPatch struct {
 	DisplayCurrency *string  `json:"display_currency,omitempty"`
 	Locale          *string  `json:"locale,omitempty"`
+	Marketing       *bool    `json:"marketing,omitempty"`
+	NewProducts     *bool    `json:"new_products,omitempty"`
+	Newsletter      *bool    `json:"newsletter,omitempty"`
 	PrimaryChannel  *Channel `json:"primary_channel,omitempty"`
 }
 

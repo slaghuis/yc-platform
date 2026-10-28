@@ -212,12 +212,21 @@ components:
 
     Preferences:
       type: object
-      required: [user_id, display_currency, locale, channels, stored]
+      required: [user_id, display_currency, locale, newsletter, marketing, new_products, channels, stored]
       properties:
         user_id: { type: string, format: uuid }
         display_currency: { type: string, description: ISO 4217 code; prices are shown in it (ADR-014). }
         locale: { type: string, description: BCP 47 language tag. }
         primary_channel: { $ref: '#/components/schemas/Channel' }
+        newsletter:
+          type: boolean
+          description: Opt-in for periodic newsletter mail. Default false.
+        marketing:
+          type: boolean
+          description: Opt-in for promotional / campaign messages. Default false.
+        new_products:
+          type: boolean
+          description: Opt-in for new-product announcements. Default false.
         channels:
           type: array
           items: { $ref: '#/components/schemas/MessagingChannel' }
@@ -233,6 +242,9 @@ components:
         display_currency: { type: string }
         locale: { type: string }
         primary_channel: { $ref: '#/components/schemas/Channel' }
+        newsletter: { type: boolean }
+        marketing: { type: boolean }
+        new_products: { type: boolean }
 
     MessagingChannel:
       type: object
@@ -265,10 +277,13 @@ components:
 
     Defaults:
       type: object
-      required: [display_currency, locale]
+      required: [display_currency, locale, newsletter, marketing, new_products]
       properties:
         display_currency: { type: string }
         locale: { type: string }
+        newsletter: { type: boolean }
+        marketing: { type: boolean }
+        new_products: { type: boolean }
         updated_at: { type: string, format: date-time }
 
     DefaultsInput:
@@ -278,6 +293,9 @@ components:
       properties:
         display_currency: { type: string }
         locale: { type: string }
+        newsletter: { type: boolean }
+        marketing: { type: boolean }
+        new_products: { type: boolean }
 
     Problem:
       type: object

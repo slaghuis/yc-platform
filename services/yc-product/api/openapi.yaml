@@ -19,8 +19,17 @@ paths:
       summary: Browse active products
       description: |
         Products with at least one active SKU. q is a web-style full-text
-        query over product name, description, SKU code and variant values;
-        category includes its subcategories.
+        query over product name, description, SKU code and variant values.
+
+        category (repeatable) and exclude_category (repeatable) filter by
+        category membership in the search projection. Each id expands to
+        that category and its descendants. Multiple category values are
+        AND: the product must match every listed id's subtree. Multiple
+        exclude_category values drop a product that matches any listed
+        id's subtree. Combined: (all positives) AND NOT (any exclude).
+        At most 16 distinct ids per parameter. A well-formed unknown id
+        contributes an empty subtree (positive → no match for that term;
+        exclude → excludes nothing for that id).
 
         The view depends on the caller (role-contextualised search): visitors
         and customers get popular products first, shop admins the newest;
@@ -29,7 +38,29 @@ paths:
       operationId: browseProducts
       parameters:
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
-        - { name: category, in: query, schema: { type: string, format: uuid } }
+        - name: category
+          in: query
+          description: |
+            Include products in each listed category's subtree (AND).
+            Repeat the parameter for multiple ids. A single value keeps
+            the previous single-category behaviour.
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 16
+            items: { type: string, format: uuid }
+        - name: exclude_category
+          in: query
+          description: |
+            Exclude products in each listed category's subtree. Repeat for
+            multiple ids. Composed with category as AND NOT.
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 16
+            items: { type: string, format: uuid }
         - { name: supplier_id, in: query, schema: { type: string, format: uuid } }
         - name: in_stock
           in: query
@@ -60,8 +91,15 @@ paths:
 
   /products/{id}:
     get:
-      summary: Get a product with its variants, SKUs, categories and images
-      description: Inactive products and SKUs are visible to shop admins only.
+      summary: Get a product with its variants, SKUs, categories, images and related product ids
+      description: |
+        Inactive products and SKUs are visible to shop admins only.
+
+        related_product_ids is the editorial related list in display order
+        (PUT /admin/products/{id}/related), ids only. Visitors and customers
+        see only active targets that have an active SKU; shop admins see the
+        stored list, inactive targets included. Always present, possibly empty.
+        Not to be confused with GET /products/{id}/also-bought.
       operationId: getProduct
       parameters:
         - $ref: '#/components/parameters/ID'
@@ -71,6 +109,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /products/{id}/also-bought:
+    get:
+      summary: Products customers also bought with this one
+      description: |
+        Active products with an active SKU that appear in the same placed
+        orders (guests and customers) as this product, most orders first, ties
+        by product id. The metric is the count of distinct placed orders that
+        contain both products (SKUs resolved to products); the product itself
+        is never returned. Derived from order.placed.v1 and independent of
+        related_product_ids.
+
+        The projection is eventually consistent: it lags orders by the usual
+        event delay, so an empty or short list is normal, notably for new
+        catalogue items. Cancellations and refunds are not subtracted. A
+        product that is unknown, deleted or (for non-admins) inactive is a 404,
+        as for GET /products/{id}.
+      operationId: getAlsoBought
+      parameters:
+        - $ref: '#/components/parameters/ID'
+        - name: limit
+          in: query
+          description: Most products to return, 1 to 24. Default 8.
+          schema: { type: integer, minimum: 1, maximum: 24, default: 8 }
+      responses:
+        '200':
+          description: The products, possibly none.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlsoBoughtList' }
+        '400': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
   /skus/{id}:
@@ -90,7 +160,11 @@ paths:
   /categories:
     get:
       summary: The category tree
-      description: Each node may include image_id, the category icon. Resolve it with yc-image GET /images/{id}.
+      description: |
+        items is the shop's forest of root categories (multi-hierarchy =
+        multiple roots). Each root and its descendants is one hierarchy;
+        there is no separate hierarchy id. Each node may include image_id,
+        the category icon — resolve it with yc-image GET /images/{id}.
       operationId: getCategoryTree
       responses:
         '200':
@@ -271,6 +345,35 @@ paths:
         - $ref: '#/components/parameters/ID'
       responses:
         '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/products/{id}/related:
+    put:
+      summary: Replace a product's related products
+      description: |
+        Editorial merchandising: product_ids is the full ordered list of
+        products that go with this one, replacing the stored list. An empty list
+        clears it. Links are directed (A to B does not imply B to A). At most 20
+        distinct ids; a repeated id keeps its first place. Rejects (400) a
+        non-UUID, the product itself, and ids that are not live products of the
+        shop (unknown, deleted or another shop's). Inactive targets are allowed.
+        Soft-deleting a product removes its links in both directions; they are
+        not restored on reactivation. Publishes product.related.updated.v1.
+      operationId: putRelatedProducts
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelatedProductsInput' }
+      responses:
+        '200':
+          description: Replaced. Returns the stored list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RelatedProducts' }
+        '400': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
   /admin/products/{id}/images:
@@ -625,7 +728,7 @@ components:
           additionalProperties: { type: string }
     Product:
       type: object
-      required: [product_id, name, description, is_digital, status, attributes, category_ids, variants, skus, images, created_at, updated_at]
+      required: [product_id, name, description, is_digital, status, attributes, category_ids, related_product_ids, variants, skus, images, created_at, updated_at]
       properties:
         product_id: { type: string, format: uuid }
         supplier_id: { type: string, format: uuid }
@@ -638,6 +741,13 @@ components:
           additionalProperties: { type: string }
         category_ids:
           type: array
+          items: { type: string, format: uuid }
+        related_product_ids:
+          type: array
+          description: |
+            Editorial related products, in display order. Shoppers get active
+            targets only; shop admins the stored list. Set with
+            PUT /admin/products/{id}/related.
           items: { type: string, format: uuid }
         variants:
           type: array
@@ -673,6 +783,29 @@ components:
           description: Active SKUs; pass their IDs to POST /prices/evaluate.
           items: { $ref: '#/components/schemas/SKUSummary' }
         reviews: { $ref: '#/components/schemas/ReviewStats' }
+    RelatedProductsInput:
+      type: object
+      required: [product_ids]
+      additionalProperties: false
+      properties:
+        product_ids:
+          type: array
+          description: The full ordered related list; at most 20 distinct ids. Empty clears.
+          items: { type: string, format: uuid }
+    RelatedProducts:
+      type: object
+      required: [product_ids]
+      properties:
+        product_ids:
+          type: array
+          items: { type: string, format: uuid }
+    AlsoBoughtList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProductSummary' }
     ReviewStats:
       type: object
       description: Approved reviews and likes (yc-review).

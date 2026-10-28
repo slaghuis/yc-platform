@@ -19,8 +19,9 @@ type Preferences struct{}
 // Defaults returns tenantID's defaults, or false when it has none.
 func (Preferences) Defaults(ctx context.Context, tx pgx.Tx, tenantID string) (domain.Defaults, bool, error) {
 	var d domain.Defaults
-	err := tx.QueryRow(ctx, `SELECT display_currency, locale, updated_at FROM preference_defaults
-		WHERE tenant_id = $1`, tenantID).Scan(&d.DisplayCurrency, &d.Locale, &d.UpdatedAt)
+	err := tx.QueryRow(ctx, `SELECT display_currency, locale, newsletter, marketing, new_products, updated_at
+		FROM preference_defaults WHERE tenant_id = $1`, tenantID).
+		Scan(&d.DisplayCurrency, &d.Locale, &d.Newsletter, &d.Marketing, &d.NewProducts, &d.UpdatedAt)
 	if dbkit.IsNoRows(err) {
 		return domain.Defaults{}, false, nil
 	}
@@ -33,11 +34,12 @@ func (Preferences) Defaults(ctx context.Context, tx pgx.Tx, tenantID string) (do
 // PutDefaults creates or replaces tenantID's defaults.
 func (Preferences) PutDefaults(ctx context.Context, tx pgx.Tx, tenantID string, d domain.Defaults, now time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO preference_defaults (tenant_id, display_currency, locale, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $4)
+		INSERT INTO preference_defaults (tenant_id, display_currency, locale, newsletter, marketing, new_products, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 		ON CONFLICT (tenant_id) DO UPDATE SET display_currency = EXCLUDED.display_currency,
-			locale = EXCLUDED.locale, updated_at = EXCLUDED.updated_at`,
-		tenantID, d.DisplayCurrency, d.Locale, now)
+			locale = EXCLUDED.locale, newsletter = EXCLUDED.newsletter, marketing = EXCLUDED.marketing,
+			new_products = EXCLUDED.new_products, updated_at = EXCLUDED.updated_at`,
+		tenantID, d.DisplayCurrency, d.Locale, d.Newsletter, d.Marketing, d.NewProducts, now)
 	if err != nil {
 		return fmt.Errorf("put defaults: %w", err)
 	}
@@ -47,9 +49,9 @@ func (Preferences) PutDefaults(ctx context.Context, tx pgx.Tx, tenantID string, 
 // InitDefaults creates tenantID's defaults unless they exist.
 func (Preferences) InitDefaults(ctx context.Context, tx pgx.Tx, tenantID string, d domain.Defaults, now time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO preference_defaults (tenant_id, display_currency, locale, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $4) ON CONFLICT (tenant_id) DO NOTHING`,
-		tenantID, d.DisplayCurrency, d.Locale, now)
+		INSERT INTO preference_defaults (tenant_id, display_currency, locale, newsletter, marketing, new_products, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ON CONFLICT (tenant_id) DO NOTHING`,
+		tenantID, d.DisplayCurrency, d.Locale, d.Newsletter, d.Marketing, d.NewProducts, now)
 	if err != nil {
 		return fmt.Errorf("init defaults: %w", err)
 	}
@@ -59,13 +61,14 @@ func (Preferences) InitDefaults(ctx context.Context, tx pgx.Tx, tenantID string,
 // Get returns userID's stored preferences with their channels, locked when
 // forUpdate, or false when there is no row.
 func (Preferences) Get(ctx context.Context, tx pgx.Tx, tenantID, userID string, forUpdate bool) (domain.Preferences, bool, error) {
-	q := `SELECT display_currency, locale, COALESCE(primary_channel, ''), updated_at FROM preferences
-		WHERE tenant_id = $1 AND user_id = $2`
+	q := `SELECT display_currency, locale, COALESCE(primary_channel, ''), newsletter, marketing, new_products, updated_at
+		FROM preferences WHERE tenant_id = $1 AND user_id = $2`
 	if forUpdate {
 		q += ` FOR UPDATE`
 	}
 	p := domain.Preferences{UserID: userID, Stored: true}
-	err := tx.QueryRow(ctx, q, tenantID, userID).Scan(&p.DisplayCurrency, &p.Locale, &p.PrimaryChannel, &p.UpdatedAt)
+	err := tx.QueryRow(ctx, q, tenantID, userID).Scan(
+		&p.DisplayCurrency, &p.Locale, &p.PrimaryChannel, &p.Newsletter, &p.Marketing, &p.NewProducts, &p.UpdatedAt)
 	if dbkit.IsNoRows(err) {
 		return domain.Preferences{}, false, nil
 	}
@@ -91,9 +94,11 @@ func (Preferences) Get(ctx context.Context, tx pgx.Tx, tenantID, userID string, 
 // Insert creates p's row unless one exists, reporting whether it did.
 func (Preferences) Insert(ctx context.Context, tx pgx.Tx, tenantID string, p domain.Preferences, now time.Time) (bool, error) {
 	tag, err := tx.Exec(ctx, `
-		INSERT INTO preferences (tenant_id, user_id, display_currency, locale, primary_channel, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $6) ON CONFLICT (tenant_id, user_id) DO NOTHING`,
-		tenantID, p.UserID, p.DisplayCurrency, p.Locale, string(p.PrimaryChannel), now)
+		INSERT INTO preferences (tenant_id, user_id, display_currency, locale, primary_channel,
+			newsletter, marketing, new_products, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $9) ON CONFLICT (tenant_id, user_id) DO NOTHING`,
+		tenantID, p.UserID, p.DisplayCurrency, p.Locale, string(p.PrimaryChannel),
+		p.Newsletter, p.Marketing, p.NewProducts, now)
 	if err != nil {
 		return false, fmt.Errorf("insert preferences: %w", err)
 	}
@@ -103,8 +108,10 @@ func (Preferences) Insert(ctx context.Context, tx pgx.Tx, tenantID string, p dom
 // Update writes p's settings.
 func (Preferences) Update(ctx context.Context, tx pgx.Tx, tenantID string, p domain.Preferences, now time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE preferences SET display_currency = $3, locale = $4,
-		primary_channel = NULLIF($5, ''), updated_at = $6 WHERE tenant_id = $1 AND user_id = $2`,
-		tenantID, p.UserID, p.DisplayCurrency, p.Locale, string(p.PrimaryChannel), now)
+		primary_channel = NULLIF($5, ''), newsletter = $6, marketing = $7, new_products = $8,
+		updated_at = $9 WHERE tenant_id = $1 AND user_id = $2`,
+		tenantID, p.UserID, p.DisplayCurrency, p.Locale, string(p.PrimaryChannel),
+		p.Newsletter, p.Marketing, p.NewProducts, now)
 	if err != nil {
 		return fmt.Errorf("update preferences: %w", err)
 	}

@@ -39,6 +39,9 @@ type Preferences struct {
 	UserID         string              `json:"user_id"`
 	Locale         string              `json:"locale"`
 	PrimaryChannel string              `json:"primary_channel"`
+	Newsletter     bool                `json:"newsletter"`
+	Marketing      bool                `json:"marketing"`
+	NewProducts    bool                `json:"new_products"`
 	Channels       []ChannelPreference `json:"channels"`
 }
 

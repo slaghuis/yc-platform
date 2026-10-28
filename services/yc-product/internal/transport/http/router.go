@@ -36,6 +36,8 @@ type Catalog interface {
 	DetachImage(ctx context.Context, productID, imageID string) error
 	GetProduct(ctx context.Context, id string) (domain.Product, error)
 	GetSKU(ctx context.Context, id string) (domain.SKU, error)
+	PutRelated(ctx context.Context, productID string, ids []string) ([]string, error)
+	AlsoBought(ctx context.Context, productID string, limit int) ([]domain.ProductSummary, error)
 	Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) (domain.Browse, *repository.Cursor, error)
 	SKUDetails(ctx context.Context, ids []string) ([]domain.SKUDetail, []string, error)
 
@@ -259,6 +261,30 @@ func (h handlers) GetProduct(ctx context.Context, req api.GetProductRequestObjec
 	return api.GetProduct200JSONResponse(product(p)), nil
 }
 
+func (h handlers) PutRelatedProducts(ctx context.Context, req api.PutRelatedProductsRequestObject) (api.PutRelatedProductsResponseObject, error) {
+	ids, err := h.svc.PutRelated(ctx, req.ID.String(), uuidStrings(req.Body.ProductIds))
+	if err != nil {
+		return nil, err
+	}
+	return api.PutRelatedProducts200JSONResponse{ProductIds: uuids(ids)}, nil
+}
+
+func (h handlers) GetAlsoBought(ctx context.Context, req api.GetAlsoBoughtRequestObject) (api.GetAlsoBoughtResponseObject, error) {
+	limit := domain.DefaultAlsoBought
+	if req.Params.Limit != nil {
+		limit = *req.Params.Limit
+	}
+	items, err := h.svc.AlsoBought(ctx, req.ID.String(), limit)
+	if err != nil {
+		return nil, err
+	}
+	out := api.GetAlsoBought200JSONResponse{Items: make([]api.ProductSummary, len(items))}
+	for i, it := range items {
+		out.Items[i] = summary(it)
+	}
+	return out, nil
+}
+
 func (h handlers) GetSKU(ctx context.Context, req api.GetSKURequestObject) (api.GetSKUResponseObject, error) {
 	s, err := h.svc.GetSKU(ctx, req.ID.String())
 	if err != nil {
@@ -275,7 +301,10 @@ func (h handlers) BrowseProducts(ctx context.Context, req api.BrowseProductsRequ
 	}
 	f := domain.BrowseFilter{Query: deref(p.Q)}
 	if p.Category != nil {
-		f.CategoryID = p.Category.String()
+		f.CategoryIDs = uuidStrings(*p.Category)
+	}
+	if p.ExcludeCategory != nil {
+		f.ExcludeCategoryIDs = uuidStrings(*p.ExcludeCategory)
 	}
 	if p.SupplierID != nil {
 		f.SupplierID = p.SupplierID.String()
@@ -481,7 +510,7 @@ func product(p domain.Product) api.Product {
 	out := api.Product{
 		ProductID: parseUUID(p.ID), SupplierID: optionalUUID(p.SupplierID), Name: p.Name,
 		Description: p.Description, IsDigital: p.IsDigital, Status: api.Status(p.Status),
-		Attributes: p.Attributes, CategoryIds: uuids(p.CategoryIDs),
+		Attributes: p.Attributes, CategoryIds: uuids(p.CategoryIDs), RelatedProductIds: uuids(p.RelatedProductIDs),
 		Variants: make([]api.Variant, len(p.Variants)), Skus: make([]api.SKU, len(p.SKUs)),
 		Images: make([]api.ProductImage, len(p.Images)), CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
 	}

@@ -58,11 +58,14 @@ func (Catalog) GetProduct(ctx context.Context, tx pgx.Tx, id string, forUpdate b
 	return p, nil
 }
 
-// LoadChildren fills p's categories, variants, images and SKUs; inactive
-// SKUs only when includeInactive.
+// LoadChildren fills p's categories, related product ids, variants, images
+// and SKUs; inactive SKUs and related products only when includeInactive.
 func (c Catalog) LoadChildren(ctx context.Context, tx pgx.Tx, p *domain.Product, includeInactive bool) error {
 	var err error
 	if p.CategoryIDs, err = c.categoryIDs(ctx, tx, p.ID); err != nil {
+		return err
+	}
+	if p.RelatedProductIDs, err = c.ListRelated(ctx, tx, p.ID, includeInactive); err != nil {
 		return err
 	}
 	if p.Variants, err = c.Variants(ctx, tx, p.ID); err != nil {
@@ -114,9 +117,9 @@ func (c Catalog) UpdateProduct(ctx context.Context, tx pgx.Tx, id string, in dom
 	return p, nil
 }
 
-// SoftDeleteProduct marks a product and its SKUs deleted and returns the
-// SKUs it deleted.
-func (Catalog) SoftDeleteProduct(ctx context.Context, tx pgx.Tx, id string) ([]string, error) {
+// SoftDeleteProduct marks a product and its SKUs deleted, removes its
+// related links in both directions, and returns the SKUs it deleted.
+func (c Catalog) SoftDeleteProduct(ctx context.Context, tx pgx.Tx, id string) ([]string, error) {
 	tag, err := tx.Exec(ctx, `UPDATE products SET status = 'deleted', updated_at = NOW()
 		WHERE id = $1 AND status <> 'deleted'`, id)
 	if err != nil {
@@ -124,6 +127,9 @@ func (Catalog) SoftDeleteProduct(ctx context.Context, tx pgx.Tx, id string) ([]s
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, ycerrors.NotFound("Product", id)
+	}
+	if err := c.DeleteRelatedForProduct(ctx, tx, id); err != nil {
+		return nil, err
 	}
 	rows, err := tx.Query(ctx, `UPDATE skus SET status = 'deleted', updated_at = NOW()
 		WHERE product_id = $1 AND status <> 'deleted' RETURNING id`, id)

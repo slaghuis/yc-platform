@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -90,6 +91,69 @@ func TestBannerInputValidate(t *testing.T) {
 
 	assert.Equal(t, []string{"ids[1]:duplicate"}, fields(t, domain.ValidateBannerOrder([]string{in.CategoryID, in.CategoryID})))
 	require.NoError(t, domain.ValidateBannerOrder(nil))
+}
+
+func TestBrowseFilterValidate(t *testing.T) {
+	vegan := "11111111-1111-4111-8111-111111111111"
+	nuts := "22222222-2222-4222-8222-222222222222"
+	f := domain.BrowseFilter{
+		CategoryIDs:        []string{vegan, vegan, "  " + nuts + "  "},
+		ExcludeCategoryIDs: []string{nuts},
+	}
+	require.NoError(t, f.Validate())
+	assert.Equal(t, []string{vegan, nuts}, f.CategoryIDs)
+	assert.Equal(t, []string{nuts}, f.ExcludeCategoryIDs)
+
+	bad := domain.BrowseFilter{CategoryIDs: []string{"not-a-uuid"}}
+	assert.Equal(t, []string{"category:invalid"}, fields(t, bad.Validate()))
+
+	tooMany := make([]string, domain.MaxBrowseCategoryFilters+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("11111111-1111-4111-8111-%012d", i+1)
+	}
+	assert.Equal(t, []string{"category:too_many"}, fields(t, (&domain.BrowseFilter{CategoryIDs: tooMany}).Validate()))
+}
+
+func TestValidateRelatedIDs(t *testing.T) {
+	self := "00000000-0000-4000-8000-000000000001"
+	a := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+	got, err := domain.ValidateRelatedIDs(self, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{}, got, "an empty list clears")
+
+	got, err = domain.ValidateRelatedIDs(self, []string{b, a, strings.ToUpper(b), " " + a + " "})
+	require.NoError(t, err)
+	assert.Equal(t, []string{b, a}, got, "duplicates collapse to their first place; order is kept")
+
+	_, err = domain.ValidateRelatedIDs(self, []string{a, "not-a-uuid", strings.ToUpper(self)})
+	assert.Equal(t, []string{"product_ids[1]:invalid", "product_ids[2]:self"}, fields(t, err))
+
+	max := make([]string, domain.MaxRelatedProducts)
+	for i := range max {
+		max[i] = fmt.Sprintf("11111111-1111-4111-8111-%012d", i+1)
+	}
+	got, err = domain.ValidateRelatedIDs(self, max)
+	require.NoError(t, err)
+	assert.Len(t, got, domain.MaxRelatedProducts)
+
+	over := append(append([]string{}, max...), a)
+	_, err = domain.ValidateRelatedIDs(self, over)
+	assert.Equal(t, []string{"product_ids:too_many"}, fields(t, err))
+
+	got, err = domain.ValidateRelatedIDs(self, append(append([]string{}, max...), max...))
+	require.NoError(t, err, "the cap counts distinct ids")
+	assert.Len(t, got, domain.MaxRelatedProducts)
+}
+
+func TestValidateAlsoBoughtLimit(t *testing.T) {
+	for _, ok := range []int{1, domain.DefaultAlsoBought, domain.MaxAlsoBought} {
+		assert.NoError(t, domain.ValidateAlsoBoughtLimit(ok), ok)
+	}
+	for _, bad := range []int{-1, 0, domain.MaxAlsoBought + 1} {
+		assert.Equal(t, []string{"limit:invalid"}, fields(t, domain.ValidateAlsoBoughtLimit(bad)), bad)
+	}
 }
 
 func TestBuildTree(t *testing.T) {
