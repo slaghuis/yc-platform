@@ -31,7 +31,8 @@ type Orders interface {
 	LatestPurchase(ctx context.Context, userID, productID string) (repository.Purchase, bool, error)
 	CustomerOrders(ctx context.Context, userIDs []string) ([]repository.CustomerOrder, int, error)
 	AdminOrder(ctx context.Context, id string) (service.Detail, error)
-	CustomerOrder(ctx context.Context, id string) (service.Detail, error)
+	CustomerOrder(ctx context.Context, id, guestToken string) (service.Detail, error)
+	MintGuestAccess(ctx context.Context, id string) (token string, exp time.Time, err error)
 	Mine(ctx context.Context, after *repository.OrderCursor, limit int) ([]domain.Order, error)
 	AdminList(ctx context.Context, status domain.Status, after *repository.OrderCursor, limit int) ([]domain.Order, error)
 	RequestReturn(ctx context.Context, orderID string, items []domain.ReturnItem, reason string) (domain.Return, error)
@@ -120,11 +121,23 @@ func (h handlers) ListMyOrders(ctx context.Context, req api.ListMyOrdersRequestO
 }
 
 func (h handlers) GetMyOrder(ctx context.Context, req api.GetMyOrderRequestObject) (api.GetMyOrderResponseObject, error) {
-	d, err := h.svc.CustomerOrder(ctx, req.ID.String())
+	token := ""
+	if req.Params.GuestToken != nil {
+		token = *req.Params.GuestToken
+	}
+	d, err := h.svc.CustomerOrder(ctx, req.ID.String(), token)
 	if err != nil {
 		return nil, err
 	}
 	return api.GetMyOrder200JSONResponse(detail(d)), nil
+}
+
+func (h handlers) MintGuestAccess(ctx context.Context, req api.MintGuestAccessRequestObject) (api.MintGuestAccessResponseObject, error) {
+	token, exp, err := h.svc.MintGuestAccess(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.MintGuestAccess200JSONResponse{Token: token, ExpiresAt: exp.UTC()}, nil
 }
 
 func (h handlers) RequestReturn(ctx context.Context, req api.RequestReturnRequestObject) (api.RequestReturnResponseObject, error) {

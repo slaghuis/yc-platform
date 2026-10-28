@@ -161,6 +161,7 @@ func TestOrders(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
 	t.Setenv("YC_ORDERS_SERVICE_SECRET", "orders-secret")
+	t.Setenv("YC_ORDERS_GUEST_ACCESS_SECRET", "orders-guest-access-secret-32b!!")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	cfg.Gateway.InternalURL = ""
@@ -362,6 +363,19 @@ func TestOrders(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, visitor.code("GET", "/orders/mine", nil), "/orders/mine is for customers")
 		other := as(t, srv, "shop-a", uuid.NewString(), "visitor")
 		assert.Equal(t, http.StatusNotFound, other.code("GET", "/orders/"+o.OrderID.String(), nil))
+
+		var access api.GuestAccess
+		code, _ = svc.do("GET", "/internal/orders/"+o.OrderID.String()+"/guest-access", nil, &access)
+		require.Equal(t, http.StatusOK, code)
+		require.NotEmpty(t, access.Token)
+		assert.True(t, access.ExpiresAt.After(time.Now()))
+		code, _ = other.do("GET", "/orders/"+o.OrderID.String()+"?guest_token="+url.QueryEscape(access.Token), nil, &got)
+		require.Equal(t, http.StatusOK, code, "email link works on another device")
+		assert.Equal(t, o.OrderID, got.OrderID)
+		assert.Equal(t, http.StatusNotFound, other.code("GET", "/orders/"+o.OrderID.String()+"?guest_token=tampered", nil))
+		assert.Equal(t, http.StatusNotFound, svc.code("GET", "/internal/orders/"+first.OrderID.String()+"/guest-access", nil),
+			"customer orders have no guest token")
+
 		ev := outbox(events.TypeOrderPlacedV1)
 		assert.Equal(t, "guest@example.com", ev[len(ev)-1]["guest_contact"].(map[string]any)["email"])
 	})

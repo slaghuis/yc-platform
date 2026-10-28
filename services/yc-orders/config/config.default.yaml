@@ -27,3 +27,7 @@ internal_calls:
 idempotency:
   retention: 24h
   purge_interval: 1h
+# Signed guest order email links (issue #22). Secret must be ≥32 characters.
+guest_access:
+  secret: ${YC_ORDERS_GUEST_ACCESS_SECRET}
+  ttl: 720h

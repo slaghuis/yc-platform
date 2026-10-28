@@ -47,8 +47,18 @@ paths:
       summary: Get one of my orders
       description: |
         The customer who placed it, or the visitor with the same visitor
-        token for a guest order (ADR-010).
+        token for a guest order (ADR-010). A signed `guest_token` from the
+        order email also opens that guest order on another device (issue #22);
+        the token is read-only and does not authorise returns or other mutations.
       operationId: getMyOrder
+      parameters:
+        - name: guest_token
+          in: query
+          required: false
+          description: |
+            Time-limited HMAC token from a guest order email. Required when
+            the caller is not the visitor who placed the order.
+          schema: { type: string, minLength: 1, maxLength: 512 }
       responses:
         '200':
           description: The order.
@@ -297,6 +307,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /internal/orders/{id}/guest-access:
+    parameters:
+      - $ref: '#/components/parameters/OrderID'
+    get:
+      summary: Mint a guest order access token
+      description: |
+        For yc-message: a signed, time-limited token so guest order emails can
+        link to `/orders/{id}?guest_token=…` (ADR-027 rule 12, issue #22).
+        Only placed visitor orders; customer orders are 404.
+      operationId: mintGuestAccess
+      responses:
+        '200':
+          description: The token and when it expires.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuestAccess' }
         '404': { $ref: '#/components/responses/Problem' }
 
   /internal/purchases:
@@ -552,6 +580,16 @@ components:
       properties:
         email: { type: string, maxLength: 254 }
         phone_e164: { type: string, maxLength: 16 }
+    GuestAccess:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Opaque signed token for `GET /orders/{id}?guest_token=`.
+        expires_at: { type: string, format: date-time }
     OrderItemInput:
       type: object
       required: [sku_id, name_snapshot, quantity, unit_price_minor, line_total_minor]

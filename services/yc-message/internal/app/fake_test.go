@@ -177,6 +177,11 @@ func (u *upstreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(r.URL.Path, "/internal/preferences/"):
 		found, ok = u.preferences[strings.TrimPrefix(r.URL.Path, "/internal/preferences/")]
+	case strings.HasSuffix(r.URL.Path, "/guest-access") && strings.HasPrefix(r.URL.Path, "/internal/orders/"):
+		writeJSON(w, http.StatusOK, map[string]any{
+			"token": "test-guest-token", "expires_at": time.Now().Add(24 * time.Hour).UTC(),
+		})
+		return
 	case strings.HasPrefix(r.URL.Path, "/internal/orders/"):
 		found, ok = u.orders[strings.TrimPrefix(r.URL.Path, "/internal/orders/")]
 	}

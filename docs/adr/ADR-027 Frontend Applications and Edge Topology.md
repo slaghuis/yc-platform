@@ -54,7 +54,7 @@ yc-platform-admin / yc-platform-shop ──http, Host: <browser host>──▶ y
     | `/` | yc-message (`shop_url`) |
     | `/products/{product_id}` (with `#review`) | yc-message review prompt |
     | `/cart` | yc-message abandoned cart |
-    | `/orders/{order_id}` | yc-message order emails |
+    | `/orders/{order_id}` (guests: `?guest_token=…`) | yc-message order emails |
     | `/shipping/tracking/{tracking_number}` | yc-message shipped email |
     | `/account/reset-password?token=…` | yc-identity `password.reset_url` |
     | `/account/accept-invite?token=…` | yc-identity invitations (ADR-030) |

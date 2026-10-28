@@ -24,6 +24,13 @@ type Config struct {
 	Gateway       httpkit.GatewayConfig  `koanf:"gateway"`
 	InternalCalls httpkit.InternalConfig `koanf:"internal_calls"`
 	Idempotency   IdempotencyConfig      `koanf:"idempotency"`
+	GuestAccess   GuestAccessConfig      `koanf:"guest_access"`
+}
+
+// GuestAccessConfig is the `guest_access:` block (issue #22).
+type GuestAccessConfig struct {
+	Secret string        `koanf:"secret"`
+	TTL    time.Duration `koanf:"ttl"`
 }
 
 // LogConfig is the `log:` block.
@@ -82,6 +89,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Idempotency.PurgeInterval <= 0 {
 		errs = append(errs, errors.New("idempotency.purge_interval must be positive"))
+	}
+	if len(c.GuestAccess.Secret) < 32 {
+		errs = append(errs, errors.New("guest_access.secret must be at least 32 characters (YC_ORDERS__GUEST_ACCESS__SECRET)"))
+	}
+	if c.GuestAccess.TTL < time.Hour {
+		errs = append(errs, errors.New("guest_access.ttl must be at least 1h"))
 	}
 	return errors.Join(errs...)
 }

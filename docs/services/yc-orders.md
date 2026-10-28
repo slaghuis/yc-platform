@@ -129,7 +129,7 @@ When a visitor's order is complete and the visitor later registers with the same
 | Method | Path | Description | Auth |
 |---|---|---|---|
 | GET | `/orders/mine` | List my orders | customer |
-| GET | `/orders/{id}` | Get order detail | customer (owner) |
+| GET | `/orders/{id}` | Get order detail (`?guest_token=` opens a guest order from email on another device) | customer (owner) or visitor (owner or guest token) |
 | POST | `/orders/{id}/cancel-request` | Request cancellation (pre-shipment) (future) | customer (owner) |
 | POST | `/orders/{id}/returns` | Request a return of some or all physical lines (post-delivery) | customer or visitor (owner) |
 | POST | `/orders/claim-guest-orders` | Claim guest orders after registration | customer |
@@ -157,6 +157,7 @@ When a visitor's order is complete and the visitor later registers with the same
 | POST | `/internal/orders/{id}/confirm` | Payment succeeded: → `received`, publish `order.placed.v1` (yc-checkout, CONFIRMING) | service |
 | POST | `/internal/orders/{id}/abandon` | Checkout compensation: `pending_payment` → `abandoned` | service |
 | GET | `/internal/orders/{id}` | Fetch order | service |
+| GET | `/internal/orders/{id}/guest-access` | Mint signed guest email token (`token`, `expires_at`) | service |
 | GET | `/internal/orders/user/{user_id}/has_purchased_product/{product_id}` | Verified purchase | service |
 
 The create, confirm and abandon endpoints require `Idempotency-Key` and return the stored response on a repeated key. Confirm and abandon are idempotent on state: confirming a `received` order or abandoning an `abandoned` (or never-created) order succeeds without side effects.
@@ -308,6 +309,9 @@ yc-orders:
     sequence_strategy: per_tenant
   cancellation:
     allow_after_shipment: false
+  guest_access:                         # issue #22 — signed email links
+    secret: ${YC_ORDERS_GUEST_ACCESS_SECRET}  # ≥32 chars
+    ttl: 720h                           # 30 days
   nats:
     url: nats://...
   log_level: info

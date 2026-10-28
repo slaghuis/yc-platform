@@ -39,8 +39,12 @@ func (s *Service) OrderPlaced(ctx context.Context, tenantID, eventID string, p e
 	for i, it := range p.Items {
 		items[i] = map[string]any{"name": it.NameSnapshot, "quantity": it.Quantity, "line_total": eventMoney(it.LineTotal)}
 	}
+	orderURL, err := s.orderURL(ctx, tenantID, p.OrderID, p.UserType)
+	if err != nil {
+		return err
+	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeOrderConfirmation, to, map[string]any{
-		"order_number": p.OrderNumber, "order_url": s.orderURL(ctx, tenantID, p.OrderID), "items": items,
+		"order_number": p.OrderNumber, "order_url": orderURL, "items": items,
 		"items_total": eventMoney(p.ItemsTotal), "shipping": eventMoney(p.Shipping),
 		"tax_total": eventMoney(p.TaxTotal), "total": eventMoney(p.Total), "requires_shipping": p.RequiresShipping,
 	})
@@ -127,7 +131,11 @@ func (s *Service) orderMessage(ctx context.Context, tenantID, eventID string, t 
 	if err != nil || !ok {
 		return s.skipped(ctx, err, t, orderID)
 	}
-	msgCtx := map[string]any{"order_number": o.OrderNumber, "order_url": s.orderURL(ctx, tenantID, orderID)}
+	orderURL, err := s.orderURL(ctx, tenantID, orderID, o.UserType)
+	if err != nil {
+		return err
+	}
+	msgCtx := map[string]any{"order_number": o.OrderNumber, "order_url": orderURL}
 	for k, v := range extra {
 		msgCtx[k] = v
 	}
@@ -168,8 +176,18 @@ func (s *Service) skipped(ctx context.Context, err error, t domain.Type, subject
 	return nil
 }
 
-func (s *Service) orderURL(ctx context.Context, tenantID, orderID string) string {
-	return s.links(ctx, tenantID).Order(orderID)
+// orderURL is the storefront order page. Guest orders carry a signed
+// guest_token so the email works on another device (issue #22).
+func (s *Service) orderURL(ctx context.Context, tenantID, orderID, userType string) (string, error) {
+	links := s.links(ctx, tenantID)
+	if userType != "visitor" {
+		return links.Order(orderID), nil
+	}
+	ga, err := s.upstream.GuestAccess(ctx, orderID)
+	if err != nil {
+		return "", err
+	}
+	return links.OrderWithToken(orderID, ga.Token), nil
 }
 
 func eventMoney(m events.Money) string {

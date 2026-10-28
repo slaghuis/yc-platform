@@ -15,6 +15,7 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 	telemetry "github.com/slaghuis/yc-platform/libs/yc-telemetry"
 
+	"github.com/slaghuis/yc-platform/services/yc-orders/internal/domain"
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/integration"
 	"github.com/slaghuis/yc-platform/services/yc-orders/internal/service"
 	subscribers "github.com/slaghuis/yc-platform/services/yc-orders/internal/transport/events"
@@ -106,7 +107,9 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	a.closers = append(a.closers, bus.Close)
 
 	internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
-	a.Service = service.New(db, bus, integration.NewPayment(internal), integration.NewShipping(internal))
+	a.Service = service.New(db, bus, integration.NewPayment(internal), integration.NewShipping(internal), domain.GuestAccess{
+		Secret: []byte(cfg.GuestAccess.Secret), TTL: cfg.GuestAccess.TTL,
+	})
 	for _, sub := range subscribers.Subscriptions(a.Service) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {
 			return nil, err

@@ -222,6 +222,8 @@ func TestMessaging(t *testing.T) {
 		m := waitMail("guest@x.test", 1)[0]
 		assert.Equal(t, "Order YC-1002 confirmed", m.Subject)
 		assert.NotContains(t, m.Body, "Shipping:", "digital order")
+		assert.Contains(t, m.Body, "https://shop-a.shops.test/orders/"+guestOrder+"?guest_token=test-guest-token",
+			"guest email opens on another device (issue #22)")
 	})
 
 	t.Run("shipped email reads the order", func(t *testing.T) {

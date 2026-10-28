@@ -37,6 +37,7 @@ type Publisher interface {
 type Upstream interface {
 	Preferences(ctx context.Context, userID string) (integration.Preferences, error)
 	Order(ctx context.Context, orderID string) (integration.Order, error)
+	GuestAccess(ctx context.Context, orderID string) (integration.GuestAccess, error)
 }
 
 // Config tunes the service.

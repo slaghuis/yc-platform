@@ -15,6 +15,9 @@ func TestShopLinksFollowTheStorefrontContract(t *testing.T) {
 
 	assert.Equal(t, "https://shop.example", l.Home())
 	assert.Equal(t, "https://shop.example/orders/0b5c9a7e-1f2d-4c3b-9a8e-7d6c5b4a3f21", l.Order("0b5c9a7e-1f2d-4c3b-9a8e-7d6c5b4a3f21"))
+	assert.Equal(t, "https://shop.example/orders/0b5c9a7e-1f2d-4c3b-9a8e-7d6c5b4a3f21?guest_token=v1.abc%2Bdef",
+		l.OrderWithToken("0b5c9a7e-1f2d-4c3b-9a8e-7d6c5b4a3f21", "v1.abc+def"),
+		"guest email links carry a signed token (issue #22)")
 	assert.Equal(t, "https://shop.example/cart", l.Cart())
 	assert.Equal(t, "https://shop.example/products/p-1#review", l.Review("p-1"))
 	assert.Equal(t, "https://shop.example/shipping/tracking/YC1234567890AB", l.Tracking("YC1234567890AB"))

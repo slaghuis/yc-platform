@@ -189,6 +189,7 @@ services:
       YC_ORDERS_DB_URL: postgres://yc_orders_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_orders?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_ORDERS_SERVICE_SECRET: ${YC_ORDERS_SERVICE_SECRET}
+      YC_ORDERS_GUEST_ACCESS_SECRET: ${YC_ORDERS_GUEST_ACCESS_SECRET}
       YC_ORDERS__HTTP__SHUTDOWN_DELAY: "0s"
 
   yc-checkout:

@@ -96,3 +96,17 @@ func (c *Clients) Order(ctx context.Context, orderID string) (Order, error) {
 		httpkit.CallOptions{Attempts: 3}, nil, &out)
 	return out, err
 }
+
+// GuestAccess is a signed token for a guest order email link (issue #22).
+type GuestAccess struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// GuestAccess mints a time-limited token for a placed guest order.
+func (c *Clients) GuestAccess(ctx context.Context, orderID string) (GuestAccess, error) {
+	var out GuestAccess
+	err := c.client.Call(ctx, http.MethodGet, "/internal/orders/"+url.PathEscape(orderID)+"/guest-access",
+		httpkit.CallOptions{Attempts: 3}, nil, &out)
+	return out, err
+}

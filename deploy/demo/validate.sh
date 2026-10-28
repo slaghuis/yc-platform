@@ -23,6 +23,7 @@ YC_DEMO_KEYS_DIR=./deploy/demo/keys
 YC_DEMO_SEAWEEDFS_S3_JSON=./deploy/demo/seaweedfs-s3.json.example
 YC_CART_SERVICE_SECRET=validate-cart-service-secret-32chars!
 YC_ORDERS_SERVICE_SECRET=validate-orders-service-secret-32ch
+YC_ORDERS_GUEST_ACCESS_SECRET=validate-orders-guest-access-secret32
 YC_CHECKOUT_SERVICE_SECRET=validate-checkout-service-secret-32
 YC_IDENTITY_SERVICE_SECRET=validate-identity-service-secret-32
 YC_MESSAGE_SERVICE_SECRET=validate-message-service-secret-32c

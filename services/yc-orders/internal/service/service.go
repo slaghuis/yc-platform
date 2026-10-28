@@ -48,13 +48,18 @@ type Service struct {
 	bus      Publisher
 	payments Payments
 	shipping Shipments
+	guest    domain.GuestAccess
 	repo     repository.Orders
 	now      func() time.Time
 }
 
-// New returns a Service.
-func New(db *pgxpool.Pool, bus Publisher, payments Payments, shipping Shipments) *Service {
-	return &Service{db: db, bus: bus, payments: payments, shipping: shipping, now: time.Now}
+// New returns a Service. guest signs time-limited guest order links (issue #22).
+func New(db *pgxpool.Pool, bus Publisher, payments Payments, shipping Shipments, guest domain.GuestAccess) *Service {
+	s := &Service{db: db, bus: bus, payments: payments, shipping: shipping, guest: guest, now: time.Now}
+	if s.guest.Now == nil {
+		s.guest.Now = s.now
+	}
+	return s
 }
 
 // Detail is an order with its status history, returns and refunds.
@@ -275,18 +280,49 @@ func (s *Service) AdminOrder(ctx context.Context, id string) (Detail, error) {
 }
 
 // CustomerOrder returns one of the caller's placed orders. A visitor sees
-// a guest order with the same visitor token (ADR-010).
-func (s *Service) CustomerOrder(ctx context.Context, id string) (Detail, error) {
+// a guest order with the same visitor token (ADR-010). A valid guest_token
+// from the confirmation email also opens that guest order on another device
+// (issue #22).
+func (s *Service) CustomerOrder(ctx context.Context, id, guestToken string) (Detail, error) {
 	if err := requireActor(ctx, authctx.ActorCustomer, authctx.ActorVisitor); err != nil {
 		return Detail{}, err
 	}
-	return s.detail(ctx, id, ownedBy(ctx))
+	a, _ := authctx.FromContext(ctx)
+	return s.detail(ctx, id, func(o domain.Order) bool {
+		if o.UserID == a.ActorID && o.Status.Placed() {
+			return true
+		}
+		if guestToken == "" || o.UserType != domain.UserVisitor || !o.Status.Placed() {
+			return false
+		}
+		return s.guest.Verify(a.TenantID, o.ID, guestToken) == nil
+	})
 }
 
 // ownedBy is whether the caller placed the order.
 func ownedBy(ctx context.Context) func(domain.Order) bool {
 	a, _ := authctx.FromContext(ctx)
 	return func(o domain.Order) bool { return o.UserID == a.ActorID && o.Status.Placed() }
+}
+
+// MintGuestAccess returns a signed, time-limited token for a placed guest
+// order so yc-message can put it in email links.
+func (s *Service) MintGuestAccess(ctx context.Context, id string) (token string, exp time.Time, err error) {
+	if err := requireActor(ctx, authctx.ActorService); err != nil {
+		return "", time.Time{}, err
+	}
+	err = s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		o, err := s.get(ctx, tx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if o.UserType != domain.UserVisitor || !o.Status.Placed() {
+			return ycerrors.NotFound("order", id)
+		}
+		token, exp, err = s.guest.Mint(tenantID, o.ID)
+		return err
+	})
+	return token, exp, err
 }
 
 func (s *Service) detail(ctx context.Context, id string, visible func(domain.Order) bool) (Detail, error) {

@@ -20,9 +20,15 @@ func NewShopLinks(base string) ShopLinks {
 // Home is the storefront's home page.
 func (l ShopLinks) Home() string { return l.Base }
 
-// Order is an order's page.
+// Order is an order's page. For guest orders from email, use OrderWithToken
+// so another device can open it (ADR-027 rule 12, issue #22).
 func (l ShopLinks) Order(orderID string) string {
 	return l.Base + "/orders/" + url.PathEscape(orderID)
+}
+
+// OrderWithToken is a guest order page with a signed, time-limited access token.
+func (l ShopLinks) OrderWithToken(orderID, guestToken string) string {
+	return l.Order(orderID) + "?guest_token=" + url.QueryEscape(guestToken)
 }
 
 // Cart is the shopping cart.

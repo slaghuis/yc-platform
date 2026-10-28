@@ -387,6 +387,7 @@ services:
       YC_ORDERS_DB_URL: postgres://yc_orders_app:devpass@postgres:5432/yc_orders?sslmode=disable
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_ORDERS_SERVICE_SECRET: ${YC_ORDERS_SERVICE_SECRET:-dev-orders-service-secret-32-chars!}
+      YC_ORDERS_GUEST_ACCESS_SECRET: ${YC_ORDERS_GUEST_ACCESS_SECRET:-dev-orders-guest-access-secret-32!}
       NATS_URL: nats://nats:4222
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       OTEL_METRICS_EXPORTER: none

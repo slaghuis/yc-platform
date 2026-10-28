@@ -234,6 +234,14 @@ type CustomerOrders struct {
 	Orders    []CustomerOrder `json:"orders"`
 }
 
+// GuestAccess defines model for GuestAccess.
+type GuestAccess struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// Token Opaque signed token for `GET /orders/{id}?guest_token=`.
+	Token string `json:"token"`
+}
+
 // GuestContact defines model for GuestContact.
 type GuestContact struct {
 	Email     string `json:"email"`
@@ -528,6 +536,13 @@ type ListMyOrdersParams struct {
 	Cursor   *Cursor   `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetMyOrderParams defines parameters for GetMyOrder.
+type GetMyOrderParams struct {
+	// GuestToken Time-limited HMAC token from a guest order email. Required when
+	// the caller is not the visitor who placed the order.
+	GuestToken *string `form:"guest_token,omitempty" json:"guest_token,omitempty"`
+}
+
 // CancelOrderJSONRequestBody defines body for CancelOrder for application/json ContentType.
 type CancelOrderJSONRequestBody = ReasonInput
 
@@ -593,6 +608,9 @@ type ServerInterface interface {
 	// ConfirmOrder Confirm a paid order
 	// (POST /internal/orders/{id}/confirm)
 	ConfirmOrder(w http.ResponseWriter, r *http.Request, id OrderID, params ConfirmOrderParams)
+	// MintGuestAccess Mint a guest order access token
+	// (GET /internal/orders/{id}/guest-access)
+	MintGuestAccess(w http.ResponseWriter, r *http.Request, id OrderID)
 	// FindPurchase Find a customer's purchase of a product
 	// (GET /internal/purchases)
 	FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams)
@@ -601,7 +619,7 @@ type ServerInterface interface {
 	ListMyOrders(w http.ResponseWriter, r *http.Request, params ListMyOrdersParams)
 	// GetMyOrder Get one of my orders
 	// (GET /orders/{id})
-	GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID)
+	GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID, params GetMyOrderParams)
 	// RequestReturn Ask to return delivered items
 	// (POST /orders/{id}/returns)
 	RequestReturn(w http.ResponseWriter, r *http.Request, id OrderID)
@@ -689,6 +707,12 @@ func (_ Unimplemented) ConfirmOrder(w http.ResponseWriter, r *http.Request, id O
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// MintGuestAccess Mint a guest order access token
+// (GET /internal/orders/{id}/guest-access)
+func (_ Unimplemented) MintGuestAccess(w http.ResponseWriter, r *http.Request, id OrderID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // FindPurchase Find a customer's purchase of a product
 // (GET /internal/purchases)
 func (_ Unimplemented) FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams) {
@@ -703,7 +727,7 @@ func (_ Unimplemented) ListMyOrders(w http.ResponseWriter, r *http.Request, para
 
 // GetMyOrder Get one of my orders
 // (GET /orders/{id})
-func (_ Unimplemented) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+func (_ Unimplemented) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID, params GetMyOrderParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1236,6 +1260,32 @@ func (siw *ServerInterfaceWrapper) ConfirmOrder(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// MintGuestAccess operation middleware
+func (siw *ServerInterfaceWrapper) MintGuestAccess(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id OrderID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MintGuestAccess(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // FindPurchase operation middleware
 func (siw *ServerInterfaceWrapper) FindPurchase(w http.ResponseWriter, r *http.Request) {
 
@@ -1343,8 +1393,24 @@ func (siw *ServerInterfaceWrapper) GetMyOrder(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetMyOrderParams
+
+	// ------------- Optional query parameter "guest_token" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "guest_token", r.URL.Query(), &params.GuestToken, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "guest_token"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "guest_token", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetMyOrder(w, r, id)
+		siw.Handler.GetMyOrder(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1531,6 +1597,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/orders/{id}", wrapper.GetInternalOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/internal/orders/{id}/guest-access", wrapper.MintGuestAccess)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/internal/purchases", wrapper.FindPurchase)
@@ -2292,6 +2361,44 @@ func (response ConfirmOrder409ApplicationProblemPlusJSONResponse) VisitConfirmOr
 	return err
 }
 
+type MintGuestAccessRequestObject struct {
+	ID OrderID `json:"id"`
+}
+
+type MintGuestAccessResponseObject interface {
+	VisitMintGuestAccessResponse(w http.ResponseWriter) error
+}
+
+type MintGuestAccess200JSONResponse GuestAccess
+
+func (response MintGuestAccess200JSONResponse) VisitMintGuestAccessResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MintGuestAccess404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response MintGuestAccess404ApplicationProblemPlusJSONResponse) VisitMintGuestAccessResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type FindPurchaseRequestObject struct {
 	Params FindPurchaseParams
 }
@@ -2383,7 +2490,8 @@ func (response ListMyOrders403ApplicationProblemPlusJSONResponse) VisitListMyOrd
 }
 
 type GetMyOrderRequestObject struct {
-	ID OrderID `json:"id"`
+	ID     OrderID `json:"id"`
+	Params GetMyOrderParams
 }
 
 type GetMyOrderResponseObject interface {
@@ -2556,6 +2664,9 @@ type StrictServerInterface interface {
 	// ConfirmOrder Confirm a paid order
 	// (POST /internal/orders/{id}/confirm)
 	ConfirmOrder(ctx context.Context, request ConfirmOrderRequestObject) (ConfirmOrderResponseObject, error)
+	// MintGuestAccess Mint a guest order access token
+	// (GET /internal/orders/{id}/guest-access)
+	MintGuestAccess(ctx context.Context, request MintGuestAccessRequestObject) (MintGuestAccessResponseObject, error)
 	// FindPurchase Find a customer's purchase of a product
 	// (GET /internal/purchases)
 	FindPurchase(ctx context.Context, request FindPurchaseRequestObject) (FindPurchaseResponseObject, error)
@@ -3011,6 +3122,32 @@ func (sh *strictHandler) ConfirmOrder(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
+// MintGuestAccess operation middleware
+func (sh *strictHandler) MintGuestAccess(w http.ResponseWriter, r *http.Request, id OrderID) {
+	var request MintGuestAccessRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MintGuestAccess(ctx, request.(MintGuestAccessRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MintGuestAccess")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MintGuestAccessResponseObject); ok {
+		if err := validResponse.VisitMintGuestAccessResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // FindPurchase operation middleware
 func (sh *strictHandler) FindPurchase(w http.ResponseWriter, r *http.Request, params FindPurchaseParams) {
 	var request FindPurchaseRequestObject
@@ -3064,10 +3201,11 @@ func (sh *strictHandler) ListMyOrders(w http.ResponseWriter, r *http.Request, pa
 }
 
 // GetMyOrder operation middleware
-func (sh *strictHandler) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID) {
+func (sh *strictHandler) GetMyOrder(w http.ResponseWriter, r *http.Request, id OrderID, params GetMyOrderParams) {
 	var request GetMyOrderRequestObject
 
 	request.ID = id
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetMyOrder(ctx, request.(GetMyOrderRequestObject))
