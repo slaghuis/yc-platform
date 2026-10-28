@@ -157,7 +157,7 @@ When a visitor's order is complete and the visitor later registers with the same
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE); resolves buyer billing and seller invoice snapshots (issue #29) | service |
+| POST | `/internal/orders` | Create a `pending_payment` order (yc-checkout, ORDER_CREATE); resolves buyer billing and seller invoice snapshots (issue #29); optional `delivery_slot` snapshot (issue #30) | service |
 | POST | `/internal/orders/{id}/confirm` | Payment succeeded: → `received`, publish `order.placed.v1` (yc-checkout, CONFIRMING) | service |
 | POST | `/internal/orders/{id}/abandon` | Checkout compensation: `pending_payment` → `abandoned` | service |
 | GET | `/internal/orders/{id}` | Fetch order | service |

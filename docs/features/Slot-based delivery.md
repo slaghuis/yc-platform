@@ -1,7 +1,7 @@
 # Slot-based delivery
 
 ## Overview
-**Status:** Approved
+**Status:** Shipped (`v1.1.0-beta.3`, issue [#30](https://github.com/slaghuis/yc-platform/issues/30) closed)
 **GitHub Issues:** [#30](https://github.com/slaghuis/yc-platform/issues/30)
 **Priority:** High (Wisefood checkout §7.2; fit-gap GAP-005 / CHK-004 / CHK-005)
 **Repository:** yc-platform — primarily **yc-shipping** + **yc-checkout** + **yc-orders**; yc-message for template context. Storefront/BFF consumes OpenAPI (ADR-028).
@@ -52,7 +52,7 @@ Free-text “preferred time” inside `delivery_address` is **not** a slot: it c
 | Admin reschedule | **Out of MVP** — future release. |
 | Messaging | Optional template context keys; **`order.placed.v1` unchanged**. |
 | Timezone | IANA on schedule; default **`Africa/Johannesburg`** when omitted (SA MVP). API returns UTC instants + timezone + optional local label. |
-| Rate validation | `requires_delivery_slot: true` without a valid `schedule_id` → **hard 400** on rate create/PATCH. |
+| Rate validation | `requires_delivery_slot: true` without a valid `schedule_id` → **hard 400** on rate create/PUT. |
 | List range | Max **14 days** per request; default `from` = today (shop TZ). |
 | Events | Snapshot on order row only; message enrichment as today — no event schema change. |
 | ADR impact | ADR-022 amendment; yc-shipping.md; OpenAPI (ADR-028). |
@@ -85,8 +85,8 @@ Shop-admin CRUD, tenant-scoped:
 | Method | Path | Auth | Effect |
 |---|---|---|---|
 | GET/POST | `/admin/shipping/schedules` | shop_admin | List / create |
-| GET/PATCH/DELETE | `/admin/shipping/schedules/{id}` | shop_admin | Read / update / delete (refuse delete if rates still reference — or soft-deactivate) |
-| PATCH | `/admin/rates/{id}` | shop_admin | Set `schedule_id`, `requires_delivery_slot` (extend existing rate PATCH) |
+| GET/PUT/DELETE | `/admin/shipping/schedules/{id}` | shop_admin | Read / replace / delete (409 if rates still reference) |
+| PUT | `/admin/rates/{id}` | shop_admin | Set `schedule_id`, `requires_delivery_slot` (extend existing rate PUT) |
 
 No public catalogue of slots without a checkout session (avoids scraping capacity).
 
@@ -216,7 +216,7 @@ Pass through on `POST /internal/orders` create body; yc-orders persists JSONB.
 1. **Book at ORDER_CREATE** + release on abandon/compensate.
 2. **`PUT /slot` must verify remaining capacity** (still soft — no decrement until book).
 3. **Default timezone `Africa/Johannesburg`** when omitted.
-4. **`requires_delivery_slot` without schedule → hard 400** on rate create/PATCH.
+4. **`requires_delivery_slot` without schedule → hard 400** on rate create/PUT.
 5. **Max 14 days** per list request; default `from` = today.
 6. **No admin reschedule** in this package (future release).
 7. **`order.placed.v1` unchanged.**

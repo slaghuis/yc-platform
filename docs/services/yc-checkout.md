@@ -62,7 +62,7 @@ Capture or charge success is the point of no return: CONFIRMING is retried until
 | Method | Path | Description | Auth |
 |---|---|---|---|
 | POST | `/checkout` | Start a checkout from a cart | any (customer or visitor) |
-| GET | `/checkout/{session_id}` | Get session state (including current prices, shipping options) | session owner |
+| GET | `/checkout/{session_id}` | Get session state (prices, shipping options, optional `delivery_slot`) | session owner |
 | POST | `/checkout/{session_id}/shipping` | Give the delivery address (quoted by yc-shipping) and/or choose a shipping option | session owner |
 | GET | `/checkout/{session_id}/slots` | List available delivery windows for the selected slot-required rate (`from`/`to`, max 14 days) | session owner |
 | PUT | `/checkout/{session_id}/slot` | Soft-bind a delivery window (capacity checked; hard book at ORDER_CREATE) | session owner |
@@ -120,6 +120,8 @@ POST /checkout/{session_id}/confirm
 }
 ```
 
+When the selected rate has `requires_delivery_slot`, a prior `PUT /checkout/{id}/slot` is required (`400` field `delivery_slot` otherwise); a stale or full window is `409`. Slot is not sent in the confirm body — it is already on the session.
+
 Requires `Idempotency-Key` (`api-conventions.md` §10). Responses (ADR-019):
 
 | Status | Session state | Meaning |
@@ -154,6 +156,7 @@ CREATE TABLE checkout_sessions (
     pricing_snapshot        JSONB,                   -- from yc-pricing at PRICING
     shipping_options_snapshot JSONB,                 -- from yc-shipping at the shipping step
     selected_shipping_option_id TEXT,
+    delivery_slot           JSONB,                   -- soft-bound window (issue #30); booked at ORDER_CREATE
     guest_contact           JSONB,                   -- email, phone
     delivery_address        JSONB,
     payment_gateway         TEXT,                    -- routed at start (ADR-013)
