@@ -306,7 +306,7 @@ type DeliveryAddressInput struct {
 	// Address Free-form delivery document (ADR-015).
 	Address map[string]interface{} `json:"address"`
 
-	// IsDefault When true
+	// IsDefault When true, becomes the customer's default.
 	IsDefault *bool   `json:"is_default,omitempty"`
 	Label     *string `json:"label,omitempty"`
 }

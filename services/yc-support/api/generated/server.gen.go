@@ -151,14 +151,14 @@ type ClosedReason string
 
 // CreateRequestInput defines model for CreateRequestInput.
 type CreateRequestInput struct {
-	// Body The first message
+	// Body The first message, plain text.
 	Body string `json:"body"`
 
 	// ContactEmail Where the shop's answers are emailed to a visitor. Stored lower case.
 	ContactEmail string `json:"contact_email"`
 	ContactName  string `json:"contact_name"`
 
-	// ContactPhone Optional
+	// ContactPhone Optional, E.164, e.g. +27821234567.
 	ContactPhone *string `json:"contact_phone,omitempty"`
 
 	// OrderID The order the request is about.
@@ -233,7 +233,7 @@ type SupportRequest struct {
 	OrderID        *openapi_types.UUID `json:"order_id,omitempty"`
 	PageURL        *string             `json:"page_url,omitempty"`
 
-	// Reference The human-facing reference
+	// Reference The human-facing reference, e.g. SUP-7K3M9Q. Unique in the shop.
 	Reference string `json:"reference"`
 
 	// Status new: the shop has not answered. open_customer: the shop answered and

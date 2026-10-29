@@ -115,7 +115,8 @@ func (f *fakePricing) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		var in struct {
 			Lines []struct {
-				SKUID string `json:"sku_id"`
+				SKUID    string `json:"sku_id"`
+				Quantity int64  `json:"quantity"`
 			} `json:"lines"`
 			DisplayCurrency string `json:"display_currency"`
 		}
@@ -157,12 +158,16 @@ func (f *fakePricing) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}{Currency: "USD", Rate: "0.05", RateFetchedAt: time.Now().UTC()}
 		}
 		for _, l := range in.Lines {
+			qty := l.Quantity
+			if qty < 1 {
+				qty = 1
+			}
 			minor, ok := f.prices[l.SKUID]
 			switch {
 			case ok:
-				out.Lines = append(out.Lines, line{l.SKUID, money.New(minor, "ZAR")})
+				out.Lines = append(out.Lines, line{l.SKUID, money.New(minor*qty, "ZAR")})
 				if out.Display != nil {
-					out.Display.Lines = append(out.Display.Lines, line{l.SKUID, money.New(minor/20, "USD")})
+					out.Display.Lines = append(out.Display.Lines, line{l.SKUID, money.New((minor/20)*qty, "USD")})
 				}
 			case f.unpriced[l.SKUID]:
 				out.Unpriced = append(out.Unpriced, unpriced{l.SKUID, "no_base_price"})
