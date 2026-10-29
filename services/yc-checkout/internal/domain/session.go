@@ -119,6 +119,16 @@ const (
 	ReasonStepFailed         = "step_failed"
 )
 
+// ComponentSnapshot is one kit component as yc-product defined it for a
+// single bundle unit (composed-offers FR). Multiply Quantity by the line
+// quantity when reserving stock.
+type ComponentSnapshot struct {
+	SKUID       string `json:"sku_id"`
+	Quantity    int64  `json:"quantity"`
+	ProductName string `json:"product_name,omitempty"`
+	SKUCode     string `json:"sku_code,omitempty"`
+}
+
 // Item is one snapshotted cart line with its authoritative price.
 type Item struct {
 	SKUID            string         `json:"sku_id"`
@@ -137,6 +147,9 @@ type Item struct {
 	UnitPriceMinor int64 `json:"unit_price_minor"`
 	LineTotalMinor int64 `json:"line_total_minor"`
 	TaxMinor       int64 `json:"tax_minor"`
+	// Components is the kit expansion for a bundle SKU (per one unit).
+	// Empty for ordinary lines. Persisted for packing lists.
+	Components []ComponentSnapshot `json:"components,omitempty"`
 }
 
 // ShippingOption is a way to deliver the physical items, as yc-shipping
@@ -339,13 +352,72 @@ func (s Session) SelectedShipping() (ShippingOption, bool) {
 	return ShippingOption{}, false
 }
 
-// TrackedItems are the lines inventory reserves.
+// TrackedItems are the lines inventory reserves. Bundle lines expand to
+// their components (qty × line qty); the bundle SKU itself is never
+// reserved. Duplicate SKUs across lines are merged.
 func (s Session) TrackedItems() []Item {
-	var out []Item
-	for _, it := range s.Items {
-		if it.InventoryTracked {
-			out = append(out, it)
+	qty := map[string]int64{}
+	var order []string
+	add := func(sku string, n int64) {
+		if _, ok := qty[sku]; !ok {
+			order = append(order, sku)
 		}
+		qty[sku] += n
+	}
+	for _, it := range s.Items {
+		if len(it.Components) > 0 {
+			for _, c := range it.Components {
+				add(c.SKUID, c.Quantity*it.Quantity)
+			}
+			continue
+		}
+		if it.InventoryTracked {
+			add(it.SKUID, it.Quantity)
+		}
+	}
+	out := make([]Item, 0, len(order))
+	for _, id := range order {
+		out = append(out, Item{SKUID: id, Quantity: qty[id], InventoryTracked: true})
+	}
+	return out
+}
+
+// AttributeShortages remaps inventory shortages for component SKUs onto
+// the bundle line that owns them, so the customer sees a stock conflict
+// on the payable bundle SKU (composed-offers FR).
+func (s Session) AttributeShortages(raw any) any {
+	owner := map[string]string{}
+	for _, it := range s.Items {
+		for _, c := range it.Components {
+			owner[c.SKUID] = it.SKUID
+		}
+	}
+	if len(owner) == 0 {
+		return raw
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return raw
+	}
+	out := make([]any, len(list))
+	for i, e := range list {
+		m, ok := e.(map[string]any)
+		if !ok {
+			out[i] = e
+			continue
+		}
+		sku, _ := m["sku_id"].(string)
+		bundle, mapped := owner[sku]
+		if !mapped {
+			out[i] = e
+			continue
+		}
+		cp := make(map[string]any, len(m))
+		for k, v := range m {
+			cp[k] = v
+		}
+		cp["sku_id"] = bundle
+		out[i] = cp
 	}
 	return out
 }

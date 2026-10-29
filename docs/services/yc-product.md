@@ -190,6 +190,10 @@ Two separate PDP rails with separate storage and APIs.
 
 See `docs/features/Related products and also-bought.md`. The OpenAPI contract feeds the yc-platform-mcp sync (ADR-028).
 
+### Flat product bundles (issue #34)
+
+Physical-only kits: `products.kind` is `standard` or `bundle` (default `standard`). `POST /admin/bundles` creates a kit product (`is_digital=false`) with one untracked SKU and ≥2 distinct active non-bundle physical component SKUs in `bundle_sku_components` (migration 010). Nested kits are rejected. Soft-deleting a component product or SKU soft-retires dependent kits via the existing `product.deleted.v1` path. After inventory stock events on a component, parent kit projection `in_stock` is the AND of tracked components (untracked = OK). Public `GET /products/{id}` exposes `kind` and `bundle.components` when `kind=bundle`; internal SKU batch includes `kind` + `components[]`. See `docs/features/Composed catalogue offers bundles and buy-X-get-Y.md` Part A.
+
 ### Banners
 
 A banner presents one category. It stores a short text (at most 280 characters) and two yc-image ids: a background and a large image. The large image must not be the category's icon. yc-product does not check that the files still exist. The category name is read from the category when the banner is returned.
@@ -447,7 +451,7 @@ None are startup-blocking — the projection is eventually consistent.
 
 ## Open Questions / Future Scope
 
-- Product bundles / kits as a sellable SKU
+- Bundle variants / multi-SKU kits; digital or mixed digital+physical kits; nested kits
 - Subscription products (recurring)
 - Shared/global catalog across tenants (franchise model)
 - Multi-language product content

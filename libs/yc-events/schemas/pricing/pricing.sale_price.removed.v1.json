@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.sale_price.removed.v1.json",
+  "title": "pricing.sale_price.removed.v1",
+  "description": "A SKU's promotional sale unit price was removed. The SKU reverts to its base price for evaluation and display.",
+  "type": "object",
+  "required": ["sku_id", "removed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "removed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

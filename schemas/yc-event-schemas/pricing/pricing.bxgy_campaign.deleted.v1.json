@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.bxgy_campaign.deleted.v1.json",
+  "title": "pricing.bxgy_campaign.deleted.v1",
+  "description": "A shop admin deleted a buy-X-get-Y campaign.",
+  "type": "object",
+  "required": ["campaign_id", "deleted_at"],
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deleted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

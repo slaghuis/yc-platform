@@ -100,6 +100,9 @@ paths:
         see only active targets that have an active SKU; shop admins see the
         stored list, inactive targets included. Always present, possibly empty.
         Not to be confused with GET /products/{id}/also-bought.
+
+        kind is standard or bundle. When kind is bundle, bundle.components
+        lists the flat component SKUs (sku_id, quantity, product facts).
       operationId: getProduct
       parameters:
         - $ref: '#/components/parameters/ID'
@@ -373,6 +376,70 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RelatedProducts' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/bundles:
+    post:
+      summary: Create a flat product bundle
+      description: |
+        Creates a physical kit product (kind=bundle, is_digital=false) with one
+        SKU (no variants, inventory_tracked=false) composed of ≥2 distinct
+        active non-bundle physical component SKUs. Publishes product.created.v1
+        and product.sku.created.v1. Soft-deleting a component product or SKU
+        retires dependent kits via product.deleted.v1.
+      operationId: createBundle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/bundles/{id}:
+    get:
+      summary: Get a bundle definition
+      description: |
+        Returns the kit product with bundle.components. 404 when the id is not
+        a live bundle product of the shop.
+      operationId: getBundle
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '200':
+          description: The bundle product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace a bundle's components
+      description: |
+        Replaces the component set of an existing kit (kind=bundle). Optionally
+        updates name, description and category_ids. Components must still be
+        ≥2 distinct active non-bundle physical SKUs. Publishes product.updated.v1.
+      operationId: updateBundle
+      parameters:
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleUpdateInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
         '400': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 
@@ -709,6 +776,12 @@ components:
           items: { $ref: '#/components/schemas/Supplier' }
         page: { $ref: '#/components/schemas/PageInfo' }
 
+    ProductKind:
+      type: string
+      enum: [standard, bundle]
+      description: |
+        standard is an ordinary catalogue product. bundle is a flat physical
+        kit created via POST /admin/bundles.
     ProductInput:
       type: object
       required: [name]
@@ -718,6 +791,10 @@ components:
         description: { type: string, maxLength: 10000 }
         supplier_id: { type: string, format: uuid }
         is_digital: { type: boolean }
+        kind:
+          allOf:
+            - { $ref: '#/components/schemas/ProductKind' }
+          description: Create-only; omit or standard. Kits use POST /admin/bundles.
         status: { $ref: '#/components/schemas/Status' }
         category_ids:
           type: array
@@ -728,13 +805,14 @@ components:
           additionalProperties: { type: string }
     Product:
       type: object
-      required: [product_id, name, description, is_digital, status, attributes, category_ids, related_product_ids, variants, skus, images, created_at, updated_at]
+      required: [product_id, name, description, is_digital, kind, status, attributes, category_ids, related_product_ids, variants, skus, images, created_at, updated_at]
       properties:
         product_id: { type: string, format: uuid }
         supplier_id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
         is_digital: { type: boolean }
+        kind: { $ref: '#/components/schemas/ProductKind' }
         status: { $ref: '#/components/schemas/Status' }
         attributes:
           type: object
@@ -758,8 +836,70 @@ components:
         images:
           type: array
           items: { $ref: '#/components/schemas/ProductImage' }
+        bundle:
+          description: Present when kind is bundle.
+          allOf:
+            - { $ref: '#/components/schemas/Bundle' }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    BundleComponentInput:
+      type: object
+      required: [sku_id, quantity]
+      additionalProperties: false
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+    BundleComponent:
+      type: object
+      required: [sku_id, product_id, product_name, quantity]
+      properties:
+        sku_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        product_name: { type: string }
+        quantity: { type: integer, minimum: 1 }
+    Bundle:
+      type: object
+      required: [components]
+      properties:
+        components:
+          type: array
+          items: { $ref: '#/components/schemas/BundleComponent' }
+    BundleInput:
+      type: object
+      required: [name, sku_code, tax_class, components]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        category_ids:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+        sku_code: { type: string, minLength: 1, maxLength: 64 }
+        tax_class:
+          type: string
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+        components:
+          type: array
+          minItems: 2
+          maxItems: 50
+          items: { $ref: '#/components/schemas/BundleComponentInput' }
+    BundleUpdateInput:
+      type: object
+      required: [components]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        category_ids:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+        components:
+          type: array
+          minItems: 2
+          maxItems: 50
+          items: { $ref: '#/components/schemas/BundleComponentInput' }
     ProductSummary:
       type: object
       required: [product_id, name, description, is_digital, in_stock, category_ids, skus, reviews]
@@ -930,7 +1070,7 @@ components:
           items: { type: string, format: uuid }
     SKUDetail:
       type: object
-      required: [sku_id, product_id, sku_code, product_name, variant_values, is_digital, inventory_tracked, tax_class, status]
+      required: [sku_id, product_id, sku_code, product_name, variant_values, is_digital, kind, inventory_tracked, tax_class, status, components]
       properties:
         sku_id: { type: string, format: uuid }
         product_id: { type: string, format: uuid }
@@ -938,6 +1078,7 @@ components:
         product_name: { type: string }
         variant_values: { $ref: '#/components/schemas/VariantValues' }
         is_digital: { type: boolean }
+        kind: { $ref: '#/components/schemas/ProductKind' }
         inventory_tracked: { type: boolean }
         tax_class: { type: string }
         weight_grams: { type: integer }
@@ -946,6 +1087,10 @@ components:
           type: string
           description: active only when both the SKU and its product are active.
           enum: [active, inactive, deleted]
+        components:
+          type: array
+          description: Flat kit expansion when kind is bundle; empty otherwise.
+          items: { $ref: '#/components/schemas/BundleComponent' }
 
     AttachImageRequest:
       type: object

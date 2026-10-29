@@ -33,6 +33,7 @@ type Publisher interface {
 // Prices looks up current prices (yc-pricing).
 type Prices interface {
 	UnitPrices(ctx context.Context, skuIDs []string, displayCurrency string) (domain.Prices, error)
+	LinePrices(ctx context.Context, lines []domain.LineQty, displayCurrency string) (domain.Prices, error)
 }
 
 // Service implements the cart use cases.
@@ -143,11 +144,11 @@ func (s *Service) price(ctx context.Context, cart domain.Cart, t domain.CartType
 	if len(cart.Items) == 0 {
 		return domain.View{Cart: cart, Type: t}, nil
 	}
-	ids := make([]string, len(cart.Items))
+	lines := make([]domain.LineQty, len(cart.Items))
 	for i, it := range cart.Items {
-		ids[i] = it.SKUID
+		lines[i] = domain.LineQty{SKUID: it.SKUID, Quantity: it.Quantity}
 	}
-	p, err := s.prices.UnitPrices(ctx, ids, displayCurrency)
+	p, err := s.prices.LinePrices(ctx, lines, displayCurrency)
 	if err != nil {
 		return domain.View{}, err
 	}

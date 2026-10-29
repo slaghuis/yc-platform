@@ -283,6 +283,7 @@ func (s *Service) Evaluate(ctx context.Context, req domain.Request) (domain.Resu
 	if err := validateShopTenant(a.TenantID); err != nil {
 		return domain.Result{}, err
 	}
+	now := s.now()
 	in := &domain.Inputs{}
 	err := dbkit.WithTenantTx(ctx, s.db, a.TenantID, func(tx pgx.Tx) error {
 		var err error
@@ -293,7 +294,7 @@ func (s *Service) Evaluate(ctx context.Context, req domain.Request) (domain.Resu
 		if in.Prices, err = s.repo.Prices(ctx, tx, ids); err != nil {
 			return err
 		}
-		if in.TaxClasses, err = s.repo.SKUTaxClasses(ctx, tx, ids); err != nil {
+		if in.TaxClasses, in.ProductIDs, err = s.repo.SKUTaxClasses(ctx, tx, ids); err != nil {
 			return err
 		}
 		classIDs := make([]string, 0, len(in.TaxClasses))
@@ -305,6 +306,12 @@ func (s *Service) Evaluate(ctx context.Context, req domain.Request) (domain.Resu
 		if in.Classes, err = s.repo.TaxClasses(ctx, tx, classIDs); err != nil {
 			return err
 		}
+		if in.Sales, err = s.repo.ActiveSales(ctx, tx, ids, now); err != nil {
+			return err
+		}
+		if in.Campaigns, err = s.repo.ActiveCampaigns(ctx, tx, now); err != nil {
+			return err
+		}
 		if req.DisplayCurrency != "" && req.DisplayCurrency != in.Config.StoreCurrency {
 			in.Rate, err = s.repo.Rate(ctx, tx, in.Config.StoreCurrency, req.DisplayCurrency)
 		}
@@ -313,7 +320,169 @@ func (s *Service) Evaluate(ctx context.Context, req domain.Request) (domain.Resu
 	if err != nil {
 		return domain.Result{}, err
 	}
-	return s.pipeline.Run(req, in, s.now())
+	return s.pipeline.Run(req, in, now)
+}
+
+// SetSalePrice sets a SKU's promotional unit-price overlay.
+func (s *Service) SetSalePrice(ctx context.Context, skuID string, in domain.SalePriceInput) (domain.SalePrice, error) {
+	var sale domain.SalePrice
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		cfg, err := s.configured(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		if err := in.Validate(cfg.StoreCurrency); err != nil {
+			return err
+		}
+		if sale, err = s.repo.SetSalePrice(ctx, tx, tenantID, skuID, in.Price, cfg.TaxInclusive, in, s.now()); err != nil {
+			return err
+		}
+		evt := events.PricingSalePriceSetV1{
+			SKUID: skuID, Price: eventMoney(sale.Price), IsTaxInclusive: sale.TaxInclusive,
+			Name: sale.Name, StartsAt: sale.StartsAt.UTC(), UpdatedAt: sale.UpdatedAt.UTC(),
+		}
+		if sale.EndsAt != nil {
+			t := sale.EndsAt.UTC()
+			evt.EndsAt = &t
+		}
+		return s.publish(ctx, tx, tenantID, events.TypePricingSalePriceSetV1, evt)
+	})
+	return sale, err
+}
+
+// GetSalePrice returns a SKU's sale overlay, or NotFound when none is set.
+func (s *Service) GetSalePrice(ctx context.Context, skuID string) (domain.SalePrice, error) {
+	var sale domain.SalePrice
+	err := s.inShop(ctx, func(tx pgx.Tx, _ string) error {
+		got, err := s.repo.GetSalePrice(ctx, tx, skuID)
+		if err != nil {
+			return err
+		}
+		if got == nil {
+			return ycerrors.NotFound("Sale price", skuID)
+		}
+		sale = *got
+		return nil
+	})
+	return sale, err
+}
+
+// RemoveSalePrice removes a SKU's sale overlay.
+func (s *Service) RemoveSalePrice(ctx context.Context, skuID string) error {
+	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		now := s.now()
+		removed, err := s.repo.RemoveSalePrice(ctx, tx, skuID)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			return ycerrors.NotFound("Sale price", skuID)
+		}
+		return s.publish(ctx, tx, tenantID, events.TypePricingSalePriceRemovedV1, events.PricingSalePriceRemovedV1{
+			SKUID: skuID, RemovedAt: now.UTC(),
+		})
+	})
+}
+
+// CreateBXGY creates a buy-X-get-Y campaign.
+func (s *Service) CreateBXGY(ctx context.Context, in domain.BXGYInput) (domain.BXGYCampaign, error) {
+	if err := in.Validate(); err != nil {
+		return domain.BXGYCampaign{}, err
+	}
+	var c domain.BXGYCampaign
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		if c, err = s.repo.CreateBXGY(ctx, tx, tenantID, in, s.now()); err != nil {
+			return err
+		}
+		return s.publish(ctx, tx, tenantID, events.TypePricingBxgyCampaignCreatedV1, bxgyCreatedEvent(c))
+	})
+	return c, err
+}
+
+// UpdateBXGY replaces a buy-X-get-Y campaign.
+func (s *Service) UpdateBXGY(ctx context.Context, id string, in domain.BXGYInput) (domain.BXGYCampaign, error) {
+	if err := in.Validate(); err != nil {
+		return domain.BXGYCampaign{}, err
+	}
+	var c domain.BXGYCampaign
+	err := s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		if c, err = s.repo.UpdateBXGY(ctx, tx, id, in, s.now()); err != nil {
+			return err
+		}
+		return s.publish(ctx, tx, tenantID, events.TypePricingBxgyCampaignUpdatedV1, bxgyUpdatedEvent(c))
+	})
+	return c, err
+}
+
+// GetBXGY returns a campaign by ID.
+func (s *Service) GetBXGY(ctx context.Context, id string) (domain.BXGYCampaign, error) {
+	var c domain.BXGYCampaign
+	err := s.inShop(ctx, func(tx pgx.Tx, _ string) error {
+		var err error
+		c, err = s.repo.GetBXGY(ctx, tx, id)
+		return err
+	})
+	return c, err
+}
+
+// ListBXGY lists the shop's buy-X-get-Y campaigns.
+func (s *Service) ListBXGY(ctx context.Context) ([]domain.BXGYCampaign, error) {
+	var out []domain.BXGYCampaign
+	err := s.inShop(ctx, func(tx pgx.Tx, _ string) error {
+		var err error
+		out, err = s.repo.ListBXGY(ctx, tx)
+		return err
+	})
+	return out, err
+}
+
+// DeleteBXGY deletes a buy-X-get-Y campaign.
+func (s *Service) DeleteBXGY(ctx context.Context, id string) error {
+	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
+		if err := s.repo.DeleteBXGY(ctx, tx, id); err != nil {
+			return err
+		}
+		return s.publish(ctx, tx, tenantID, events.TypePricingBxgyCampaignDeletedV1, events.PricingBxgyCampaignDeletedV1{
+			CampaignID: id, DeletedAt: s.now().UTC(),
+		})
+	})
+}
+
+func bxgyCreatedEvent(c domain.BXGYCampaign) events.PricingBxgyCampaignCreatedV1 {
+	evt := events.PricingBxgyCampaignCreatedV1{
+		CampaignID: c.ID, Name: c.Name, DiscountType: c.DiscountType, DiscountValue: c.DiscountValue,
+		StartsAt: c.StartsAt.UTC(), Enabled: c.Enabled, CreatedAt: c.CreatedAt.UTC(),
+		QualifyingProductID: optString(c.QualifyingProductID), QualifyingSKUID: optString(c.QualifyingSKUID),
+		TargetProductID: optString(c.TargetProductID), TargetSKUID: optString(c.TargetSKUID),
+	}
+	if c.EndsAt != nil {
+		t := c.EndsAt.UTC()
+		evt.EndsAt = &t
+	}
+	return evt
+}
+
+func bxgyUpdatedEvent(c domain.BXGYCampaign) events.PricingBxgyCampaignUpdatedV1 {
+	evt := events.PricingBxgyCampaignUpdatedV1{
+		CampaignID: c.ID, Name: c.Name, DiscountType: c.DiscountType, DiscountValue: c.DiscountValue,
+		StartsAt: c.StartsAt.UTC(), Enabled: c.Enabled, UpdatedAt: c.UpdatedAt.UTC(),
+		QualifyingProductID: optString(c.QualifyingProductID), QualifyingSKUID: optString(c.QualifyingSKUID),
+		TargetProductID: optString(c.TargetProductID), TargetSKUID: optString(c.TargetSKUID),
+	}
+	if c.EndsAt != nil {
+		t := c.EndsAt.UTC()
+		evt.EndsAt = &t
+	}
+	return evt
+}
+
+func optString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // configured returns the shop's configuration, which must exist.

@@ -47,12 +47,12 @@ func scanSKU(row pgx.Row) (domain.SKU, error) {
 }
 
 // SKUDetails returns the SKUs with ids, deleted ones included, with their
-// product's name and digital flag.
-func (Catalog) SKUDetails(ctx context.Context, tx pgx.Tx, ids []string) ([]domain.SKUDetail, error) {
+// product's name, kind, digital flag and (for kits) component expansion.
+func (c Catalog) SKUDetails(ctx context.Context, tx pgx.Tx, ids []string) ([]domain.SKUDetail, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT s.id, s.tenant_id, s.product_id, s.sku_code, s.variant_values, s.inventory_tracked, s.tax_class,
 			s.weight_grams, s.length_mm, s.width_mm, s.height_mm, CASE WHEN p.status = 'deleted' THEN 'deleted' ELSE s.status END, s.created_at, s.updated_at,
-			p.name, p.is_digital, p.status = 'active' AND s.status = 'active'
+			p.name, p.is_digital, p.kind, p.status = 'active' AND s.status = 'active'
 		FROM skus s JOIN products p ON p.id = s.product_id
 		WHERE s.id = ANY($1::uuid[])
 		ORDER BY s.id`, ids)
@@ -67,12 +67,28 @@ func (Catalog) SKUDetails(ctx context.Context, tx pgx.Tx, ids []string) ([]domai
 			&s.ID, &s.TenantID, &s.ProductID, &s.Code, &s.VariantValues, &s.InventoryTracked,
 			&s.TaxClass, &s.WeightGrams,
 		}, dims.dest()...)
-		err := r.Scan(append(dest, &s.Status, &s.CreatedAt, &s.UpdatedAt, &d.ProductName, &d.IsDigital, &d.Active)...)
+		err := r.Scan(append(dest, &s.Status, &s.CreatedAt, &s.UpdatedAt, &d.ProductName, &d.IsDigital, &d.Kind, &d.Active)...)
 		s.Dimensions = dims.value()
+		d.Components = []domain.BundleComponent{}
 		return d, err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sku details: %w", err)
+	}
+	bundleIDs := make([]string, 0, len(out))
+	for _, d := range out {
+		if d.Kind == domain.KindBundle {
+			bundleIDs = append(bundleIDs, d.ID)
+		}
+	}
+	comps, err := c.BundleComponentsOfSKUs(ctx, tx, bundleIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if c, ok := comps[out[i].ID]; ok {
+			out[i].Components = c
+		}
 	}
 	return out, nil
 }

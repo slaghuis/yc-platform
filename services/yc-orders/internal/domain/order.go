@@ -98,6 +98,15 @@ type GuestContact struct {
 	PhoneE164 string `json:"phone_e164"`
 }
 
+// ComponentSnapshot is one kit component as checkout snapshotted it for a
+// single bundle unit (composed-offers FR). Stored for future packing lists.
+type ComponentSnapshot struct {
+	SKUID       string `json:"sku_id"`
+	Quantity    int64  `json:"quantity"`
+	ProductName string `json:"product_name,omitempty"`
+	SKUCode     string `json:"sku_code,omitempty"`
+}
+
 // Item is one order line as checkout priced it.
 type Item struct {
 	SKUID          string         `json:"sku_id"`
@@ -110,6 +119,8 @@ type Item struct {
 	LineTotalMinor int64          `json:"line_total_minor"`
 	TaxMinor       int64          `json:"tax_minor"`
 	IsDigital      bool           `json:"is_digital"`
+	// Components is the kit expansion for a bundle line; empty otherwise.
+	Components []ComponentSnapshot `json:"components,omitempty"`
 }
 
 // Order is an order snapshot.

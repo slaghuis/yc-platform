@@ -299,15 +299,16 @@ func (Pricing) CountSKUsInClass(ctx context.Context, tx pgx.Tx, id string) (int,
 	return n, nil
 }
 
-// SyncSKU records a SKU's tax class and status as of at, ignoring events
-// older than the stored one and never reviving a deleted SKU.
-func (Pricing) SyncSKU(ctx context.Context, tx pgx.Tx, tenantID, skuID, taxClass, status string, at time.Time) error {
+// SyncSKU records a SKU's product, tax class and status as of at, ignoring
+// events older than the stored one and never reviving a deleted SKU.
+func (Pricing) SyncSKU(ctx context.Context, tx pgx.Tx, tenantID, skuID, productID, taxClass, status string, at time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO sku_tax_classes (tenant_id, sku_id, tax_class, status, event_at) VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO sku_tax_classes (tenant_id, sku_id, tax_class, status, event_at, product_id)
+		VALUES ($1, $2, $3, $4, $5, $6::uuid)
 		ON CONFLICT (tenant_id, sku_id) DO UPDATE SET tax_class = EXCLUDED.tax_class,
-			status = EXCLUDED.status, event_at = EXCLUDED.event_at
+			status = EXCLUDED.status, event_at = EXCLUDED.event_at, product_id = EXCLUDED.product_id
 		WHERE sku_tax_classes.status <> 'deleted' AND sku_tax_classes.event_at <= EXCLUDED.event_at`,
-		tenantID, skuID, taxClass, status, at)
+		tenantID, skuID, taxClass, status, at, nullUUID(productID))
 	if err != nil {
 		return fmt.Errorf("sync SKU: %w", err)
 	}
@@ -327,21 +328,202 @@ func (Pricing) DeleteSKU(ctx context.Context, tx pgx.Tx, tenantID, skuID string,
 	return nil
 }
 
-// SKUTaxClasses returns the tax classes of the live SKUs among skuIDs.
-func (Pricing) SKUTaxClasses(ctx context.Context, tx pgx.Tx, skuIDs []string) (map[string]string, error) {
-	rows, err := tx.Query(ctx, `SELECT sku_id, tax_class FROM sku_tax_classes
+// SKUTaxClasses returns the tax classes and product IDs of the live SKUs
+// among skuIDs. productIDs omits SKUs whose product_id is still unknown.
+func (Pricing) SKUTaxClasses(ctx context.Context, tx pgx.Tx, skuIDs []string) (taxClasses, productIDs map[string]string, err error) {
+	rows, err := tx.Query(ctx, `SELECT sku_id, tax_class, COALESCE(product_id::text, '') FROM sku_tax_classes
 		WHERE sku_id = ANY($1::uuid[]) AND status <> 'deleted'`, skuIDs)
 	if err != nil {
-		return nil, fmt.Errorf("SKU tax classes: %w", err)
+		return nil, nil, fmt.Errorf("SKU tax classes: %w", err)
 	}
 	defer rows.Close()
-	out := make(map[string]string, len(skuIDs))
+	taxClasses = make(map[string]string, len(skuIDs))
+	productIDs = make(map[string]string, len(skuIDs))
 	for rows.Next() {
-		var id, class string
-		if err := rows.Scan(&id, &class); err != nil {
-			return nil, fmt.Errorf("SKU tax classes: %w", err)
+		var id, class, productID string
+		if err := rows.Scan(&id, &class, &productID); err != nil {
+			return nil, nil, fmt.Errorf("SKU tax classes: %w", err)
 		}
-		out[id] = class
+		taxClasses[id] = class
+		if productID != "" {
+			productIDs[id] = productID
+		}
+	}
+	return taxClasses, productIDs, rows.Err()
+}
+
+const saleColumns = `id, sku_id, amount_minor, currency, tax_inclusive, name, starts_at, ends_at, updated_at`
+
+func scanSale(row pgx.Row) (domain.SalePrice, error) {
+	var s domain.SalePrice
+	err := row.Scan(&s.ID, &s.SKUID, &s.Price.AmountMinor, &s.Price.Currency, &s.TaxInclusive,
+		&s.Name, &s.StartsAt, &s.EndsAt, &s.UpdatedAt)
+	return s, err
+}
+
+// SetSalePrice creates or replaces the SKU's sale overlay.
+func (Pricing) SetSalePrice(ctx context.Context, tx pgx.Tx, tenantID, skuID string, price money.Money, inclusive bool, in domain.SalePriceInput, now time.Time) (domain.SalePrice, error) {
+	s, err := scanSale(tx.QueryRow(ctx, `
+		INSERT INTO sale_prices (tenant_id, sku_id, amount_minor, currency, tax_inclusive, name, starts_at, ends_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+		ON CONFLICT (tenant_id, sku_id) DO UPDATE SET amount_minor = EXCLUDED.amount_minor,
+			currency = EXCLUDED.currency, tax_inclusive = EXCLUDED.tax_inclusive, name = EXCLUDED.name,
+			starts_at = EXCLUDED.starts_at, ends_at = EXCLUDED.ends_at, updated_at = EXCLUDED.updated_at
+		RETURNING `+saleColumns,
+		tenantID, skuID, price.AmountMinor, price.Currency, inclusive, in.Name, in.StartsAt, in.EndsAt, now))
+	if err != nil {
+		return domain.SalePrice{}, fmt.Errorf("set sale price: %w", err)
+	}
+	return s, nil
+}
+
+// GetSalePrice returns the SKU's sale overlay, if any.
+func (Pricing) GetSalePrice(ctx context.Context, tx pgx.Tx, skuID string) (*domain.SalePrice, error) {
+	s, err := scanSale(tx.QueryRow(ctx, `SELECT `+saleColumns+` FROM sale_prices WHERE sku_id = $1`, skuID))
+	if dbkit.IsNoRows(err) {
+		return nil, nil //nolint:nilnil // no sale is not an error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get sale price: %w", err)
+	}
+	return &s, nil
+}
+
+// RemoveSalePrice deletes the SKU's sale overlay, reporting whether it had one.
+func (Pricing) RemoveSalePrice(ctx context.Context, tx pgx.Tx, skuID string) (bool, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM sale_prices WHERE sku_id = $1`, skuID)
+	if err != nil {
+		return false, fmt.Errorf("remove sale price: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// ActiveSales returns overlays for skuIDs that are active at now.
+func (Pricing) ActiveSales(ctx context.Context, tx pgx.Tx, skuIDs []string, now time.Time) (map[string]domain.SalePrice, error) {
+	rows, err := tx.Query(ctx, `SELECT `+saleColumns+` FROM sale_prices
+		WHERE sku_id = ANY($1::uuid[]) AND starts_at <= $2 AND (ends_at IS NULL OR ends_at > $2)`, skuIDs, now)
+	if err != nil {
+		return nil, fmt.Errorf("active sales: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]domain.SalePrice, len(skuIDs))
+	for rows.Next() {
+		s, err := scanSale(rows)
+		if err != nil {
+			return nil, fmt.Errorf("active sales: %w", err)
+		}
+		out[s.SKUID] = s
 	}
 	return out, rows.Err()
+}
+
+const bxgyColumns = `id, name, COALESCE(qualifying_product_id::text, ''), COALESCE(qualifying_sku_id::text, ''),
+	COALESCE(target_product_id::text, ''), COALESCE(target_sku_id::text, ''),
+	discount_type, discount_value, starts_at, ends_at, enabled, created_at, updated_at`
+
+func scanBXGY(row pgx.Row) (domain.BXGYCampaign, error) {
+	var c domain.BXGYCampaign
+	err := row.Scan(&c.ID, &c.Name, &c.QualifyingProductID, &c.QualifyingSKUID,
+		&c.TargetProductID, &c.TargetSKUID, &c.DiscountType, &c.DiscountValue,
+		&c.StartsAt, &c.EndsAt, &c.Enabled, &c.CreatedAt, &c.UpdatedAt)
+	return c, err
+}
+
+// CreateBXGY inserts a buy-X-get-Y campaign.
+func (Pricing) CreateBXGY(ctx context.Context, tx pgx.Tx, tenantID string, in domain.BXGYInput, now time.Time) (domain.BXGYCampaign, error) {
+	enabled := true
+	if in.Enabled != nil {
+		enabled = *in.Enabled
+	}
+	c, err := scanBXGY(tx.QueryRow(ctx, `
+		INSERT INTO bxgy_campaigns (
+			tenant_id, name, qualifying_product_id, qualifying_sku_id, target_product_id, target_sku_id,
+			discount_type, discount_value, starts_at, ends_at, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8, $9, $10, $11, $12, $12)
+		RETURNING `+bxgyColumns,
+		tenantID, in.Name, nullUUID(in.QualifyingProductID), nullUUID(in.QualifyingSKUID),
+		nullUUID(in.TargetProductID), nullUUID(in.TargetSKUID),
+		in.DiscountType, in.DiscountValue, in.StartsAt, in.EndsAt, enabled, now))
+	if err != nil {
+		return domain.BXGYCampaign{}, fmt.Errorf("create BXGY: %w", err)
+	}
+	return c, nil
+}
+
+// UpdateBXGY replaces a campaign's fields. When in.Enabled is nil the
+// existing enabled flag is kept.
+func (Pricing) UpdateBXGY(ctx context.Context, tx pgx.Tx, id string, in domain.BXGYInput, now time.Time) (domain.BXGYCampaign, error) {
+	c, err := scanBXGY(tx.QueryRow(ctx, `
+		UPDATE bxgy_campaigns SET name = $2, qualifying_product_id = $3::uuid, qualifying_sku_id = $4::uuid,
+			target_product_id = $5::uuid, target_sku_id = $6::uuid, discount_type = $7, discount_value = $8,
+			starts_at = $9, ends_at = $10, enabled = COALESCE($11, enabled), updated_at = $12
+		WHERE id = $1 RETURNING `+bxgyColumns,
+		id, in.Name, nullUUID(in.QualifyingProductID), nullUUID(in.QualifyingSKUID),
+		nullUUID(in.TargetProductID), nullUUID(in.TargetSKUID),
+		in.DiscountType, in.DiscountValue, in.StartsAt, in.EndsAt, in.Enabled, now))
+	if dbkit.IsNoRows(err) {
+		return domain.BXGYCampaign{}, ycerrors.NotFound("BXGY campaign", id)
+	}
+	if err != nil {
+		return domain.BXGYCampaign{}, fmt.Errorf("update BXGY: %w", err)
+	}
+	return c, nil
+}
+
+// GetBXGY returns a campaign by ID.
+func (Pricing) GetBXGY(ctx context.Context, tx pgx.Tx, id string) (domain.BXGYCampaign, error) {
+	c, err := scanBXGY(tx.QueryRow(ctx, `SELECT `+bxgyColumns+` FROM bxgy_campaigns WHERE id = $1`, id))
+	if dbkit.IsNoRows(err) {
+		return domain.BXGYCampaign{}, ycerrors.NotFound("BXGY campaign", id)
+	}
+	if err != nil {
+		return domain.BXGYCampaign{}, fmt.Errorf("get BXGY: %w", err)
+	}
+	return c, nil
+}
+
+// ListBXGY lists campaigns ordered by name.
+func (Pricing) ListBXGY(ctx context.Context, tx pgx.Tx) ([]domain.BXGYCampaign, error) {
+	rows, err := tx.Query(ctx, `SELECT `+bxgyColumns+` FROM bxgy_campaigns ORDER BY name, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list BXGY: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.BXGYCampaign, error) { return scanBXGY(r) })
+	if err != nil {
+		return nil, fmt.Errorf("list BXGY: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteBXGY deletes a campaign.
+func (Pricing) DeleteBXGY(ctx context.Context, tx pgx.Tx, id string) error {
+	tag, err := tx.Exec(ctx, `DELETE FROM bxgy_campaigns WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete BXGY: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ycerrors.NotFound("BXGY campaign", id)
+	}
+	return nil
+}
+
+// ActiveCampaigns returns enabled BXGY campaigns active at now.
+func (Pricing) ActiveCampaigns(ctx context.Context, tx pgx.Tx, now time.Time) ([]domain.BXGYCampaign, error) {
+	rows, err := tx.Query(ctx, `SELECT `+bxgyColumns+` FROM bxgy_campaigns
+		WHERE enabled AND starts_at <= $1 AND (ends_at IS NULL OR ends_at > $1) ORDER BY name, id`, now)
+	if err != nil {
+		return nil, fmt.Errorf("active campaigns: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (domain.BXGYCampaign, error) { return scanBXGY(r) })
+	if err != nil {
+		return nil, fmt.Errorf("active campaigns: %w", err)
+	}
+	return out, nil
+}
+
+func nullUUID(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

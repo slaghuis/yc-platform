@@ -79,7 +79,10 @@ type Inputs struct {
 	Config     Config
 	Prices     map[string]BasePrice // by SKU
 	TaxClasses map[string]string    // SKU → tax class ID, from yc-product events
+	ProductIDs map[string]string    // SKU → product ID (for BXGY product selectors)
 	Classes    map[string]TaxClass  // by class ID
+	Sales      map[string]SalePrice // by SKU, active overlays only
+	Campaigns  []BXGYCampaign       // active BXGY campaigns
 	Rate       *ExchangeRate        // store → display currency, when requested
 }
 
@@ -89,11 +92,14 @@ type Line struct {
 	Quantity         int64
 	TaxClass         string
 	UnitPrice        money.Money
+	ListUnitPrice    *money.Money // base unit before sale overlay; set when sale applies
 	PriceIncludesTax bool
 	Net              money.Money
 	Tax              money.Money
 	Gross            money.Money
 	Taxes            []TaxAmount
+	Discounts        []LineDiscount
+	HasSale          bool // true when SalePriceEvaluator applied; blocks BXGY stack
 }
 
 // Unpriced is a requested SKU that could not be priced.
@@ -173,10 +179,15 @@ type Evaluator interface {
 // Pipeline runs evaluators in order.
 type Pipeline []Evaluator
 
-// DefaultPipeline is the Phase 2 pipeline. Promotion evaluators slot in
-// between BasePrice and Tax in Phase 3.
+// DefaultPipeline runs BasePrice → Sale → BuyXGetY → Tax → DisplayCurrency.
 func DefaultPipeline() Pipeline {
-	return Pipeline{BasePriceEvaluator{}, TaxEvaluator{}, DisplayCurrencyEvaluator{}}
+	return Pipeline{
+		BasePriceEvaluator{},
+		SalePriceEvaluator{},
+		BuyXGetYEvaluator{},
+		TaxEvaluator{},
+		DisplayCurrencyEvaluator{},
+	}
 }
 
 // Run evaluates req against in.
@@ -231,6 +242,114 @@ func (e BasePriceEvaluator) Evaluate(req Request, in *Inputs, res *Result) error
 		})
 	}
 	res.Audit = append(res.Audit, AuditEntry{Evaluator: e.Name(), Detail: map[string]any{"lines": audit}})
+	return nil
+}
+
+// SalePriceEvaluator replaces the unit price with an active sale overlay.
+type SalePriceEvaluator struct{}
+
+// Name implements Evaluator.
+func (SalePriceEvaluator) Name() string { return "sale_price" }
+
+// Evaluate implements Evaluator.
+func (e SalePriceEvaluator) Evaluate(_ Request, in *Inputs, res *Result) error {
+	if len(in.Sales) == 0 {
+		return nil
+	}
+	audit := make([]map[string]any, 0)
+	for i := range res.Lines {
+		line := &res.Lines[i]
+		sale, ok := in.Sales[line.SKUID]
+		if !ok {
+			continue
+		}
+		list := line.UnitPrice
+		amount, err := sale.Price.Times(line.Quantity)
+		if err != nil {
+			return err
+		}
+		off, err := list.Times(line.Quantity)
+		if err != nil {
+			return err
+		}
+		if off, err = off.Sub(amount); err != nil {
+			return err
+		}
+		line.ListUnitPrice = &list
+		line.UnitPrice = sale.Price
+		line.PriceIncludesTax = sale.TaxInclusive
+		line.Net, line.Gross = amount, amount
+		line.HasSale = true
+		if off.AmountMinor > 0 {
+			line.Discounts = append(line.Discounts, LineDiscount{
+				Type: DiscountTypeSalePrice, Name: sale.Name, Amount: off,
+			})
+		}
+		audit = append(audit, map[string]any{
+			"sku_id": line.SKUID, "list_unit_price": list, "sale_unit_price": sale.Price,
+			"name": sale.Name, "reduction": off,
+		})
+	}
+	if len(audit) > 0 {
+		res.Audit = append(res.Audit, AuditEntry{Evaluator: e.Name(), Detail: map[string]any{"lines": audit}})
+	}
+	return nil
+}
+
+// BuyXGetYEvaluator discounts target lines when a qualifying line is present.
+// Skips targets that already have a sale overlay (no stack in MVP).
+type BuyXGetYEvaluator struct{}
+
+// Name implements Evaluator.
+func (BuyXGetYEvaluator) Name() string { return "bxgy" }
+
+// Evaluate implements Evaluator.
+func (e BuyXGetYEvaluator) Evaluate(_ Request, in *Inputs, res *Result) error {
+	if len(in.Campaigns) == 0 {
+		return nil
+	}
+	audit := make([]map[string]any, 0)
+	for _, camp := range in.Campaigns {
+		var qualQty int64
+		for _, line := range res.Lines {
+			pid := in.ProductIDs[line.SKUID]
+			if camp.MatchesQualifying(line.SKUID, pid) {
+				qualQty += line.Quantity
+			}
+		}
+		if qualQty < 1 {
+			continue
+		}
+		for i := range res.Lines {
+			line := &res.Lines[i]
+			pid := in.ProductIDs[line.SKUID]
+			if !camp.MatchesTarget(line.SKUID, pid) || line.HasSale {
+				continue
+			}
+			off, err := camp.DiscountAmount(line.Gross)
+			if err != nil {
+				return err
+			}
+			if off.IsZero() {
+				continue
+			}
+			newGross, err := line.Gross.Sub(off)
+			if err != nil {
+				return err
+			}
+			line.Gross, line.Net = newGross, newGross
+			line.UnitPrice = money.New(newGross.AmountMinor/line.Quantity, newGross.Currency)
+			line.Discounts = append(line.Discounts, LineDiscount{
+				Type: DiscountTypeBXGY, Name: camp.Name, Amount: off,
+			})
+			audit = append(audit, map[string]any{
+				"campaign_id": camp.ID, "name": camp.Name, "sku_id": line.SKUID, "reduction": off,
+			})
+		}
+	}
+	if len(audit) > 0 {
+		res.Audit = append(res.Audit, AuditEntry{Evaluator: e.Name(), Detail: map[string]any{"lines": audit}})
+	}
 	return nil
 }
 

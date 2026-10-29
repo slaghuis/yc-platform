@@ -63,13 +63,21 @@ func (s *Service) SetReviewStats(ctx context.Context, tenantID, productID string
 }
 
 // SetInStock records whether a tracked SKU has stock
-// (inventory.stock.depleted.v1, inventory.stock.restored.v1).
+// (inventory.stock.depleted.v1, inventory.stock.restored.v1) and recomputes
+// the projection in_stock of any parent kit SKUs.
 func (s *Service) SetInStock(ctx context.Context, tenantID, skuID string, inStock bool, at time.Time) error {
 	if err := validateShopTenant(tenantID); err != nil {
 		return err
 	}
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
-		return s.cat.SetInStock(ctx, tx, skuID, inStock, at)
+		if err := s.cat.SetInStock(ctx, tx, skuID, inStock, at); err != nil {
+			return err
+		}
+		parents, err := s.cat.BundleSKUsUsingComponent(ctx, tx, skuID)
+		if err != nil {
+			return err
+		}
+		return s.cat.RecomputeBundleInStock(ctx, tx, parents...)
 	})
 }
 

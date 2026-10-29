@@ -1004,9 +1004,138 @@ func TestProduct(t *testing.T) {
 		assert.Equal(t, []string{"AB R"}, names)
 	})
 
+	t.Run("flat product bundles", func(t *testing.T) {
+		makeSKU := func(name, code string) (api.Product, api.SKU) {
+			t.Helper()
+			var p api.Product
+			require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/products", map[string]any{"name": name}, &p))
+			var s api.SKU
+			require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/products/"+p.ProductID.String()+"/skus",
+				map[string]any{"sku_code": code, "tax_class": "za-standard"}, &s))
+			return p, s
+		}
+		compA, skuA := makeSKU("Bundle Comp A", "BNDL-A")
+		compB, skuB := makeSKU("Bundle Comp B", "BNDL-B")
+		assert.Equal(t, api.ProductKindStandard, compA.Kind)
+
+		assert.Equal(t, http.StatusBadRequest, admin.do("POST", "/admin/products", map[string]any{
+			"name": "Nope", "kind": "bundle",
+		}, nil), "kits are not created via /admin/products")
+
+		var kit api.Product
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/bundles", map[string]any{
+			"name": "Meal Kit", "description": "A + B", "sku_code": "MEAL-1", "tax_class": "za-standard",
+			"category_ids": []any{apparel.CategoryID},
+			"components": []map[string]any{
+				{"sku_id": skuA.SkuID, "quantity": 1},
+				{"sku_id": skuB.SkuID, "quantity": 2},
+			},
+		}, &kit))
+		assert.Equal(t, api.ProductKindBundle, kit.Kind)
+		assert.False(t, kit.IsDigital)
+		require.Len(t, kit.Skus, 1)
+		assert.False(t, kit.Skus[0].InventoryTracked)
+		require.NotNil(t, kit.Bundle)
+		require.Len(t, kit.Bundle.Components, 2)
+		assert.Equal(t, skuA.SkuID, kit.Bundle.Components[0].SkuID)
+		assert.Equal(t, 1, kit.Bundle.Components[0].Quantity)
+		assert.Equal(t, skuB.SkuID, kit.Bundle.Components[1].SkuID)
+		assert.Equal(t, 2, kit.Bundle.Components[1].Quantity)
+
+		var pub api.Product
+		require.Equal(t, http.StatusOK, visitor.do("GET", "/products/"+kit.ProductID.String(), nil, &pub))
+		assert.Equal(t, api.ProductKindBundle, pub.Kind)
+		require.NotNil(t, pub.Bundle)
+		assert.Len(t, pub.Bundle.Components, 2)
+
+		var adminKit api.Product
+		require.Equal(t, http.StatusOK, admin.do("GET", "/admin/bundles/"+kit.ProductID.String(), nil, &adminKit))
+		assert.Equal(t, kit.ProductID, adminKit.ProductID)
+		assert.Equal(t, http.StatusNotFound, admin.do("GET", "/admin/bundles/"+compA.ProductID.String(), nil, nil))
+
+		assert.Equal(t, http.StatusBadRequest, admin.do("POST", "/admin/bundles", map[string]any{
+			"name": "Nested", "sku_code": "NEST-1", "tax_class": "za-standard",
+			"components": []map[string]any{
+				{"sku_id": kit.Skus[0].SkuID, "quantity": 1},
+				{"sku_id": skuA.SkuID, "quantity": 1},
+			},
+		}, nil), "components must be non-bundle SKUs")
+		assert.Equal(t, http.StatusConflict, admin.do("POST", "/admin/products/"+kit.ProductID.String()+"/skus",
+			map[string]any{"sku_code": "MEAL-2", "tax_class": "za-standard"}, nil))
+
+		internal := admin.withCaller()
+		var batch api.SKUBatch
+		require.Equal(t, http.StatusOK, internal.do("GET", "/internal/skus/batch?ids="+kit.Skus[0].SkuID.String(), nil, &batch))
+		require.Len(t, batch.Skus, 1)
+		assert.Equal(t, api.ProductKindBundle, batch.Skus[0].Kind)
+		assert.Len(t, batch.Skus[0].Components, 2)
+
+		validator, err := events.NewValidator()
+		require.NoError(t, err)
+		upstream, err := eventbus.NewClient(ctx, eventbus.Config{
+			NATSURL: natsURL, ServiceName: "yc-upstream-bundles", Validator: validator,
+			Streams: []eventbus.StreamConfig{eventbus.InventoryStream()},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = upstream.Close(context.Background()) })
+		publish := func(eventType string, payload any) {
+			t.Helper()
+			require.NoError(t, upstream.PublishDirect(ctx, eventbus.Event{
+				EventType: eventType, TenantID: "shop-a",
+				Actor: eventbus.Actor{Type: "service", ID: "yc-upstream"}, Payload: payload,
+			}))
+		}
+		bundleInStock := func() *bool {
+			var inStock *bool
+			_ = dbkit.WithTenantTx(ctx, db, "shop-a", func(tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `SELECT in_stock FROM sku_search_projection WHERE sku_id = $1`,
+					kit.Skus[0].SkuID).Scan(&inStock)
+			})
+			return inStock
+		}
+		now := time.Now().UTC()
+		publish(events.TypeInventoryStockDepletedV1, events.InventoryStockDepletedV1{
+			SKUID: skuA.SkuID.String(), OnHand: 0, Reserved: 0, Available: 0, DepletedAt: now,
+		})
+		require.Eventually(t, func() bool {
+			v := bundleInStock()
+			return v != nil && !*v
+		}, 10*time.Second, 50*time.Millisecond, "bundle out of stock when a tracked component is")
+		publish(events.TypeInventoryStockRestoredV1, events.InventoryStockRestoredV1{
+			SKUID: skuA.SkuID.String(), OnHand: 5, Reserved: 0, Available: 5, RestoredAt: now.Add(time.Second),
+		})
+		require.Eventually(t, func() bool {
+			v := bundleInStock()
+			return v != nil && *v
+		}, 10*time.Second, 50*time.Millisecond, "bundle back in stock when components are")
+
+		deletedBefore := eventsOf("shop-a", "product.deleted.v1")
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/products/"+compB.ProductID.String(), nil, nil))
+		assert.Equal(t, http.StatusNotFound, visitor.do("GET", "/products/"+kit.ProductID.String(), nil, nil),
+			"soft-deleting a component product retires the kit")
+		assert.Equal(t, http.StatusNotFound, admin.do("GET", "/admin/bundles/"+kit.ProductID.String(), nil, nil))
+		assert.GreaterOrEqual(t, eventsOf("shop-a", "product.deleted.v1"), deletedBefore+2,
+			"component and dependent kit both publish product.deleted.v1")
+
+		_, skuC := makeSKU("Bundle Comp C", "BNDL-C")
+		_, skuD := makeSKU("Bundle Comp D", "BNDL-D")
+		var kit2 api.Product
+		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/bundles", map[string]any{
+			"name": "Meal Kit 2", "sku_code": "MEAL-2", "tax_class": "za-standard",
+			"components": []map[string]any{
+				{"sku_id": skuC.SkuID, "quantity": 1},
+				{"sku_id": skuD.SkuID, "quantity": 1},
+			},
+		}, &kit2))
+		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/skus/"+skuC.SkuID.String(), nil, nil))
+		assert.Equal(t, http.StatusNotFound, visitor.do("GET", "/products/"+kit2.ProductID.String(), nil, nil),
+			"soft-deleting a component SKU retires the kit")
+	})
+
 	t.Run("deletes", func(t *testing.T) {
+		skuDeleted := eventsOf("shop-a", "product.sku.deleted.v1")
 		require.Equal(t, http.StatusNoContent, admin.do("DELETE", "/admin/skus/"+blue.SkuID.String(), nil, nil))
-		assert.Equal(t, 1, eventsOf("shop-a", "product.sku.deleted.v1"))
+		assert.Equal(t, skuDeleted+1, eventsOf("shop-a", "product.sku.deleted.v1"))
 		require.Equal(t, http.StatusCreated, admin.do("POST", "/admin/products/"+shirt.ProductID.String()+"/skus", map[string]any{
 			"sku_code": "TS-BLUE", "variant_values": map[string]string{"colour": "Blue"}, "tax_class": "za-standard",
 		}, nil), "a deleted SKU releases its code and combination")

@@ -341,6 +341,64 @@ func TestCheckout(t *testing.T) {
 		}, outbox(s.SessionID))
 	})
 
+	t.Run("bundle expands components for reserve and order snapshot", func(t *testing.T) {
+		compA := gw.sku(fakeSKU{Name: "KitMug", Tracked: true, Price: 11500, Stock: 20, Grams: 350})
+		compB := gw.sku(fakeSKU{Name: "KitTea", Tracked: true, Price: 5000, Stock: 20, Grams: 100})
+		kit := gw.sku(fakeSKU{
+			Name: "MugTeaKit", Tracked: false, Kind: "bundle", Price: 25000, Grams: 450,
+			Components: []fakeComponent{
+				{SKUID: compA, Quantity: 2, ProductName: "KitMug"},
+				{SKUID: compB, Quantity: 1, ProductName: "KitTea"},
+			},
+		})
+		c := customer(t, fakeLine{kit, 2})
+		s := c.quote()
+		require.Len(t, s.Items, 1)
+		assert.False(t, s.Items[0].InventoryTracked)
+		require.NotNil(t, s.Items[0].Components)
+		require.Len(t, *s.Items[0].Components, 2)
+		assert.Equal(t, int64(2), (*s.Items[0].Components)[0].Quantity, "per one bundle unit")
+
+		require.Equal(t, http.StatusOK, c.ship(s.SessionID, map[string]any{"delivery_address": address}, &s))
+		code, s := c.confirm(s.SessionID, "bundle", pay(cardVisa))
+		require.Equal(t, http.StatusOK, code)
+		assert.Equal(t, api.COMPLETED, s.State)
+		assert.Equal(t, int64(16), gw.stock(compA), "2 kits × 2 mugs")
+		assert.Equal(t, int64(18), gw.stock(compB), "2 kits × 1 tea")
+
+		o := gw.orderFor(s.SessionID.String())
+		items, _ := o.Body["items"].([]any)
+		require.Len(t, items, 1)
+		line := items[0].(map[string]any)
+		assert.Equal(t, kit, line["sku_id"])
+		comps, _ := line["components"].([]any)
+		require.Len(t, comps, 2)
+		assert.Equal(t, float64(2), comps[0].(map[string]any)["quantity"])
+	})
+
+	t.Run("bundle component shortage attributes to the bundle line", func(t *testing.T) {
+		scarce := gw.sku(fakeSKU{Name: "Scarce", Tracked: true, Price: 1000, Stock: 1})
+		plenty := gw.sku(fakeSKU{Name: "Plenty", Tracked: true, Price: 1000, Stock: 50})
+		kit := gw.sku(fakeSKU{
+			Name: "ScarceKit", Tracked: false, Kind: "bundle", Price: 15000,
+			Components: []fakeComponent{
+				{SKUID: scarce, Quantity: 2, ProductName: "Scarce"},
+				{SKUID: plenty, Quantity: 1, ProductName: "Plenty"},
+			},
+		})
+		c := customer(t, fakeLine{kit, 1})
+		s := c.start()
+		code, s := c.confirm(s.SessionID, "bundle-oos", pay(cardVisa))
+		require.Equal(t, http.StatusUnprocessableEntity, code)
+		assert.Equal(t, "insufficient_stock", s.Failure.Reason)
+		require.NotNil(t, s.Failure.Detail)
+		shortages, ok := (*s.Failure.Detail)["shortages"].([]any)
+		require.True(t, ok)
+		require.NotEmpty(t, shortages)
+		assert.Equal(t, kit, shortages[0].(map[string]any)["sku_id"], "conflict on the payable bundle SKU")
+		assert.Equal(t, int64(1), gw.stock(scarce), "nothing reserved")
+	})
+
 	t.Run("declined card releases the stock", func(t *testing.T) {
 		c := customer(t, fakeLine{mug, 1})
 		before := gw.stock(mug)

@@ -54,6 +54,20 @@ const (
 	// DefaultAlsoBought and MaxAlsoBought bound GET /products/{id}/also-bought.
 	DefaultAlsoBought = 8
 	MaxAlsoBought     = 24
+	// MinBundleComponents / MaxBundleComponents bound a flat kit's SKU list
+	// (docs/features/Composed catalogue offers bundles and buy-X-get-Y.md).
+	MinBundleComponents = 2
+	MaxBundleComponents = 50
+)
+
+// ProductKind is the catalogue role of a product. Bundles are virtual
+// kits composed of ordinary (standard) SKUs.
+type ProductKind string
+
+// Product kinds.
+const (
+	KindStandard ProductKind = "standard"
+	KindBundle   ProductKind = "bundle"
 )
 
 var (
@@ -106,6 +120,7 @@ type Product struct {
 	Name        string
 	Description string
 	IsDigital   bool
+	Kind        ProductKind
 	Status      Status
 	Attributes  map[string]string
 	CategoryIDs []string
@@ -115,18 +130,37 @@ type Product struct {
 	// RelatedProductIDs is the editorial related list in display order.
 	// Public views carry only active targets; admins see the stored list.
 	RelatedProductIDs []string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// Bundle is set when Kind is bundle: the ordered component SKUs of the
+	// product's (single) SKU. Nil for standard products.
+	Bundle    *Bundle
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Bundle is the composition of a kit product.
+type Bundle struct {
+	Components []BundleComponent
+}
+
+// BundleComponent is one line of a flat kit: a non-bundle SKU and how many.
+type BundleComponent struct {
+	SKUID       string
+	ProductID   string
+	ProductName string
+	Quantity    int
+	SortOrder   int
 }
 
 // ProductInput is the settable part of a Product. Updates replace every
-// field.
+// field. Kind is create-only and may only be standard on POST /admin/products;
+// kits are created via POST /admin/bundles.
 type ProductInput struct {
 	Name        string
 	Description string
 	SupplierID  string
 	IsDigital   bool
-	Status      Status // "" means active
+	Kind        ProductKind // "" means standard; bundle is rejected here
+	Status      Status      // "" means active
 	CategoryIDs []string
 	Attributes  map[string]string
 }
@@ -139,6 +173,14 @@ func (in *ProductInput) Validate() error {
 	checkText(v, "name", in.Name, MaxNameLen, true)
 	checkText(v, "description", in.Description, MaxDescriptionLen, false)
 	checkStatus(v, &in.Status)
+	switch in.Kind {
+	case "", KindStandard:
+		in.Kind = KindStandard
+	case KindBundle:
+		v.Field("kind", "invalid", "Create kits with POST /admin/bundles")
+	default:
+		v.Field("kind", "invalid", "standard or omit")
+	}
 	if len(in.CategoryIDs) > MaxCategories {
 		v.Field("category_ids", "too_many", fmt.Sprintf("At most %d categories", MaxCategories))
 	}
@@ -157,6 +199,131 @@ func (in *ProductInput) Validate() error {
 		return v.Build()
 	}
 	return nil
+}
+
+// BundleInput creates a flat physical kit: one product (kind=bundle), one
+// untracked SKU, and ≥2 component SKUs.
+type BundleInput struct {
+	Name        string
+	Description string
+	CategoryIDs []string
+	SKUCode     string
+	TaxClass    string
+	Components  []BundleComponentInput
+}
+
+// BundleUpdateInput replaces a kit's components and optionally its name,
+// description and categories. Empty name leaves the product name unchanged.
+type BundleUpdateInput struct {
+	Name        string
+	Description *string
+	CategoryIDs *[]string
+	Components  []BundleComponentInput
+}
+
+// BundleComponentInput is one component line on create/replace.
+type BundleComponentInput struct {
+	SKUID    string
+	Quantity int
+}
+
+// Validate normalises in and reports invalid fields. Whether each SKU is an
+// eligible component needs the database.
+func (in *BundleInput) Validate() error {
+	v := ycerrors.Validation()
+	in.Name = strings.TrimSpace(in.Name)
+	in.Description = strings.TrimSpace(in.Description)
+	in.SKUCode = strings.TrimSpace(in.SKUCode)
+	checkText(v, "name", in.Name, MaxNameLen, true)
+	checkText(v, "description", in.Description, MaxDescriptionLen, false)
+	checkText(v, "sku_code", in.SKUCode, MaxSKUCodeLen, true)
+	if !taxClassRe.MatchString(in.TaxClass) {
+		v.Field("tax_class", "invalid", "A yc-pricing tax class ID, e.g. za-standard")
+	}
+	if len(in.CategoryIDs) > MaxCategories {
+		v.Field("category_ids", "too_many", fmt.Sprintf("At most %d categories", MaxCategories))
+	}
+	slices.Sort(in.CategoryIDs)
+	in.CategoryIDs = slices.Compact(in.CategoryIDs)
+	if in.CategoryIDs == nil {
+		in.CategoryIDs = []string{}
+	}
+	comps, err := ValidateBundleComponents(in.Components)
+	if err != nil {
+		return err
+	}
+	in.Components = comps
+	if v.HasErrors() {
+		return v.Build()
+	}
+	return nil
+}
+
+// Validate normalises in and reports invalid fields.
+func (in *BundleUpdateInput) Validate() error {
+	v := ycerrors.Validation()
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name != "" {
+		checkText(v, "name", in.Name, MaxNameLen, true)
+	}
+	if in.Description != nil {
+		*in.Description = strings.TrimSpace(*in.Description)
+		checkText(v, "description", *in.Description, MaxDescriptionLen, false)
+	}
+	if in.CategoryIDs != nil {
+		if len(*in.CategoryIDs) > MaxCategories {
+			v.Field("category_ids", "too_many", fmt.Sprintf("At most %d categories", MaxCategories))
+		}
+		slices.Sort(*in.CategoryIDs)
+		*in.CategoryIDs = slices.Compact(*in.CategoryIDs)
+	}
+	comps, err := ValidateBundleComponents(in.Components)
+	if err != nil {
+		return err
+	}
+	in.Components = comps
+	if v.HasErrors() {
+		return v.Build()
+	}
+	return nil
+}
+
+// ValidateBundleComponents normalises components: distinct UUID SKUs, quantity
+// ≥1, between MinBundleComponents and MaxBundleComponents. Eligibility of
+// each SKU needs the database.
+func ValidateBundleComponents(in []BundleComponentInput) ([]BundleComponentInput, error) {
+	v := ycerrors.Validation()
+	seen := make(map[string]struct{}, len(in))
+	out := make([]BundleComponentInput, 0, len(in))
+	for i, c := range in {
+		field := fmt.Sprintf("components[%d]", i)
+		id, err := uuid.Parse(strings.TrimSpace(c.SKUID))
+		if err != nil {
+			v.Field(field+".sku_id", "invalid", "Must be a UUID")
+			continue
+		}
+		s := id.String()
+		if _, dup := seen[s]; dup {
+			v.Field(field+".sku_id", "duplicate", "Component SKUs must be distinct")
+			continue
+		}
+		seen[s] = struct{}{}
+		if c.Quantity < 1 {
+			v.Field(field+".quantity", "invalid", "Must be at least 1")
+			continue
+		}
+		out = append(out, BundleComponentInput{SKUID: s, Quantity: c.Quantity})
+	}
+	switch {
+	case len(out) < MinBundleComponents && !v.HasErrors():
+		v.Field("components", "too_few", fmt.Sprintf("At least %d distinct component SKUs", MinBundleComponents))
+	case len(out) > MaxBundleComponents:
+		v.Field("components", "too_many", fmt.Sprintf("At most %d component SKUs", MaxBundleComponents))
+	}
+	if v.HasErrors() {
+		return nil, v.Build()
+	}
+	return out, nil
 }
 
 // Variant is an axis of variation ("size": S, M, L).
@@ -596,6 +763,9 @@ type SKUDetail struct {
 	SKU
 	ProductName string
 	IsDigital   bool
+	Kind        ProductKind
+	// Components is the flat kit expansion when Kind is bundle; empty otherwise.
+	Components []BundleComponent
 	// Active: both the SKU and its product are active. Status is the SKU's,
 	// or deleted when the product is.
 	Active bool

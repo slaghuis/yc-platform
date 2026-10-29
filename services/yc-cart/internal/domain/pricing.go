@@ -6,6 +6,12 @@ import (
 	money "github.com/slaghuis/yc-platform/libs/yc-money"
 )
 
+// LineQty is one cart line quantity for a pricing evaluation.
+type LineQty struct {
+	SKUID    string
+	Quantity int
+}
+
 // Prices are current gross unit prices from yc-pricing.
 type Prices struct {
 	StoreCurrency string

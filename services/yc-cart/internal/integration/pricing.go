@@ -61,13 +61,21 @@ type evaluateResponse struct {
 // maxLines is yc-pricing's limit per evaluation.
 const maxLines = 100
 
-// UnitPrices returns the gross unit prices of skuIDs, converted to
-// displayCurrency when given. Without an exchange rate the prices come back
-// in the store currency only.
+// UnitPrices returns the gross unit prices of skuIDs at quantity 1.
 func (p *Pricing) UnitPrices(ctx context.Context, skuIDs []string, displayCurrency string) (domain.Prices, error) {
+	lines := make([]domain.LineQty, len(skuIDs))
+	for i, id := range skuIDs {
+		lines[i] = domain.LineQty{SKUID: id, Quantity: 1}
+	}
+	return p.LinePrices(ctx, lines, displayCurrency)
+}
+
+// LinePrices evaluates lines at their cart quantities so sale overlays and
+// buy-X-get-Y campaigns apply. Units are effective unit prices (line gross / qty).
+func (p *Pricing) LinePrices(ctx context.Context, lines []domain.LineQty, displayCurrency string) (domain.Prices, error) {
 	out := domain.Prices{Units: map[string]money.Money{}, Unpriced: map[string]string{}}
-	for start := 0; start < len(skuIDs); start += maxLines {
-		batch := skuIDs[start:min(start+maxLines, len(skuIDs))]
+	for start := 0; start < len(lines); start += maxLines {
+		batch := lines[start:min(start+maxLines, len(lines))]
 		res, err := p.evaluate(ctx, batch, displayCurrency)
 		if err != nil && displayCurrency != "" && httpkit.UpstreamStatus(err) == http.StatusBadRequest {
 			displayCurrency = ""
@@ -77,15 +85,19 @@ func (p *Pricing) UnitPrices(ctx context.Context, skuIDs []string, displayCurren
 		if err != nil {
 			return domain.Prices{}, err
 		}
-		merge(&out, res, displayCurrency)
+		merge(&out, res, batch, displayCurrency)
 	}
 	return out, nil
 }
 
-func (p *Pricing) evaluate(ctx context.Context, skuIDs []string, displayCurrency string) (evaluateResponse, error) {
-	req := evaluateRequest{Lines: make([]evaluateLine, len(skuIDs)), DisplayCurrency: displayCurrency}
-	for i, id := range skuIDs {
-		req.Lines[i] = evaluateLine{SKUID: id, Quantity: 1}
+func (p *Pricing) evaluate(ctx context.Context, lines []domain.LineQty, displayCurrency string) (evaluateResponse, error) {
+	req := evaluateRequest{Lines: make([]evaluateLine, len(lines)), DisplayCurrency: displayCurrency}
+	for i, l := range lines {
+		qty := l.Quantity
+		if qty < 1 {
+			qty = 1
+		}
+		req.Lines[i] = evaluateLine{SKUID: l.SKUID, Quantity: qty}
 	}
 	var res evaluateResponse
 	err := p.client.Do(ctx, http.MethodPost, "/internal/prices/evaluate", req, &res)
@@ -95,10 +107,21 @@ func (p *Pricing) evaluate(ctx context.Context, skuIDs []string, displayCurrency
 	return res, err
 }
 
-func merge(out *domain.Prices, res evaluateResponse, displayCurrency string) {
+func merge(out *domain.Prices, res evaluateResponse, lines []domain.LineQty, displayCurrency string) {
 	out.StoreCurrency = res.StoreCurrency
+	qtyBySKU := make(map[string]int, len(lines))
+	for _, l := range lines {
+		qtyBySKU[l.SKUID] = l.Quantity
+		if qtyBySKU[l.SKUID] < 1 {
+			qtyBySKU[l.SKUID] = 1
+		}
+	}
 	for _, l := range res.Lines {
-		out.Units[l.SKUID] = l.Gross
+		qty := int64(qtyBySKU[l.SKUID])
+		if qty < 1 {
+			qty = 1
+		}
+		out.Units[l.SKUID] = money.New(l.Gross.AmountMinor/qty, l.Gross.Currency)
 	}
 	for _, u := range res.Unpriced {
 		out.Unpriced[u.SKUID] = u.Reason
@@ -113,6 +136,10 @@ func merge(out *domain.Prices, res evaluateResponse, displayCurrency string) {
 		}
 	}
 	for _, l := range res.Display.Lines {
-		out.Display.Units[l.SKUID] = l.Gross
+		qty := int64(qtyBySKU[l.SKUID])
+		if qty < 1 {
+			qty = 1
+		}
+		out.Display.Units[l.SKUID] = money.New(l.Gross.AmountMinor/qty, l.Gross.Currency)
 	}
 }

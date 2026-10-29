@@ -42,11 +42,33 @@ func TestProductInputValidate(t *testing.T) {
 	require.NoError(t, in.Validate())
 	assert.Equal(t, "Mug", in.Name)
 	assert.Equal(t, domain.StatusActive, in.Status)
+	assert.Equal(t, domain.KindStandard, in.Kind)
 	assert.Equal(t, []string{"a", "b"}, in.CategoryIDs)
 	assert.NotNil(t, in.Attributes)
 
-	bad := domain.ProductInput{Name: " ", Status: domain.StatusDeleted}
-	assert.Equal(t, []string{"name:required", "status:invalid"}, fields(t, bad.Validate()))
+	bad := domain.ProductInput{Name: " ", Status: domain.StatusDeleted, Kind: domain.KindBundle}
+	assert.Equal(t, []string{"name:required", "status:invalid", "kind:invalid"}, fields(t, bad.Validate()))
+}
+
+func TestValidateBundleComponents(t *testing.T) {
+	a := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+	got, err := domain.ValidateBundleComponents([]domain.BundleComponentInput{
+		{SKUID: b, Quantity: 2}, {SKUID: " " + a + " ", Quantity: 1},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []domain.BundleComponentInput{{SKUID: b, Quantity: 2}, {SKUID: a, Quantity: 1}}, got)
+
+	_, err = domain.ValidateBundleComponents([]domain.BundleComponentInput{{SKUID: a, Quantity: 1}})
+	assert.Equal(t, []string{"components:too_few"}, fields(t, err))
+
+	_, err = domain.ValidateBundleComponents([]domain.BundleComponentInput{
+		{SKUID: a, Quantity: 1}, {SKUID: a, Quantity: 2}, {SKUID: "nope", Quantity: 0},
+	})
+	assert.Equal(t, []string{
+		"components[1].sku_id:duplicate", "components[2].sku_id:invalid",
+	}, fields(t, err))
 }
 
 func TestVariantInputValidate(t *testing.T) {

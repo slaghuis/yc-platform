@@ -133,16 +133,26 @@ func (s *Service) quote(ctx context.Context, a authctx.AuthContext, cartType str
 			return domain.Session{}, ycerrors.Internal("pricing did not price every line").
 				WithInternal("sku %s: priced %d of %d", l.SKUID, p.Quantity, l.Quantity)
 		}
-		sess.Items = append(sess.Items, domain.Item{
+		item := domain.Item{
 			SKUID: l.SKUID, ProductID: k.ProductID, SKUCode: k.SKUCode, Name: k.ProductName,
 			VariantValues: k.VariantValues, Quantity: l.Quantity, IsDigital: k.IsDigital,
 			InventoryTracked: k.InventoryTracked, TaxClass: k.TaxClass, WeightGrams: k.WeightGrams,
 			UnitPriceMinor: (p.Gross.AmountMinor + l.Quantity/2) / l.Quantity, LineTotalMinor: p.Gross.AmountMinor,
 			TaxMinor: p.Tax.AmountMinor,
-		})
+		}
+		if k.Kind == "bundle" && len(k.Components) > 0 {
+			item.Components = make([]domain.ComponentSnapshot, len(k.Components))
+			for i, c := range k.Components {
+				item.Components[i] = domain.ComponentSnapshot{
+					SKUID: c.SKUID, Quantity: c.Quantity, ProductName: c.ProductName,
+				}
+			}
+		}
+		sess.Items = append(sess.Items, item)
 		sess.ItemsTotalMinor += p.Gross.AmountMinor
 		sess.RequiresShipping = sess.RequiresShipping || !k.IsDigital
-		sess.HasTrackedItems = sess.HasTrackedItems || k.InventoryTracked
+		// Bundle SKUs are untracked; components drive RESERVING (composed-offers FR).
+		sess.HasTrackedItems = sess.HasTrackedItems || k.InventoryTracked || len(item.Components) > 0
 	}
 	sess.TotalMinor = sess.ItemsTotalMinor
 	sess.Route(routing(route))

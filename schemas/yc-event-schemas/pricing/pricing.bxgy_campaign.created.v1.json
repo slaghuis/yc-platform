@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.bxgy_campaign.created.v1.json",
+  "title": "pricing.bxgy_campaign.created.v1",
+  "description": "A shop admin created a buy-X-get-Y campaign. Exactly one of qualifying_product_id/qualifying_sku_id and one of target_product_id/target_sku_id are set.",
+  "type": "object",
+  "required": ["campaign_id", "name", "discount_type", "discount_value", "starts_at", "enabled", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "qualifying_product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "qualifying_sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_product_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "target_sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "discount_type": {
+      "type": "string",
+      "enum": ["percent", "fixed"]
+    },
+    "discount_value": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Percent in basis points (10000 = 100%) or fixed minor units."
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Absent when the campaign has no end."
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

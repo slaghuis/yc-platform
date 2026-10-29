@@ -157,7 +157,7 @@ Evaluators are registered in a configurable pipeline. Order is tenant-overridabl
 
 The contract is `services/yc-pricing/api/openapi.yaml`. Differences from the tables above:
 
-- **Pipeline** is BasePrice → Tax → DisplayCurrency. Promotions, the `/promotions` endpoints and the internal endpoints arrive in Phase 3.
+- **Pipeline** is BasePrice → Sale → BuyXGetY → Tax → DisplayCurrency (issue #31).
 - **`POST /prices/evaluate`** takes `{"lines": [{"sku_id", "quantity"}], "jurisdiction"?, "display_currency"?}`. SKUs that cannot be priced are returned in `unpriced` with a reason (`no_base_price`, `unknown_sku`, `unknown_tax_class`) and left out of the totals. `GET /prices/sku/{id}` evaluates quantity 1 and returns 404 when the SKU is unpriced. Responses are not cached yet.
 - **Display currency** comes from the body, then the `display_currency` query parameter, then the `X-YC-Display-Currency` header. A currency with no known rate is a 400 (`display_currency: unavailable`). Converted amounts are in `display`; store-currency amounts never change.
 - **Tax-inclusive meaning is per price.** A base price records the shop's `tax_inclusive` setting when it was set, and is always evaluated that way. Changing the setting affects only prices set afterwards. `tax_inclusive` in the result is the shop's display preference (gross when true, net when false).
@@ -171,7 +171,9 @@ The contract is `services/yc-pricing/api/openapi.yaml`. Differences from the tab
 ### Phase 3 Implementation Notes
 
 - **`POST /internal/prices/evaluate`** is the service-to-service form of `POST /prices/evaluate` (same body and result), reached only through yc-gateway's internal listener with a service token (ADR-021). yc-cart uses it to snapshot and re-price cart lines. The display currency comes from the body, then `X-YC-Display-Currency`; the gateway forwards the calling service (`X-YC-Caller-Service`) and the tenant the service acts for. `/internal/prices/sku/{id}` is not implemented; callers evaluate quantity 1.
-- **Promotions** are still not in the pipeline; they arrive with yc-promotion.
+- **Sale overlays** — `PUT/GET/DELETE /admin/sale-prices/sku/{id}` set a time-bounded promotional unit price (one per SKU). Evaluate applies active overlays before tax; `list_unit_price` and `discounts[]` appear on priced lines.
+- **Buy-X-get-Y** — `POST/GET/PUT/DELETE /admin/campaigns/bxgy` with admin-picked qualifying and target (product_id XOR sku_id). Applies when the evaluate request contains both; skips a target line that already has a sale overlay (no stack in MVP). Percent values are basis points (10000 = 100%).
+- **Coupon / voucher codes** and loyalty remain out of scope (#36).
 
 ## Database Schema
 

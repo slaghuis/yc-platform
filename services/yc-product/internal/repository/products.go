@@ -11,23 +11,27 @@ import (
 	"github.com/slaghuis/yc-platform/services/yc-product/internal/domain"
 )
 
-const productColumns = `id, tenant_id, COALESCE(supplier_id::text, ''), name, description, is_digital,
+const productColumns = `id, tenant_id, COALESCE(supplier_id::text, ''), name, description, is_digital, kind,
 	status, attributes, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (domain.Product, error) {
 	var p domain.Product
-	err := row.Scan(&p.ID, &p.TenantID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital,
+	err := row.Scan(&p.ID, &p.TenantID, &p.SupplierID, &p.Name, &p.Description, &p.IsDigital, &p.Kind,
 		&p.Status, &p.Attributes, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
 // CreateProduct inserts a product and its categories for tenantID.
 func (c Catalog) CreateProduct(ctx context.Context, tx pgx.Tx, tenantID string, in domain.ProductInput) (domain.Product, error) {
+	kind := in.Kind
+	if kind == "" {
+		kind = domain.KindStandard
+	}
 	p, err := scanProduct(tx.QueryRow(ctx, `
-		INSERT INTO products (tenant_id, supplier_id, name, description, is_digital, status, attributes)
-		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7)
+		INSERT INTO products (tenant_id, supplier_id, name, description, is_digital, kind, status, attributes)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6, $7, $8)
 		RETURNING `+productColumns,
-		tenantID, in.SupplierID, in.Name, in.Description, in.IsDigital, in.Status, in.Attributes))
+		tenantID, in.SupplierID, in.Name, in.Description, in.IsDigital, kind, in.Status, in.Attributes))
 	if dbkit.IsForeignKeyViolation(err) {
 		return domain.Product{}, unknownSupplier()
 	}
@@ -60,6 +64,7 @@ func (Catalog) GetProduct(ctx context.Context, tx pgx.Tx, id string, forUpdate b
 
 // LoadChildren fills p's categories, related product ids, variants, images
 // and SKUs; inactive SKUs and related products only when includeInactive.
+// Bundle products also load their component list.
 func (c Catalog) LoadChildren(ctx context.Context, tx pgx.Tx, p *domain.Product, includeInactive bool) error {
 	var err error
 	if p.CategoryIDs, err = c.categoryIDs(ctx, tx, p.ID); err != nil {
@@ -87,14 +92,23 @@ func (c Catalog) LoadChildren(ctx context.Context, tx pgx.Tx, p *domain.Product,
 	if p.SKUs == nil {
 		p.SKUs = []domain.SKU{}
 	}
+	if p.Kind == domain.KindBundle {
+		comps, err := c.BundleComponentsOfProduct(ctx, tx, p.ID)
+		if err != nil {
+			return err
+		}
+		p.Bundle = &domain.Bundle{Components: comps}
+	}
 	return nil
 }
 
 // UpdateProduct replaces a product's settable fields and categories.
+// Kind is immutable; is_digital stays false for kits.
 func (c Catalog) UpdateProduct(ctx context.Context, tx pgx.Tx, id string, in domain.ProductInput) (domain.Product, error) {
 	p, err := scanProduct(tx.QueryRow(ctx, `
 		UPDATE products SET supplier_id = NULLIF($2, '')::uuid, name = $3, description = $4,
-			is_digital = $5, status = $6, attributes = $7, updated_at = NOW()
+			is_digital = CASE WHEN kind = 'bundle' THEN FALSE ELSE $5 END,
+			status = $6, attributes = $7, updated_at = NOW()
 		WHERE id = $1 AND status <> 'deleted'
 		RETURNING `+productColumns,
 		id, in.SupplierID, in.Name, in.Description, in.IsDigital, in.Status, in.Attributes))

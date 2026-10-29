@@ -245,6 +245,21 @@ func session(s domain.Session, admin bool) api.Session {
 			v := it.VariantValues
 			items[i].VariantValues = &v
 		}
+		if len(it.Components) > 0 {
+			comps := make([]api.LineComponent, len(it.Components))
+			for j, c := range it.Components {
+				comps[j] = api.LineComponent{SkuID: parseUUID(c.SKUID), Quantity: c.Quantity}
+				if c.ProductName != "" {
+					n := c.ProductName
+					comps[j].ProductName = &n
+				}
+				if c.SKUCode != "" {
+					code := c.SKUCode
+					comps[j].SkuCode = &code
+				}
+			}
+			items[i].Components = &comps
+		}
 	}
 	options := make([]api.ShippingOption, len(s.ShippingOptions))
 	for i, o := range s.ShippingOptions {

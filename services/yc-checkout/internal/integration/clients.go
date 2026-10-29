@@ -100,6 +100,14 @@ func (c *Clients) Cart(ctx context.Context, userID, cartType string) (Cart, erro
 	return out, err
 }
 
+// SKUComponent is one flat kit line from yc-product (per bundle unit).
+type SKUComponent struct {
+	SKUID       string `json:"sku_id"`
+	ProductID   string `json:"product_id,omitempty"`
+	ProductName string `json:"product_name,omitempty"`
+	Quantity    int64  `json:"quantity"`
+}
+
 // SKU is yc-product's description of a SKU.
 type SKU struct {
 	SKUID            string         `json:"sku_id"`
@@ -108,10 +116,13 @@ type SKU struct {
 	ProductName      string         `json:"product_name"`
 	VariantValues    map[string]any `json:"variant_values"`
 	IsDigital        bool           `json:"is_digital"`
+	Kind             string         `json:"kind"`
 	InventoryTracked bool           `json:"inventory_tracked"`
 	TaxClass         string         `json:"tax_class"`
 	WeightGrams      *int64         `json:"weight_grams,omitempty"`
 	Status           string         `json:"status"`
+	// Components is the kit expansion when Kind is bundle; empty otherwise.
+	Components []SKUComponent `json:"components"`
 }
 
 // SKUBatch is the SKUs found and the IDs that were not.
@@ -331,18 +342,27 @@ func (c *Clients) Transaction(ctx context.Context, id string) (Transaction, erro
 	return out, err
 }
 
+// OrderComponent is a kit component snapshot on an order line.
+type OrderComponent struct {
+	SKUID       string `json:"sku_id"`
+	Quantity    int64  `json:"quantity"`
+	ProductName string `json:"product_name,omitempty"`
+	SKUCode     string `json:"sku_code,omitempty"`
+}
+
 // OrderItem is one order line.
 type OrderItem struct {
-	SKUID                 string         `json:"sku_id"`
-	ProductID             string         `json:"product_id,omitempty"`
-	SKUCode               string         `json:"sku_code,omitempty"`
-	NameSnapshot          string         `json:"name_snapshot"`
-	VariantValuesSnapshot map[string]any `json:"variant_values_snapshot,omitempty"`
-	Quantity              int64          `json:"quantity"`
-	UnitPriceMinor        int64          `json:"unit_price_minor"`
-	LineTotalMinor        int64          `json:"line_total_minor"`
-	TaxMinor              int64          `json:"tax_minor"`
-	IsDigital             bool           `json:"is_digital"`
+	SKUID                 string           `json:"sku_id"`
+	ProductID             string           `json:"product_id,omitempty"`
+	SKUCode               string           `json:"sku_code,omitempty"`
+	NameSnapshot          string           `json:"name_snapshot"`
+	VariantValuesSnapshot map[string]any   `json:"variant_values_snapshot,omitempty"`
+	Quantity              int64            `json:"quantity"`
+	UnitPriceMinor        int64            `json:"unit_price_minor"`
+	LineTotalMinor        int64            `json:"line_total_minor"`
+	TaxMinor              int64            `json:"tax_minor"`
+	IsDigital             bool             `json:"is_digital"`
+	Components            []OrderComponent `json:"components,omitempty"`
 }
 
 // GuestContact is a visitor's contact details.

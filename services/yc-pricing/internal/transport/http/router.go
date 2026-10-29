@@ -32,6 +32,14 @@ type Pricing interface {
 	PutTaxClass(ctx context.Context, id string, in domain.TaxClassInput) (domain.TaxClass, bool, error)
 	DeleteTaxClass(ctx context.Context, id string) error
 	Evaluate(ctx context.Context, req domain.Request) (domain.Result, error)
+	SetSalePrice(ctx context.Context, skuID string, in domain.SalePriceInput) (domain.SalePrice, error)
+	GetSalePrice(ctx context.Context, skuID string) (domain.SalePrice, error)
+	RemoveSalePrice(ctx context.Context, skuID string) error
+	CreateBXGY(ctx context.Context, in domain.BXGYInput) (domain.BXGYCampaign, error)
+	UpdateBXGY(ctx context.Context, id string, in domain.BXGYInput) (domain.BXGYCampaign, error)
+	GetBXGY(ctx context.Context, id string) (domain.BXGYCampaign, error)
+	ListBXGY(ctx context.Context) ([]domain.BXGYCampaign, error)
+	DeleteBXGY(ctx context.Context, id string) error
 }
 
 // NewRouter returns the service's routes on the standard httpkit chain.
@@ -57,6 +65,8 @@ func Routes() []httpkit.RegisteredRoute {
 	return []httpkit.RegisteredRoute{
 		{Prefix: "/prices", Methods: []string{http.MethodGet, http.MethodPost}},
 		{Prefix: "/admin/prices", Roles: admin},
+		{Prefix: "/admin/sale-prices", Roles: admin},
+		{Prefix: "/admin/campaigns", Roles: admin},
 		{Prefix: "/admin/pricing-config", Roles: admin},
 		{Prefix: "/admin/tax-classes", Roles: admin},
 		{Prefix: "/internal/prices", Methods: []string{http.MethodPost}},
@@ -238,6 +248,74 @@ func (h handlers) DeleteTaxClass(ctx context.Context, req api.DeleteTaxClassRequ
 	return api.DeleteTaxClass204Response{}, nil
 }
 
+func (h handlers) GetSalePrice(ctx context.Context, req api.GetSalePriceRequestObject) (api.GetSalePriceResponseObject, error) {
+	s, err := h.svc.GetSalePrice(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetSalePrice200JSONResponse(salePrice(s)), nil
+}
+
+func (h handlers) SetSalePrice(ctx context.Context, req api.SetSalePriceRequestObject) (api.SetSalePriceResponseObject, error) {
+	s, err := h.svc.SetSalePrice(ctx, req.ID.String(), domain.SalePriceInput{
+		Price: req.Body.Price, Name: deref(req.Body.Name), StartsAt: req.Body.StartsAt, EndsAt: req.Body.EndsAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return api.SetSalePrice200JSONResponse(salePrice(s)), nil
+}
+
+func (h handlers) RemoveSalePrice(ctx context.Context, req api.RemoveSalePriceRequestObject) (api.RemoveSalePriceResponseObject, error) {
+	if err := h.svc.RemoveSalePrice(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.RemoveSalePrice204Response{}, nil
+}
+
+func (h handlers) ListBXGYCampaigns(ctx context.Context, _ api.ListBXGYCampaignsRequestObject) (api.ListBXGYCampaignsResponseObject, error) {
+	items, err := h.svc.ListBXGY(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := api.ListBXGYCampaigns200JSONResponse{Items: make([]api.BXGYCampaign, len(items))}
+	for i, c := range items {
+		out.Items[i] = bxgy(c)
+	}
+	return out, nil
+}
+
+func (h handlers) CreateBXGYCampaign(ctx context.Context, req api.CreateBXGYCampaignRequestObject) (api.CreateBXGYCampaignResponseObject, error) {
+	c, err := h.svc.CreateBXGY(ctx, bxgyInput(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateBXGYCampaign201JSONResponse(bxgy(c)), nil
+}
+
+func (h handlers) GetBXGYCampaign(ctx context.Context, req api.GetBXGYCampaignRequestObject) (api.GetBXGYCampaignResponseObject, error) {
+	c, err := h.svc.GetBXGY(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetBXGYCampaign200JSONResponse(bxgy(c)), nil
+}
+
+func (h handlers) UpdateBXGYCampaign(ctx context.Context, req api.UpdateBXGYCampaignRequestObject) (api.UpdateBXGYCampaignResponseObject, error) {
+	c, err := h.svc.UpdateBXGY(ctx, req.ID.String(), bxgyInput(*req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.UpdateBXGYCampaign200JSONResponse(bxgy(c)), nil
+}
+
+func (h handlers) DeleteBXGYCampaign(ctx context.Context, req api.DeleteBXGYCampaignRequestObject) (api.DeleteBXGYCampaignResponseObject, error) {
+	if err := h.svc.DeleteBXGY(ctx, req.ID.String()); err != nil {
+		return nil, err
+	}
+	return api.DeleteBXGYCampaign204Response{}, nil
+}
+
 func result(r domain.Result) api.PricingResult {
 	out := api.PricingResult{
 		StoreCurrency: r.StoreCurrency,
@@ -257,12 +335,22 @@ func result(r domain.Result) api.PricingResult {
 			SkuID: parseUUID(l.SKUID), Quantity: l.Quantity, TaxClass: l.TaxClass,
 			UnitPrice: l.UnitPrice, PriceIncludesTax: l.PriceIncludesTax,
 			Net: l.Net, Tax: l.Tax, Gross: l.Gross, Taxes: make([]api.LineTax, len(l.Taxes)),
+			ListUnitPrice: l.ListUnitPrice,
 		}
 		for j, t := range l.Taxes {
 			pl.Taxes[j] = api.LineTax{
 				Jurisdiction: t.Jurisdiction, Rule: t.Rule, Rate: t.Rate.String(), Base: t.Base,
 				BaseAmount: t.BaseAmount, Amount: t.Amount,
 			}
+		}
+		if len(l.Discounts) > 0 {
+			ds := make([]api.LineDiscount, len(l.Discounts))
+			for j, d := range l.Discounts {
+				ds[j] = api.LineDiscount{
+					Type: api.LineDiscountType(d.Type), Name: optional(d.Name), Amount: d.Amount,
+				}
+			}
+			pl.Discounts = &ds
 		}
 		out.Lines[i] = pl
 	}
@@ -292,6 +380,58 @@ func result(r domain.Result) api.PricingResult {
 
 func basePrice(p domain.BasePrice) api.BasePrice {
 	return api.BasePrice{SkuID: parseUUID(p.SKUID), Price: p.Price, TaxInclusive: p.TaxInclusive, ValidFrom: p.ValidFrom}
+}
+
+func salePrice(s domain.SalePrice) api.SalePrice {
+	return api.SalePrice{
+		SkuID: parseUUID(s.SKUID), Price: s.Price, TaxInclusive: s.TaxInclusive,
+		Name: optional(s.Name), StartsAt: s.StartsAt, EndsAt: s.EndsAt, UpdatedAt: s.UpdatedAt,
+	}
+}
+
+func bxgyInput(b api.BXGYCampaignInput) domain.BXGYInput {
+	in := domain.BXGYInput{
+		Name: b.Name, DiscountType: string(b.DiscountType), DiscountValue: b.DiscountValue,
+		StartsAt: b.StartsAt, EndsAt: b.EndsAt, Enabled: b.Enabled,
+	}
+	if b.QualifyingProductID != nil {
+		in.QualifyingProductID = b.QualifyingProductID.String()
+	}
+	if b.QualifyingSkuID != nil {
+		in.QualifyingSKUID = b.QualifyingSkuID.String()
+	}
+	if b.TargetProductID != nil {
+		in.TargetProductID = b.TargetProductID.String()
+	}
+	if b.TargetSkuID != nil {
+		in.TargetSKUID = b.TargetSkuID.String()
+	}
+	return in
+}
+
+func bxgy(c domain.BXGYCampaign) api.BXGYCampaign {
+	out := api.BXGYCampaign{
+		ID: parseUUID(c.ID), Name: c.Name, DiscountType: api.BXGYCampaignDiscountType(c.DiscountType),
+		DiscountValue: c.DiscountValue, StartsAt: c.StartsAt, EndsAt: c.EndsAt, Enabled: c.Enabled,
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+	}
+	if c.QualifyingProductID != "" {
+		id := parseUUID(c.QualifyingProductID)
+		out.QualifyingProductID = &id
+	}
+	if c.QualifyingSKUID != "" {
+		id := parseUUID(c.QualifyingSKUID)
+		out.QualifyingSkuID = &id
+	}
+	if c.TargetProductID != "" {
+		id := parseUUID(c.TargetProductID)
+		out.TargetProductID = &id
+	}
+	if c.TargetSKUID != "" {
+		id := parseUUID(c.TargetSKUID)
+		out.TargetSkuID = &id
+	}
+	return out
 }
 
 func config(c domain.Config) api.PricingConfig {

@@ -181,3 +181,38 @@ func TestRetryLater(t *testing.T) {
 	}
 	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 5 * time.Second, 5 * time.Second}, delays)
 }
+
+func TestTrackedItemsExpandsBundles(t *testing.T) {
+	mug, tea, kit := "mug", "tea", "kit"
+	s := domain.Session{Items: []domain.Item{
+		{SKUID: kit, Quantity: 2, InventoryTracked: false, Components: []domain.ComponentSnapshot{
+			{SKUID: mug, Quantity: 2}, {SKUID: tea, Quantity: 1},
+		}},
+		{SKUID: mug, Quantity: 1, InventoryTracked: true},
+		{SKUID: "ebook", Quantity: 1, InventoryTracked: false},
+	}}
+	got := s.TrackedItems()
+	require.Len(t, got, 2)
+	assert.Equal(t, mug, got[0].SKUID)
+	assert.Equal(t, int64(5), got[0].Quantity, "2×2 from kit + 1 standalone")
+	assert.Equal(t, tea, got[1].SKUID)
+	assert.Equal(t, int64(2), got[1].Quantity)
+}
+
+func TestAttributeShortages(t *testing.T) {
+	mug, tea, kit := "mug", "tea", "kit"
+	s := domain.Session{Items: []domain.Item{
+		{SKUID: kit, Quantity: 1, Components: []domain.ComponentSnapshot{
+			{SKUID: mug, Quantity: 2}, {SKUID: tea, Quantity: 1},
+		}},
+		{SKUID: "lamp", Quantity: 1, InventoryTracked: true},
+	}}
+	raw := []any{
+		map[string]any{"sku_id": mug, "requested": float64(2), "available": float64(0)},
+		map[string]any{"sku_id": "lamp", "requested": float64(1), "available": float64(0)},
+	}
+	got := s.AttributeShortages(raw).([]any)
+	require.Len(t, got, 2)
+	assert.Equal(t, kit, got[0].(map[string]any)["sku_id"], "component shortage → bundle line")
+	assert.Equal(t, "lamp", got[1].(map[string]any)["sku_id"], "ordinary line unchanged")
+}

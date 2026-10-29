@@ -111,9 +111,14 @@ const (
 	TypePreferenceMarketingChangedV1         = "preference.marketing.changed.v1"
 	TypePricingBasePriceRemovedV1            = "pricing.base_price.removed.v1"
 	TypePricingBasePriceSetV1                = "pricing.base_price.set.v1"
+	TypePricingBxgyCampaignCreatedV1         = "pricing.bxgy_campaign.created.v1"
+	TypePricingBxgyCampaignDeletedV1         = "pricing.bxgy_campaign.deleted.v1"
+	TypePricingBxgyCampaignUpdatedV1         = "pricing.bxgy_campaign.updated.v1"
 	TypePricingConfigChangedV1               = "pricing.config.changed.v1"
 	TypePricingExchangeRatesStaleV1          = "pricing.exchange_rates_stale.v1"
 	TypePricingExchangeRatesUpdatedV1        = "pricing.exchange_rates_updated.v1"
+	TypePricingSalePriceRemovedV1            = "pricing.sale_price.removed.v1"
+	TypePricingSalePriceSetV1                = "pricing.sale_price.set.v1"
 	TypePricingTaxClassCreatedV1             = "pricing.tax_class.created.v1"
 	TypePricingTaxClassDeletedV1             = "pricing.tax_class.deleted.v1"
 	TypePricingTaxClassUpdatedV1             = "pricing.tax_class.updated.v1"
@@ -263,9 +268,14 @@ var EventTypes = []string{
 	TypePreferenceMarketingChangedV1,
 	TypePricingBasePriceRemovedV1,
 	TypePricingBasePriceSetV1,
+	TypePricingBxgyCampaignCreatedV1,
+	TypePricingBxgyCampaignDeletedV1,
+	TypePricingBxgyCampaignUpdatedV1,
 	TypePricingConfigChangedV1,
 	TypePricingExchangeRatesStaleV1,
 	TypePricingExchangeRatesUpdatedV1,
+	TypePricingSalePriceRemovedV1,
+	TypePricingSalePriceSetV1,
 	TypePricingTaxClassCreatedV1,
 	TypePricingTaxClassDeletedV1,
 	TypePricingTaxClassUpdatedV1,
@@ -505,6 +515,10 @@ const (
 	PreferenceChannelVerifiedV1ChannelSms                    = "sms"
 	PreferenceChannelVerifiedV1ChannelWhatsapp               = "whatsapp"
 	PreferenceChannelVerifiedV1ChannelTelegram               = "telegram"
+	PricingBxgyCampaignCreatedV1DiscountTypePercent          = "percent"
+	PricingBxgyCampaignCreatedV1DiscountTypeFixed            = "fixed"
+	PricingBxgyCampaignUpdatedV1DiscountTypePercent          = "percent"
+	PricingBxgyCampaignUpdatedV1DiscountTypeFixed            = "fixed"
 	PricingExchangeRatesStaleV1ProviderFrankfurter           = "frankfurter"
 	PricingExchangeRatesStaleV1ProviderExchangerateHost      = "exchangerate_host"
 	PricingExchangeRatesUpdatedV1ProviderFrankfurter         = "frankfurter"
@@ -2337,6 +2351,63 @@ type PricingBasePriceSetV1 struct {
 // EventType returns pricing.base_price.set.v1.
 func (PricingBasePriceSetV1) EventType() string { return TypePricingBasePriceSetV1 }
 
+// PricingBxgyCampaignCreatedV1 is the payload of pricing.bxgy_campaign.created.v1.
+//
+// A shop admin created a buy-X-get-Y campaign. Exactly one of qualifying_product_id/qualifying_sku_id and one of target_product_id/target_sku_id are set.
+type PricingBxgyCampaignCreatedV1 struct {
+	CampaignID          string  `json:"campaign_id"`
+	Name                string  `json:"name"`
+	QualifyingProductID *string `json:"qualifying_product_id,omitempty"`
+	QualifyingSKUID     *string `json:"qualifying_sku_id,omitempty"`
+	TargetProductID     *string `json:"target_product_id,omitempty"`
+	TargetSKUID         *string `json:"target_sku_id,omitempty"`
+	DiscountType        string  `json:"discount_type"`
+	// Percent in basis points (10000 = 100%) or fixed minor units.
+	DiscountValue int64     `json:"discount_value"`
+	StartsAt      time.Time `json:"starts_at"`
+	// Absent when the campaign has no end.
+	EndsAt    *time.Time `json:"ends_at,omitempty"`
+	Enabled   bool       `json:"enabled"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// EventType returns pricing.bxgy_campaign.created.v1.
+func (PricingBxgyCampaignCreatedV1) EventType() string { return TypePricingBxgyCampaignCreatedV1 }
+
+// PricingBxgyCampaignDeletedV1 is the payload of pricing.bxgy_campaign.deleted.v1.
+//
+// A shop admin deleted a buy-X-get-Y campaign.
+type PricingBxgyCampaignDeletedV1 struct {
+	CampaignID string    `json:"campaign_id"`
+	DeletedAt  time.Time `json:"deleted_at"`
+}
+
+// EventType returns pricing.bxgy_campaign.deleted.v1.
+func (PricingBxgyCampaignDeletedV1) EventType() string { return TypePricingBxgyCampaignDeletedV1 }
+
+// PricingBxgyCampaignUpdatedV1 is the payload of pricing.bxgy_campaign.updated.v1.
+//
+// A shop admin updated a buy-X-get-Y campaign. Exactly one of qualifying_product_id/qualifying_sku_id and one of target_product_id/target_sku_id are set.
+type PricingBxgyCampaignUpdatedV1 struct {
+	CampaignID          string  `json:"campaign_id"`
+	Name                string  `json:"name"`
+	QualifyingProductID *string `json:"qualifying_product_id,omitempty"`
+	QualifyingSKUID     *string `json:"qualifying_sku_id,omitempty"`
+	TargetProductID     *string `json:"target_product_id,omitempty"`
+	TargetSKUID         *string `json:"target_sku_id,omitempty"`
+	DiscountType        string  `json:"discount_type"`
+	// Percent in basis points (10000 = 100%) or fixed minor units.
+	DiscountValue int64     `json:"discount_value"`
+	StartsAt      time.Time `json:"starts_at"`
+	// Absent when the campaign has no end.
+	EndsAt    *time.Time `json:"ends_at,omitempty"`
+	Enabled   bool       `json:"enabled"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// EventType returns pricing.bxgy_campaign.updated.v1.
+func (PricingBxgyCampaignUpdatedV1) EventType() string { return TypePricingBxgyCampaignUpdatedV1 }
+
 // PricingConfigChangedV1 is the payload of pricing.config.changed.v1.
 //
 // A tenant's pricing configuration was created (on provisioning) or changed by a shop admin. Carries the new configuration.
@@ -2376,6 +2447,34 @@ type PricingExchangeRatesUpdatedV1 struct {
 
 // EventType returns pricing.exchange_rates_updated.v1.
 func (PricingExchangeRatesUpdatedV1) EventType() string { return TypePricingExchangeRatesUpdatedV1 }
+
+// PricingSalePriceRemovedV1 is the payload of pricing.sale_price.removed.v1.
+//
+// A SKU's promotional sale unit price was removed. The SKU reverts to its base price for evaluation and display.
+type PricingSalePriceRemovedV1 struct {
+	SKUID     string    `json:"sku_id"`
+	RemovedAt time.Time `json:"removed_at"`
+}
+
+// EventType returns pricing.sale_price.removed.v1.
+func (PricingSalePriceRemovedV1) EventType() string { return TypePricingSalePriceRemovedV1 }
+
+// PricingSalePriceSetV1 is the payload of pricing.sale_price.set.v1.
+//
+// A SKU's promotional sale unit price was set or replaced. yc-product may flag the SKU as on sale in its search projection.
+type PricingSalePriceSetV1 struct {
+	SKUID          string    `json:"sku_id"`
+	Price          Money     `json:"price"`
+	IsTaxInclusive bool      `json:"is_tax_inclusive"`
+	Name           string    `json:"name"`
+	StartsAt       time.Time `json:"starts_at"`
+	// Absent when the sale has no end.
+	EndsAt    *time.Time `json:"ends_at,omitempty"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// EventType returns pricing.sale_price.set.v1.
+func (PricingSalePriceSetV1) EventType() string { return TypePricingSalePriceSetV1 }
 
 // PricingTaxClassCreatedV1RulesItem is a nested object.
 type PricingTaxClassCreatedV1RulesItem struct {

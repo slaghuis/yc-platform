@@ -280,6 +280,15 @@ type HistoryEntry struct {
 	ToState   *State                  `json:"to_state,omitempty"`
 }
 
+// LineComponent One kit component as defined for a single bundle unit (composed-offers FR).
+// Quantities are per bundle SKU; multiply by the line quantity when reserving.
+type LineComponent struct {
+	ProductName *string            `json:"product_name,omitempty"`
+	Quantity    int64              `json:"quantity"`
+	SkuCode     *string            `json:"sku_code,omitempty"`
+	SkuID       openapi_types.UUID `json:"sku_id"`
+}
+
 // Money An amount in integer minor units of an ISO 4217 currency.
 type Money = money.Money
 
@@ -368,8 +377,10 @@ type SessionUserType string
 
 // SessionItem defines model for SessionItem.
 type SessionItem struct {
-	InventoryTracked bool `json:"inventory_tracked"`
-	IsDigital        bool `json:"is_digital"`
+	// Components Kit expansion when the line is a bundle SKU; omitted otherwise.
+	Components       *[]LineComponent `json:"components,omitempty"`
+	InventoryTracked bool             `json:"inventory_tracked"`
+	IsDigital        bool             `json:"is_digital"`
 
 	// LineTotal An amount in integer minor units of an ISO 4217 currency.
 	LineTotal Money               `json:"line_total"`

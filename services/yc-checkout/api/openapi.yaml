@@ -378,6 +378,17 @@ components:
           type: string
           maxLength: 2048
           description: Where a 3-D Secure redirect or the gateway's payment page returns to; required when hosted.
+    LineComponent:
+      type: object
+      description: |
+        One kit component as defined for a single bundle unit (composed-offers FR).
+        Quantities are per bundle SKU; multiply by the line quantity when reserving.
+      required: [sku_id, quantity]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        product_name: { type: string }
+        sku_code: { type: string }
     SessionItem:
       type: object
       required: [sku_id, sku_code, name, quantity, is_digital, inventory_tracked, unit_price, line_total, tax]
@@ -393,6 +404,10 @@ components:
         unit_price: { $ref: '#/components/schemas/Money' }
         line_total: { $ref: '#/components/schemas/Money' }
         tax: { $ref: '#/components/schemas/Money' }
+        components:
+          type: array
+          description: Kit expansion when the line is a bundle SKU; omitted otherwise.
+          items: { $ref: '#/components/schemas/LineComponent' }
     ShippingOption:
       type: object
       required: [id, name, amount]

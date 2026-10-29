@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/pricing/pricing.sale_price.set.v1.json",
+  "title": "pricing.sale_price.set.v1",
+  "description": "A SKU's promotional sale unit price was set or replaced. yc-product may flag the SKU as on sale in its search projection.",
+  "type": "object",
+  "required": ["sku_id", "price", "is_tax_inclusive", "name", "starts_at", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "sku_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "price": {
+      "$ref": "../common/money.v1.json"
+    },
+    "is_tax_inclusive": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Absent when the sale has no end."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

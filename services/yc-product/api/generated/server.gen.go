@@ -18,6 +18,24 @@ import (
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
 )
 
+// Defines values for ProductKind.
+const (
+	ProductKindBundle   ProductKind = "bundle"
+	ProductKindStandard ProductKind = "standard"
+)
+
+// Valid indicates whether the value is a known member of the ProductKind enum.
+func (e ProductKind) Valid() bool {
+	switch e {
+	case ProductKindBundle:
+		return true
+	case ProductKindStandard:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SKUDetailStatus.
 const (
 	SKUDetailStatusActive   SKUDetailStatus = "active"
@@ -126,6 +144,43 @@ type BannerOrder struct {
 	Ids []openapi_types.UUID `json:"ids"`
 }
 
+// Bundle defines model for Bundle.
+type Bundle struct {
+	Components []BundleComponent `json:"components"`
+}
+
+// BundleComponent defines model for BundleComponent.
+type BundleComponent struct {
+	ProductID   openapi_types.UUID `json:"product_id"`
+	ProductName string             `json:"product_name"`
+	Quantity    int                `json:"quantity"`
+	SkuID       openapi_types.UUID `json:"sku_id"`
+}
+
+// BundleComponentInput defines model for BundleComponentInput.
+type BundleComponentInput struct {
+	Quantity int                `json:"quantity"`
+	SkuID    openapi_types.UUID `json:"sku_id"`
+}
+
+// BundleInput defines model for BundleInput.
+type BundleInput struct {
+	CategoryIds *[]openapi_types.UUID  `json:"category_ids,omitempty"`
+	Components  []BundleComponentInput `json:"components"`
+	Description *string                `json:"description,omitempty"`
+	Name        string                 `json:"name"`
+	SkuCode     string                 `json:"sku_code"`
+	TaxClass    string                 `json:"tax_class"`
+}
+
+// BundleUpdateInput defines model for BundleUpdateInput.
+type BundleUpdateInput struct {
+	CategoryIds *[]openapi_types.UUID  `json:"category_ids,omitempty"`
+	Components  []BundleComponentInput `json:"components"`
+	Description *string                `json:"description,omitempty"`
+	Name        *string                `json:"name,omitempty"`
+}
+
 // Category defines model for Category.
 type Category struct {
 	CategoryID openapi_types.UUID `json:"category_id"`
@@ -208,14 +263,21 @@ type Problem struct {
 
 // Product defines model for Product.
 type Product struct {
-	Attributes  map[string]string    `json:"attributes"`
+	Attributes map[string]string `json:"attributes"`
+
+	// Bundle Present when kind is bundle.
+	Bundle      *Bundle              `json:"bundle,omitempty"`
 	CategoryIds []openapi_types.UUID `json:"category_ids"`
 	CreatedAt   time.Time            `json:"created_at"`
 	Description string               `json:"description"`
 	Images      []ProductImage       `json:"images"`
 	IsDigital   bool                 `json:"is_digital"`
-	Name        string               `json:"name"`
-	ProductID   openapi_types.UUID   `json:"product_id"`
+
+	// Kind standard is an ordinary catalogue product. bundle is a flat physical
+	// kit created via POST /admin/bundles.
+	Kind      ProductKind        `json:"kind"`
+	Name      string             `json:"name"`
+	ProductID openapi_types.UUID `json:"product_id"`
 
 	// RelatedProductIds Editorial related products, in display order. Shoppers get active
 	// targets only; shop admins the stored list. Set with
@@ -242,10 +304,17 @@ type ProductInput struct {
 	CategoryIds *[]openapi_types.UUID `json:"category_ids,omitempty"`
 	Description *string               `json:"description,omitempty"`
 	IsDigital   *bool                 `json:"is_digital,omitempty"`
-	Name        string                `json:"name"`
-	Status      *Status               `json:"status,omitempty"`
-	SupplierID  *openapi_types.UUID   `json:"supplier_id,omitempty"`
+
+	// Kind Create-only; omit or standard. Kits use POST /admin/bundles.
+	Kind       *ProductKind        `json:"kind,omitempty"`
+	Name       string              `json:"name"`
+	Status     *Status             `json:"status,omitempty"`
+	SupplierID *openapi_types.UUID `json:"supplier_id,omitempty"`
 }
+
+// ProductKind standard is an ordinary catalogue product. bundle is a flat physical
+// kit created via POST /admin/bundles.
+type ProductKind string
 
 // ProductList defines model for ProductList.
 type ProductList struct {
@@ -326,14 +395,21 @@ type SKUBatch struct {
 
 // SKUDetail defines model for SKUDetail.
 type SKUDetail struct {
+	// Components Flat kit expansion when kind is bundle; empty otherwise.
+	Components []BundleComponent `json:"components"`
+
 	// DimensionsMm Parcel size in millimetres, for carrier drivers. Stored only; rates do not use it yet.
-	DimensionsMm     *Dimensions        `json:"dimensions_mm,omitempty"`
-	InventoryTracked bool               `json:"inventory_tracked"`
-	IsDigital        bool               `json:"is_digital"`
-	ProductID        openapi_types.UUID `json:"product_id"`
-	ProductName      string             `json:"product_name"`
-	SkuCode          string             `json:"sku_code"`
-	SkuID            openapi_types.UUID `json:"sku_id"`
+	DimensionsMm     *Dimensions `json:"dimensions_mm,omitempty"`
+	InventoryTracked bool        `json:"inventory_tracked"`
+	IsDigital        bool        `json:"is_digital"`
+
+	// Kind standard is an ordinary catalogue product. bundle is a flat physical
+	// kit created via POST /admin/bundles.
+	Kind        ProductKind        `json:"kind"`
+	ProductID   openapi_types.UUID `json:"product_id"`
+	ProductName string             `json:"product_name"`
+	SkuCode     string             `json:"sku_code"`
+	SkuID       openapi_types.UUID `json:"sku_id"`
 
 	// Status active only when both the SKU and its product are active.
 	Status   SKUDetailStatus `json:"status"`
@@ -496,6 +572,12 @@ type ReorderBannersJSONRequestBody = BannerOrder
 // UpdateBannerJSONRequestBody defines body for UpdateBanner for application/json ContentType.
 type UpdateBannerJSONRequestBody = BannerInput
 
+// CreateBundleJSONRequestBody defines body for CreateBundle for application/json ContentType.
+type CreateBundleJSONRequestBody = BundleInput
+
+// UpdateBundleJSONRequestBody defines body for UpdateBundle for application/json ContentType.
+type UpdateBundleJSONRequestBody = BundleUpdateInput
+
 // CreateCategoryJSONRequestBody defines body for CreateCategory for application/json ContentType.
 type CreateCategoryJSONRequestBody = CategoryInput
 
@@ -543,6 +625,15 @@ type ServerInterface interface {
 	// UpdateBanner Replace a banner's category, text and images
 	// (PUT /admin/banners/{id})
 	UpdateBanner(w http.ResponseWriter, r *http.Request, id ID)
+	// CreateBundle Create a flat product bundle
+	// (POST /admin/bundles)
+	CreateBundle(w http.ResponseWriter, r *http.Request)
+	// GetBundle Get a bundle definition
+	// (GET /admin/bundles/{id})
+	GetBundle(w http.ResponseWriter, r *http.Request, id ID)
+	// UpdateBundle Replace a bundle's components
+	// (PUT /admin/bundles/{id})
+	UpdateBundle(w http.ResponseWriter, r *http.Request, id ID)
 	// CreateCategory Create a category
 	// (POST /admin/categories)
 	CreateCategory(w http.ResponseWriter, r *http.Request)
@@ -648,6 +739,24 @@ func (_ Unimplemented) DeleteBanner(w http.ResponseWriter, r *http.Request, id I
 // UpdateBanner Replace a banner's category, text and images
 // (PUT /admin/banners/{id})
 func (_ Unimplemented) UpdateBanner(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateBundle Create a flat product bundle
+// (POST /admin/bundles)
+func (_ Unimplemented) CreateBundle(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetBundle Get a bundle definition
+// (GET /admin/bundles/{id})
+func (_ Unimplemented) GetBundle(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateBundle Replace a bundle's components
+// (PUT /admin/bundles/{id})
+func (_ Unimplemented) UpdateBundle(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -887,6 +996,72 @@ func (siw *ServerInterfaceWrapper) UpdateBanner(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateBanner(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBundle operation middleware
+func (siw *ServerInterfaceWrapper) CreateBundle(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBundle(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBundle operation middleware
+func (siw *ServerInterfaceWrapper) GetBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBundle(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBundle operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBundle(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1822,6 +1997,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/admin/products/{id}/related", wrapper.PutRelatedProducts)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/bundles", wrapper.CreateBundle)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/bundles/{id}", wrapper.GetBundle)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/bundles/{id}", wrapper.UpdateBundle)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/admin/products/{id}/images", wrapper.AttachImage)
 	})
 	r.Group(func(r chi.Router) {
@@ -2051,6 +2235,163 @@ func (response UpdateBanner409ApplicationProblemPlusJSONResponse) VisitUpdateBan
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBundleRequestObject struct {
+	Body *CreateBundleJSONRequestBody
+}
+
+type CreateBundleResponseObject interface {
+	VisitCreateBundleResponse(w http.ResponseWriter) error
+}
+
+type CreateBundle201JSONResponse Product
+
+func (response CreateBundle201JSONResponse) VisitCreateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBundle400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateBundle400ApplicationProblemPlusJSONResponse) VisitCreateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBundle403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateBundle403ApplicationProblemPlusJSONResponse) VisitCreateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBundle409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateBundle409ApplicationProblemPlusJSONResponse) VisitCreateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundleRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type GetBundleResponseObject interface {
+	VisitGetBundleResponse(w http.ResponseWriter) error
+}
+
+type GetBundle200JSONResponse Product
+
+func (response GetBundle200JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetBundle404ApplicationProblemPlusJSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBundleRequestObject struct {
+	ID   ID `json:"id"`
+	Body *UpdateBundleJSONRequestBody
+}
+
+type UpdateBundleResponseObject interface {
+	VisitUpdateBundleResponse(w http.ResponseWriter) error
+}
+
+type UpdateBundle200JSONResponse Product
+
+func (response UpdateBundle200JSONResponse) VisitUpdateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBundle400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateBundle400ApplicationProblemPlusJSONResponse) VisitUpdateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBundle404ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateBundle404ApplicationProblemPlusJSONResponse) VisitUpdateBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3230,6 +3571,15 @@ type StrictServerInterface interface {
 	// UpdateBanner Replace a banner's category, text and images
 	// (PUT /admin/banners/{id})
 	UpdateBanner(ctx context.Context, request UpdateBannerRequestObject) (UpdateBannerResponseObject, error)
+	// CreateBundle Create a flat product bundle
+	// (POST /admin/bundles)
+	CreateBundle(ctx context.Context, request CreateBundleRequestObject) (CreateBundleResponseObject, error)
+	// GetBundle Get a bundle definition
+	// (GET /admin/bundles/{id})
+	GetBundle(ctx context.Context, request GetBundleRequestObject) (GetBundleResponseObject, error)
+	// UpdateBundle Replace a bundle's components
+	// (PUT /admin/bundles/{id})
+	UpdateBundle(ctx context.Context, request UpdateBundleRequestObject) (UpdateBundleResponseObject, error)
 	// CreateCategory Create a category
 	// (POST /admin/categories)
 	CreateCategory(ctx context.Context, request CreateCategoryRequestObject) (CreateCategoryResponseObject, error)
@@ -3463,6 +3813,96 @@ func (sh *strictHandler) UpdateBanner(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateBannerResponseObject); ok {
 		if err := validResponse.VisitUpdateBannerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBundle operation middleware
+func (sh *strictHandler) CreateBundle(w http.ResponseWriter, r *http.Request) {
+	var request CreateBundleRequestObject
+
+	var body CreateBundleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBundle(ctx, request.(CreateBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBundleResponseObject); ok {
+		if err := validResponse.VisitCreateBundleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBundle operation middleware
+func (sh *strictHandler) GetBundle(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetBundleRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBundle(ctx, request.(GetBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBundleResponseObject); ok {
+		if err := validResponse.VisitGetBundleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateBundle operation middleware
+func (sh *strictHandler) UpdateBundle(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateBundleRequestObject
+
+	request.ID = id
+
+	var body UpdateBundleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateBundle(ctx, request.(UpdateBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateBundleResponseObject); ok {
+		if err := validResponse.VisitUpdateBundleResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

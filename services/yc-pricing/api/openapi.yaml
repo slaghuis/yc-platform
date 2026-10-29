@@ -4,8 +4,8 @@ info:
   version: 0.2.0
   description: |
     Prices, tax and display currency (docs/services/yc-pricing.md, ADR-014,
-    ADR-016). Phase 2 subset: base prices, tax classes, the BasePrice → Tax →
-    DisplayCurrency pipeline and exchange rates.
+    ADR-016). Pipeline: BasePrice → Sale → BuyXGetY → Tax → DisplayCurrency.
+    Sale overlays and buy-X-get-Y campaigns are issue #31.
 
     Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -236,6 +236,121 @@ paths:
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
 
+  /admin/sale-prices/sku/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: A SKU's sale price overlay
+      operationId: getSalePrice
+      responses:
+        '200':
+          description: The overlay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalePrice' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Set a SKU's sale price overlay
+      description: |
+        Time-bounded promotional unit price. Replaces any existing overlay for
+        the SKU. One overlay per SKU.
+      operationId: setSalePrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalePriceInput' }
+      responses:
+        '200':
+          description: The overlay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalePrice' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Remove a SKU's sale price overlay
+      operationId: removeSalePrice
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/campaigns/bxgy:
+    get:
+      summary: List buy-X-get-Y campaigns
+      operationId: listBXGYCampaigns
+      responses:
+        '200':
+          description: Every campaign.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BXGYCampaignList' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      summary: Create a buy-X-get-Y campaign
+      description: |
+        Qualifying and target are each either a product_id or a sku_id
+        (admin-picked). Sale overlays on a target line block BXGY on that line.
+      operationId: createBXGYCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BXGYCampaignInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BXGYCampaign' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/campaigns/bxgy/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: A buy-X-get-Y campaign
+      operationId: getBXGYCampaign
+      responses:
+        '200':
+          description: The campaign.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BXGYCampaign' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    put:
+      summary: Replace a buy-X-get-Y campaign
+      operationId: updateBXGYCampaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BXGYCampaignInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BXGYCampaign' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Delete a buy-X-get-Y campaign
+      operationId: deleteBXGYCampaign
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     ID:
@@ -331,6 +446,10 @@ components:
         quantity: { type: integer, format: int64 }
         tax_class: { type: string }
         unit_price: { $ref: '#/components/schemas/Money' }
+        list_unit_price:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: Base unit price before a sale overlay; absent when no sale applies.
         price_includes_tax: { type: boolean }
         net: { $ref: '#/components/schemas/Money' }
         tax: { $ref: '#/components/schemas/Money' }
@@ -338,6 +457,19 @@ components:
         taxes:
           type: array
           items: { $ref: '#/components/schemas/LineTax' }
+        discounts:
+          type: array
+          items: { $ref: '#/components/schemas/LineDiscount' }
+    LineDiscount:
+      type: object
+      required: [type, amount]
+      properties:
+        type: { type: string, enum: [sale_price, bxgy] }
+        name: { type: string }
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          description: Reduction amount in store currency (positive).
     LineTax:
       type: object
       required: [jurisdiction, rule, rate, base, base_amount, amount]
@@ -417,6 +549,70 @@ components:
       additionalProperties: false
       properties:
         price: { $ref: '#/components/schemas/Money' }
+
+    SalePriceInput:
+      type: object
+      required: [price, starts_at]
+      additionalProperties: false
+      properties:
+        price: { $ref: '#/components/schemas/Money' }
+        name: { type: string, maxLength: 100 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+    SalePrice:
+      type: object
+      required: [sku_id, price, tax_inclusive, starts_at, updated_at]
+      properties:
+        sku_id: { type: string, format: uuid }
+        price: { $ref: '#/components/schemas/Money' }
+        tax_inclusive: { type: boolean }
+        name: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    BXGYCampaignInput:
+      type: object
+      required: [name, discount_type, discount_value, starts_at]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        qualifying_product_id: { type: string, format: uuid }
+        qualifying_sku_id: { type: string, format: uuid }
+        target_product_id: { type: string, format: uuid }
+        target_sku_id: { type: string, format: uuid }
+        discount_type: { type: string, enum: [percent, fixed] }
+        discount_value:
+          type: integer
+          format: int64
+          description: "Percent in basis points (10000 = 100%), or fixed minor units."
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        enabled: { type: boolean, description: "Defaults to true when omitted on create." }
+    BXGYCampaign:
+      type: object
+      required: [id, name, discount_type, discount_value, starts_at, enabled, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        qualifying_product_id: { type: string, format: uuid }
+        qualifying_sku_id: { type: string, format: uuid }
+        target_product_id: { type: string, format: uuid }
+        target_sku_id: { type: string, format: uuid }
+        discount_type: { type: string, enum: [percent, fixed] }
+        discount_value: { type: integer, format: int64 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    BXGYCampaignList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BXGYCampaign' }
     BasePrice:
       type: object
       required: [sku_id, price, tax_inclusive, valid_from]

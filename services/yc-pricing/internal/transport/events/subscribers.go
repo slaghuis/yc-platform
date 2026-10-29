@@ -16,7 +16,7 @@ import (
 // Handlers are the use cases the subscribers drive.
 type Handlers interface {
 	InitShop(ctx context.Context, tenantID string, in domain.ConfigInput) error
-	SyncSKU(ctx context.Context, tenantID, skuID, taxClass, status string, at time.Time) error
+	SyncSKU(ctx context.Context, tenantID, skuID, productID, taxClass, status string, at time.Time) error
 	DeleteSKUs(ctx context.Context, tenantID string, skuIDs []string, at time.Time) error
 }
 
@@ -89,13 +89,13 @@ func skuChanged(h Handlers) eventbus.Handler {
 			if err := decode(evt, &p); err != nil {
 				return err
 			}
-			return h.SyncSKU(ctx, tenant, p.SKUID, p.TaxClass, p.Status, p.CreatedAt)
+			return h.SyncSKU(ctx, tenant, p.SKUID, p.ProductID, p.TaxClass, p.Status, p.CreatedAt)
 		case ycevents.TypeProductSKUUpdatedV1:
 			var p ycevents.ProductSKUUpdatedV1
 			if err := decode(evt, &p); err != nil {
 				return err
 			}
-			return h.SyncSKU(ctx, tenant, p.SKUID, p.TaxClass, p.Status, p.UpdatedAt)
+			return h.SyncSKU(ctx, tenant, p.SKUID, p.ProductID, p.TaxClass, p.Status, p.UpdatedAt)
 		case ycevents.TypeProductSKUDeletedV1:
 			var p ycevents.ProductSKUDeletedV1
 			if err := decode(evt, &p); err != nil {

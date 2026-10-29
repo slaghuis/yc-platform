@@ -40,6 +40,9 @@ type Catalog interface {
 	AlsoBought(ctx context.Context, productID string, limit int) ([]domain.ProductSummary, error)
 	Browse(ctx context.Context, f domain.BrowseFilter, after *repository.Cursor, limit int) (domain.Browse, *repository.Cursor, error)
 	SKUDetails(ctx context.Context, ids []string) ([]domain.SKUDetail, []string, error)
+	CreateBundle(ctx context.Context, in domain.BundleInput) (domain.Product, error)
+	UpdateBundle(ctx context.Context, productID string, in domain.BundleUpdateInput) (domain.Product, error)
+	GetBundle(ctx context.Context, productID string) (domain.Product, error)
 
 	CreateCategory(ctx context.Context, in domain.CategoryInput) (domain.Category, error)
 	UpdateCategory(ctx context.Context, id string, in domain.CategoryInput) (domain.Category, error)
@@ -80,6 +83,7 @@ func Routes() []httpkit.RegisteredRoute {
 		{Prefix: "/banners", Methods: get},
 		{Prefix: "/suppliers", Methods: get},
 		{Prefix: "/admin/products", Roles: []string{string(authctx.ActorShopAdmin)}},
+		{Prefix: "/admin/bundles", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/skus", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/categories", Roles: []string{string(authctx.ActorShopAdmin)}},
 		{Prefix: "/admin/banners", Roles: []string{string(authctx.ActorShopAdmin)}},
@@ -108,8 +112,9 @@ func (h handlers) GetSKUsBatch(ctx context.Context, req api.GetSKUsBatchRequestO
 		}
 		out.Skus[i] = api.SKUDetail{
 			SkuID: parseUUID(d.ID), ProductID: parseUUID(d.ProductID), SkuCode: d.Code, ProductName: d.ProductName,
-			VariantValues: d.VariantValues, IsDigital: d.IsDigital, InventoryTracked: d.InventoryTracked,
-			TaxClass: d.TaxClass, WeightGrams: d.WeightGrams, DimensionsMm: dimensions(d.Dimensions), Status: status,
+			VariantValues: d.VariantValues, IsDigital: d.IsDigital, Kind: api.ProductKind(d.Kind),
+			InventoryTracked: d.InventoryTracked, TaxClass: d.TaxClass, WeightGrams: d.WeightGrams,
+			DimensionsMm: dimensions(d.Dimensions), Status: status, Components: bundleComponents(d.Components),
 		}
 	}
 	return out, nil
@@ -267,6 +272,30 @@ func (h handlers) PutRelatedProducts(ctx context.Context, req api.PutRelatedProd
 		return nil, err
 	}
 	return api.PutRelatedProducts200JSONResponse{ProductIds: uuids(ids)}, nil
+}
+
+func (h handlers) CreateBundle(ctx context.Context, req api.CreateBundleRequestObject) (api.CreateBundleResponseObject, error) {
+	p, err := h.svc.CreateBundle(ctx, bundleInput(req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.CreateBundle201JSONResponse(product(p)), nil
+}
+
+func (h handlers) UpdateBundle(ctx context.Context, req api.UpdateBundleRequestObject) (api.UpdateBundleResponseObject, error) {
+	p, err := h.svc.UpdateBundle(ctx, req.ID.String(), bundleUpdateInput(req.Body))
+	if err != nil {
+		return nil, err
+	}
+	return api.UpdateBundle200JSONResponse(product(p)), nil
+}
+
+func (h handlers) GetBundle(ctx context.Context, req api.GetBundleRequestObject) (api.GetBundleResponseObject, error) {
+	p, err := h.svc.GetBundle(ctx, req.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	return api.GetBundle200JSONResponse(product(p)), nil
 }
 
 func (h handlers) GetAlsoBought(ctx context.Context, req api.GetAlsoBoughtRequestObject) (api.GetAlsoBoughtResponseObject, error) {
@@ -439,6 +468,9 @@ func productInput(b *api.ProductInput) domain.ProductInput {
 		Status:      status(b.Status),
 		Attributes:  deref(b.Attributes),
 	}
+	if b.Kind != nil {
+		in.Kind = domain.ProductKind(*b.Kind)
+	}
 	if b.SupplierID != nil {
 		in.SupplierID = b.SupplierID.String()
 	}
@@ -446,6 +478,50 @@ func productInput(b *api.ProductInput) domain.ProductInput {
 		in.CategoryIDs = uuidStrings(*b.CategoryIds)
 	}
 	return in
+}
+
+func bundleInput(b *api.BundleInput) domain.BundleInput {
+	in := domain.BundleInput{
+		Name: b.Name, Description: deref(b.Description), SKUCode: b.SkuCode, TaxClass: b.TaxClass,
+		Components: bundleComponentInputs(b.Components),
+	}
+	if b.CategoryIds != nil {
+		in.CategoryIDs = uuidStrings(*b.CategoryIds)
+	}
+	return in
+}
+
+func bundleUpdateInput(b *api.BundleUpdateInput) domain.BundleUpdateInput {
+	in := domain.BundleUpdateInput{
+		Description: b.Description, Components: bundleComponentInputs(b.Components),
+	}
+	if b.Name != nil {
+		in.Name = *b.Name
+	}
+	if b.CategoryIds != nil {
+		ids := uuidStrings(*b.CategoryIds)
+		in.CategoryIDs = &ids
+	}
+	return in
+}
+
+func bundleComponentInputs(in []api.BundleComponentInput) []domain.BundleComponentInput {
+	out := make([]domain.BundleComponentInput, len(in))
+	for i, c := range in {
+		out[i] = domain.BundleComponentInput{SKUID: c.SkuID.String(), Quantity: c.Quantity}
+	}
+	return out
+}
+
+func bundleComponents(in []domain.BundleComponent) []api.BundleComponent {
+	out := make([]api.BundleComponent, len(in))
+	for i, c := range in {
+		out[i] = api.BundleComponent{
+			SkuID: parseUUID(c.SKUID), ProductID: parseUUID(c.ProductID),
+			ProductName: c.ProductName, Quantity: c.Quantity,
+		}
+	}
+	return out
 }
 
 func skuInput(b *api.SKUInput) domain.SKUInput {
@@ -507,9 +583,13 @@ func supplier(s domain.Supplier) api.Supplier {
 }
 
 func product(p domain.Product) api.Product {
+	kind := p.Kind
+	if kind == "" {
+		kind = domain.KindStandard
+	}
 	out := api.Product{
 		ProductID: parseUUID(p.ID), SupplierID: optionalUUID(p.SupplierID), Name: p.Name,
-		Description: p.Description, IsDigital: p.IsDigital, Status: api.Status(p.Status),
+		Description: p.Description, IsDigital: p.IsDigital, Kind: api.ProductKind(kind), Status: api.Status(p.Status),
 		Attributes: p.Attributes, CategoryIds: uuids(p.CategoryIDs), RelatedProductIds: uuids(p.RelatedProductIDs),
 		Variants: make([]api.Variant, len(p.Variants)), Skus: make([]api.SKU, len(p.SKUs)),
 		Images: make([]api.ProductImage, len(p.Images)), CreatedAt: p.CreatedAt.UTC(), UpdatedAt: p.UpdatedAt.UTC(),
@@ -522,6 +602,10 @@ func product(p domain.Product) api.Product {
 	}
 	for i, img := range p.Images {
 		out.Images[i] = image(img)
+	}
+	if p.Bundle != nil {
+		b := api.Bundle{Components: bundleComponents(p.Bundle.Components)}
+		out.Bundle = &b
 	}
 	return out
 }

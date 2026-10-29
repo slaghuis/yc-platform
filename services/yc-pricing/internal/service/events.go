@@ -32,10 +32,10 @@ func (s *Service) InitShop(ctx context.Context, tenantID string, in domain.Confi
 	})
 }
 
-// SyncSKU records a SKU's tax class from product.sku.created/updated.
-func (s *Service) SyncSKU(ctx context.Context, tenantID, skuID, taxClass, status string, at time.Time) error {
+// SyncSKU records a SKU's product and tax class from product.sku.created/updated.
+func (s *Service) SyncSKU(ctx context.Context, tenantID, skuID, productID, taxClass, status string, at time.Time) error {
 	return dbkit.WithTenantTx(ctx, s.db, tenantID, func(tx pgx.Tx) error {
-		return s.repo.SyncSKU(ctx, tx, tenantID, skuID, taxClass, status, at)
+		return s.repo.SyncSKU(ctx, tx, tenantID, skuID, productID, taxClass, status, at)
 	})
 }
 

@@ -24,15 +24,23 @@ const (
 	card3DS      = "pm_card_threeDSecure2Required"
 )
 
+type fakeComponent struct {
+	SKUID       string
+	Quantity    int64
+	ProductName string
+}
+
 type fakeSKU struct {
-	ID       string
-	Name     string
-	Digital  bool
-	Tracked  bool
-	Price    int64 // gross per unit, VAT-inclusive at 15 %
-	Stock    int64
-	Inactive bool
-	Grams    int64
+	ID         string
+	Name       string
+	Digital    bool
+	Tracked    bool
+	Kind       string // standard|bundle; empty means standard
+	Components []fakeComponent
+	Price      int64 // gross per unit, VAT-inclusive at 15 %
+	Stock      int64
+	Inactive   bool
+	Grams      int64
 }
 
 // The fake ships only to ZA addresses, as yc-shipping's zones would.
@@ -288,10 +296,21 @@ func (f *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if s.Inactive {
 				status = "inactive"
 			}
+			kind := s.Kind
+			if kind == "" {
+				kind = "standard"
+			}
+			comps := make([]map[string]any, 0, len(s.Components))
+			for _, c := range s.Components {
+				comps = append(comps, map[string]any{
+					"sku_id": c.SKUID, "product_id": uuid.NewString(), "product_name": c.ProductName,
+					"quantity": c.Quantity,
+				})
+			}
 			sku := map[string]any{
 				"sku_id": s.ID, "product_id": uuid.NewString(), "sku_code": "SKU-" + s.Name, "product_name": s.Name,
-				"variant_values": map[string]any{}, "is_digital": s.Digital, "inventory_tracked": s.Tracked,
-				"tax_class": "standard", "status": status,
+				"variant_values": map[string]any{}, "is_digital": s.Digital, "kind": kind,
+				"inventory_tracked": s.Tracked, "tax_class": "standard", "status": status, "components": comps,
 			}
 			if s.Grams > 0 {
 				sku["weight_grams"] = s.Grams
@@ -406,9 +425,26 @@ func (f *fakeGateway) reserve(w http.ResponseWriter, key string, body map[string
 		return
 	}
 	items := lines(body["items"])
+	// Merge duplicate SKUs as yc-inventory does.
+	merged := map[string]int64{}
+	var order []string
+	for _, l := range items {
+		if _, ok := merged[l.SKUID]; !ok {
+			order = append(order, l.SKUID)
+		}
+		merged[l.SKUID] += l.Quantity
+	}
+	items = items[:0]
+	for _, id := range order {
+		items = append(items, fakeLine{SKUID: id, Quantity: merged[id]})
+	}
 	var shortages []map[string]any
 	for _, l := range items {
-		if s := f.skus[l.SKUID]; s.Stock < l.Quantity {
+		s, ok := f.skus[l.SKUID]
+		if !ok || !s.Tracked {
+			continue // untracked / unknown: inventory skips
+		}
+		if s.Stock < l.Quantity {
 			shortages = append(shortages, map[string]any{"sku_id": l.SKUID, "requested": l.Quantity, "available": s.Stock})
 		}
 	}
@@ -417,7 +453,9 @@ func (f *fakeGateway) reserve(w http.ResponseWriter, key string, body map[string
 		return
 	}
 	for _, l := range items {
-		f.skus[l.SKUID].Stock -= l.Quantity
+		if s, ok := f.skus[l.SKUID]; ok && s.Tracked {
+			s.Stock -= l.Quantity
+		}
 	}
 	id := uuid.NewString()
 	f.reservations[id] = &fakeReservation{ID: id, Status: "active", Items: items}
@@ -434,7 +472,9 @@ func (f *fakeGateway) settleReservation(w http.ResponseWriter, id, action string
 		writeJSON(w, http.StatusOK, map[string]any{"reservation_id": id, "status": "unknown"})
 	case action == "release":
 		for _, l := range res.Items {
-			f.skus[l.SKUID].Stock += l.Quantity
+			if s, ok := f.skus[l.SKUID]; ok && s.Tracked {
+				s.Stock += l.Quantity
+			}
 		}
 		res.Status = "released"
 		writeJSON(w, http.StatusOK, map[string]any{"reservation_id": id, "status": "released"})

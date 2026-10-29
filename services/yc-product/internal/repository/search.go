@@ -42,7 +42,18 @@ func (Catalog) RefreshProjection(ctx context.Context, tx pgx.Tx, productIDs ...s
 			supplier_id = EXCLUDED.supplier_id, category_ids = EXCLUDED.category_ids,
 			name = EXCLUDED.name, description = EXCLUDED.description, sku_code = EXCLUDED.sku_code,
 			tsv = EXCLUDED.tsv, variant_values = EXCLUDED.variant_values, status = EXCLUDED.status,
-			in_stock = CASE WHEN (SELECT inventory_tracked FROM skus WHERE id = EXCLUDED.sku_id) THEN sp.in_stock END,
+			in_stock = CASE
+				WHEN (SELECT kind FROM products WHERE id = EXCLUDED.product_id) = 'bundle' THEN (
+					SELECT BOOL_AND(
+						CASE WHEN cs.inventory_tracked THEN COALESCE(csp.in_stock, true) ELSE true END
+					)
+					FROM bundle_sku_components b
+					JOIN skus cs ON cs.id = b.component_sku_id
+					LEFT JOIN sku_search_projection csp ON csp.sku_id = cs.id
+					WHERE b.bundle_sku_id = EXCLUDED.sku_id
+				)
+				WHEN (SELECT inventory_tracked FROM skus WHERE id = EXCLUDED.sku_id) THEN sp.in_stock
+			END,
 			updated_at = EXCLUDED.updated_at`, productIDs)
 	if err != nil {
 		return fmt.Errorf("refresh search projection: %w", err)

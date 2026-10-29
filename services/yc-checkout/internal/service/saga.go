@@ -222,7 +222,9 @@ func (s *Service) reserve(ctx context.Context, tenantID, token string, sess doma
 	if err != nil {
 		return s.failed(ctx, tenantID, token, sess, err, func(r *integration.Rejection) (string, map[string]any) {
 			if r.Problem.Code == "insufficient_stock" {
-				return domain.ReasonInsufficientStock, map[string]any{"shortages": r.Problem.Extensions["shortages"]}
+				return domain.ReasonInsufficientStock, map[string]any{
+					"shortages": sess.AttributeShortages(r.Problem.Extensions["shortages"]),
+				}
 			}
 			return domain.ReasonStepFailed, describe(r)
 		})
@@ -293,6 +295,14 @@ func (s *Service) orderInput(sess domain.Session) integration.CreateOrder {
 			SKUID: it.SKUID, ProductID: it.ProductID, SKUCode: it.SKUCode, NameSnapshot: it.Name,
 			VariantValuesSnapshot: it.VariantValues, Quantity: it.Quantity, UnitPriceMinor: it.UnitPriceMinor,
 			LineTotalMinor: it.LineTotalMinor, TaxMinor: it.TaxMinor, IsDigital: it.IsDigital,
+		}
+		if len(it.Components) > 0 {
+			items[i].Components = make([]integration.OrderComponent, len(it.Components))
+			for j, c := range it.Components {
+				items[i].Components[j] = integration.OrderComponent{
+					SKUID: c.SKUID, Quantity: c.Quantity, ProductName: c.ProductName, SKUCode: c.SKUCode,
+				}
+			}
 		}
 	}
 	in := integration.CreateOrder{

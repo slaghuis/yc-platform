@@ -295,6 +295,15 @@ type HistoryEntry struct {
 	ToStatus   OrderStatus  `json:"to_status"`
 }
 
+// LineComponent One kit component snapshotted for a single bundle unit (composed-offers FR).
+// Stored for future packing lists; quantities are per one bundle SKU.
+type LineComponent struct {
+	ProductName *string            `json:"product_name,omitempty"`
+	Quantity    int64              `json:"quantity"`
+	SkuCode     *string            `json:"sku_code,omitempty"`
+	SkuID       openapi_types.UUID `json:"sku_id"`
+}
+
 // Money defines model for Money.
 type Money struct {
 	// AmountMinor Minor units (cents).
@@ -346,6 +355,8 @@ type OrderUserType string
 
 // OrderItem defines model for OrderItem.
 type OrderItem struct {
+	// Components Kit expansion when the line is a bundle SKU; omitted otherwise.
+	Components            *[]LineComponent        `json:"components,omitempty"`
 	IsDigital             bool                    `json:"is_digital"`
 	LineTotal             Money                   `json:"line_total"`
 	NameSnapshot          string                  `json:"name_snapshot"`
@@ -360,7 +371,9 @@ type OrderItem struct {
 
 // OrderItemInput defines model for OrderItemInput.
 type OrderItemInput struct {
-	IsDigital *bool `json:"is_digital,omitempty"`
+	// Components Kit expansion when the line is a bundle SKU; omitted otherwise.
+	Components *[]LineComponent `json:"components,omitempty"`
+	IsDigital  *bool            `json:"is_digital,omitempty"`
 
 	// LineTotalMinor Gross; tax is rounded per line, so not always unit price times quantity.
 	LineTotalMinor int64               `json:"line_total_minor"`

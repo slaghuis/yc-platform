@@ -19,6 +19,60 @@ import (
 	money "github.com/slaghuis/yc-platform/libs/yc-money"
 )
 
+// Defines values for BXGYCampaignDiscountType.
+const (
+	BXGYCampaignDiscountTypeFixed   BXGYCampaignDiscountType = "fixed"
+	BXGYCampaignDiscountTypePercent BXGYCampaignDiscountType = "percent"
+)
+
+// Valid indicates whether the value is a known member of the BXGYCampaignDiscountType enum.
+func (e BXGYCampaignDiscountType) Valid() bool {
+	switch e {
+	case BXGYCampaignDiscountTypeFixed:
+		return true
+	case BXGYCampaignDiscountTypePercent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BXGYCampaignInputDiscountType.
+const (
+	BXGYCampaignInputDiscountTypeFixed   BXGYCampaignInputDiscountType = "fixed"
+	BXGYCampaignInputDiscountTypePercent BXGYCampaignInputDiscountType = "percent"
+)
+
+// Valid indicates whether the value is a known member of the BXGYCampaignInputDiscountType enum.
+func (e BXGYCampaignInputDiscountType) Valid() bool {
+	switch e {
+	case BXGYCampaignInputDiscountTypeFixed:
+		return true
+	case BXGYCampaignInputDiscountTypePercent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LineDiscountType.
+const (
+	LineDiscountTypeBxgy      LineDiscountType = "bxgy"
+	LineDiscountTypeSalePrice LineDiscountType = "sale_price"
+)
+
+// Valid indicates whether the value is a known member of the LineDiscountType enum.
+func (e LineDiscountType) Valid() bool {
+	switch e {
+	case LineDiscountTypeBxgy:
+		return true
+	case LineDiscountTypeSalePrice:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UnpricedReason.
 const (
 	NoBasePrice     UnpricedReason = "no_base_price"
@@ -44,6 +98,52 @@ func (e UnpricedReason) Valid() bool {
 type AuditEntry struct {
 	Detail    map[string]interface{} `json:"detail"`
 	Evaluator string                 `json:"evaluator"`
+}
+
+// BXGYCampaign defines model for BXGYCampaign.
+type BXGYCampaign struct {
+	CreatedAt           time.Time                `json:"created_at"`
+	DiscountType        BXGYCampaignDiscountType `json:"discount_type"`
+	DiscountValue       int64                    `json:"discount_value"`
+	Enabled             bool                     `json:"enabled"`
+	EndsAt              *time.Time               `json:"ends_at,omitempty"`
+	ID                  openapi_types.UUID       `json:"id"`
+	Name                string                   `json:"name"`
+	QualifyingProductID *openapi_types.UUID      `json:"qualifying_product_id,omitempty"`
+	QualifyingSkuID     *openapi_types.UUID      `json:"qualifying_sku_id,omitempty"`
+	StartsAt            time.Time                `json:"starts_at"`
+	TargetProductID     *openapi_types.UUID      `json:"target_product_id,omitempty"`
+	TargetSkuID         *openapi_types.UUID      `json:"target_sku_id,omitempty"`
+	UpdatedAt           time.Time                `json:"updated_at"`
+}
+
+// BXGYCampaignDiscountType defines model for BXGYCampaign.DiscountType.
+type BXGYCampaignDiscountType string
+
+// BXGYCampaignInput defines model for BXGYCampaignInput.
+type BXGYCampaignInput struct {
+	DiscountType BXGYCampaignInputDiscountType `json:"discount_type"`
+
+	// DiscountValue Percent in basis points (10000 = 100%), or fixed minor units.
+	DiscountValue int64 `json:"discount_value"`
+
+	// Enabled Defaults to true when omitted on create.
+	Enabled             *bool               `json:"enabled,omitempty"`
+	EndsAt              *time.Time          `json:"ends_at,omitempty"`
+	Name                string              `json:"name"`
+	QualifyingProductID *openapi_types.UUID `json:"qualifying_product_id,omitempty"`
+	QualifyingSkuID     *openapi_types.UUID `json:"qualifying_sku_id,omitempty"`
+	StartsAt            time.Time           `json:"starts_at"`
+	TargetProductID     *openapi_types.UUID `json:"target_product_id,omitempty"`
+	TargetSkuID         *openapi_types.UUID `json:"target_sku_id,omitempty"`
+}
+
+// BXGYCampaignInputDiscountType defines model for BXGYCampaignInput.DiscountType.
+type BXGYCampaignInputDiscountType string
+
+// BXGYCampaignList defines model for BXGYCampaignList.
+type BXGYCampaignList struct {
+	Items []BXGYCampaign `json:"items"`
 }
 
 // BasePrice defines model for BasePrice.
@@ -112,6 +212,17 @@ type EvaluateRequest struct {
 	Lines        []LineRequest `json:"lines"`
 }
 
+// LineDiscount defines model for LineDiscount.
+type LineDiscount struct {
+	// Amount Reduction amount in store currency (positive).
+	Amount Money            `json:"amount"`
+	Name   *string          `json:"name,omitempty"`
+	Type   LineDiscountType `json:"type"`
+}
+
+// LineDiscountType defines model for LineDiscount.Type.
+type LineDiscountType string
+
 // LineRequest defines model for LineRequest.
 type LineRequest struct {
 	Quantity int64              `json:"quantity"`
@@ -157,8 +268,13 @@ type PricePeriod struct {
 
 // PricedLine defines model for PricedLine.
 type PricedLine struct {
+	Discounts *[]LineDiscount `json:"discounts,omitempty"`
+
 	// Gross An amount in integer minor units of an ISO 4217 currency.
 	Gross Money `json:"gross"`
+
+	// ListUnitPrice Base unit price before a sale overlay; absent when no sale applies.
+	ListUnitPrice *Money `json:"list_unit_price,omitempty"`
 
 	// Net An amount in integer minor units of an ISO 4217 currency.
 	Net              Money              `json:"net"`
@@ -219,6 +335,29 @@ type Problem struct {
 	Status int    `json:"status"`
 	Title  string `json:"title"`
 	Type   string `json:"type"`
+}
+
+// SalePrice defines model for SalePrice.
+type SalePrice struct {
+	EndsAt *time.Time `json:"ends_at,omitempty"`
+	Name   *string    `json:"name,omitempty"`
+
+	// Price An amount in integer minor units of an ISO 4217 currency.
+	Price        Money              `json:"price"`
+	SkuID        openapi_types.UUID `json:"sku_id"`
+	StartsAt     time.Time          `json:"starts_at"`
+	TaxInclusive bool               `json:"tax_inclusive"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+// SalePriceInput defines model for SalePriceInput.
+type SalePriceInput struct {
+	EndsAt *time.Time `json:"ends_at,omitempty"`
+	Name   *string    `json:"name,omitempty"`
+
+	// Price An amount in integer minor units of an ISO 4217 currency.
+	Price    Money     `json:"price"`
+	StartsAt time.Time `json:"starts_at"`
 }
 
 // SetPriceRequest defines model for SetPriceRequest.
@@ -333,11 +472,20 @@ type GetSKUPriceParams struct {
 	XYCDisplayCurrency *DisplayCurrencyHeader `json:"X-YC-Display-Currency,omitempty"`
 }
 
+// CreateBXGYCampaignJSONRequestBody defines body for CreateBXGYCampaign for application/json ContentType.
+type CreateBXGYCampaignJSONRequestBody = BXGYCampaignInput
+
+// UpdateBXGYCampaignJSONRequestBody defines body for UpdateBXGYCampaign for application/json ContentType.
+type UpdateBXGYCampaignJSONRequestBody = BXGYCampaignInput
+
 // SetPriceJSONRequestBody defines body for SetPrice for application/json ContentType.
 type SetPriceJSONRequestBody = SetPriceRequest
 
 // PutPricingConfigJSONRequestBody defines body for PutPricingConfig for application/json ContentType.
 type PutPricingConfigJSONRequestBody = PricingConfigInput
+
+// SetSalePriceJSONRequestBody defines body for SetSalePrice for application/json ContentType.
+type SetSalePriceJSONRequestBody = SalePriceInput
 
 // PutTaxClassJSONRequestBody defines body for PutTaxClass for application/json ContentType.
 type PutTaxClassJSONRequestBody = TaxClassInput
@@ -350,6 +498,21 @@ type EvaluatePricesJSONRequestBody = EvaluateRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListBXGYCampaigns List buy-X-get-Y campaigns
+	// (GET /admin/campaigns/bxgy)
+	ListBXGYCampaigns(w http.ResponseWriter, r *http.Request)
+	// CreateBXGYCampaign Create a buy-X-get-Y campaign
+	// (POST /admin/campaigns/bxgy)
+	CreateBXGYCampaign(w http.ResponseWriter, r *http.Request)
+	// DeleteBXGYCampaign Delete a buy-X-get-Y campaign
+	// (DELETE /admin/campaigns/bxgy/{id})
+	DeleteBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// GetBXGYCampaign A buy-X-get-Y campaign
+	// (GET /admin/campaigns/bxgy/{id})
+	GetBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// UpdateBXGYCampaign Replace a buy-X-get-Y campaign
+	// (PUT /admin/campaigns/bxgy/{id})
+	UpdateBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// ListPrices List current base prices
 	// (GET /admin/prices)
 	ListPrices(w http.ResponseWriter, r *http.Request, params ListPricesParams)
@@ -368,6 +531,15 @@ type ServerInterface interface {
 	// PutPricingConfig Replace the shop's pricing configuration
 	// (PUT /admin/pricing-config)
 	PutPricingConfig(w http.ResponseWriter, r *http.Request)
+	// RemoveSalePrice Remove a SKU's sale price overlay
+	// (DELETE /admin/sale-prices/sku/{id})
+	RemoveSalePrice(w http.ResponseWriter, r *http.Request, id ID)
+	// GetSalePrice A SKU's sale price overlay
+	// (GET /admin/sale-prices/sku/{id})
+	GetSalePrice(w http.ResponseWriter, r *http.Request, id ID)
+	// SetSalePrice Set a SKU's sale price overlay
+	// (PUT /admin/sale-prices/sku/{id})
+	SetSalePrice(w http.ResponseWriter, r *http.Request, id ID)
 	// ListTaxClasses List tax classes
 	// (GET /admin/tax-classes)
 	ListTaxClasses(w http.ResponseWriter, r *http.Request)
@@ -394,6 +566,36 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// ListBXGYCampaigns List buy-X-get-Y campaigns
+// (GET /admin/campaigns/bxgy)
+func (_ Unimplemented) ListBXGYCampaigns(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateBXGYCampaign Create a buy-X-get-Y campaign
+// (POST /admin/campaigns/bxgy)
+func (_ Unimplemented) CreateBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteBXGYCampaign Delete a buy-X-get-Y campaign
+// (DELETE /admin/campaigns/bxgy/{id})
+func (_ Unimplemented) DeleteBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetBXGYCampaign A buy-X-get-Y campaign
+// (GET /admin/campaigns/bxgy/{id})
+func (_ Unimplemented) GetBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateBXGYCampaign Replace a buy-X-get-Y campaign
+// (PUT /admin/campaigns/bxgy/{id})
+func (_ Unimplemented) UpdateBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // ListPrices List current base prices
 // (GET /admin/prices)
@@ -428,6 +630,24 @@ func (_ Unimplemented) GetPricingConfig(w http.ResponseWriter, r *http.Request) 
 // PutPricingConfig Replace the shop's pricing configuration
 // (PUT /admin/pricing-config)
 func (_ Unimplemented) PutPricingConfig(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RemoveSalePrice Remove a SKU's sale price overlay
+// (DELETE /admin/sale-prices/sku/{id})
+func (_ Unimplemented) RemoveSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSalePrice A SKU's sale price overlay
+// (GET /admin/sale-prices/sku/{id})
+func (_ Unimplemented) GetSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SetSalePrice Set a SKU's sale price overlay
+// (PUT /admin/sale-prices/sku/{id})
+func (_ Unimplemented) SetSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -481,6 +701,112 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListBXGYCampaigns operation middleware
+func (siw *ServerInterfaceWrapper) ListBXGYCampaigns(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBXGYCampaigns(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBXGYCampaign operation middleware
+func (siw *ServerInterfaceWrapper) CreateBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBXGYCampaign(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBXGYCampaign operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBXGYCampaign(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBXGYCampaign operation middleware
+func (siw *ServerInterfaceWrapper) GetBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBXGYCampaign(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBXGYCampaign operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBXGYCampaign(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListPrices operation middleware
 func (siw *ServerInterfaceWrapper) ListPrices(w http.ResponseWriter, r *http.Request) {
@@ -625,6 +951,84 @@ func (siw *ServerInterfaceWrapper) PutPricingConfig(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutPricingConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveSalePrice operation middleware
+func (siw *ServerInterfaceWrapper) RemoveSalePrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveSalePrice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalePrice operation middleware
+func (siw *ServerInterfaceWrapper) GetSalePrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalePrice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetSalePrice operation middleware
+func (siw *ServerInterfaceWrapper) SetSalePrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetSalePrice(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1049,11 +1453,289 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/admin/tax-classes/{class_id}", wrapper.PutTaxClass)
 	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/admin/sale-prices/sku/{id}", wrapper.RemoveSalePrice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/sale-prices/sku/{id}", wrapper.GetSalePrice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/sale-prices/sku/{id}", wrapper.SetSalePrice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/campaigns/bxgy", wrapper.ListBXGYCampaigns)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/admin/campaigns/bxgy", wrapper.CreateBXGYCampaign)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/admin/campaigns/bxgy/{id}", wrapper.DeleteBXGYCampaign)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/campaigns/bxgy/{id}", wrapper.GetBXGYCampaign)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/admin/campaigns/bxgy/{id}", wrapper.UpdateBXGYCampaign)
+	})
 
 	return r
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type ListBXGYCampaignsRequestObject struct {
+}
+
+type ListBXGYCampaignsResponseObject interface {
+	VisitListBXGYCampaignsResponse(w http.ResponseWriter) error
+}
+
+type ListBXGYCampaigns200JSONResponse BXGYCampaignList
+
+func (response ListBXGYCampaigns200JSONResponse) VisitListBXGYCampaignsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBXGYCampaigns403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListBXGYCampaigns403ApplicationProblemPlusJSONResponse) VisitListBXGYCampaignsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBXGYCampaignRequestObject struct {
+	Body *CreateBXGYCampaignJSONRequestBody
+}
+
+type CreateBXGYCampaignResponseObject interface {
+	VisitCreateBXGYCampaignResponse(w http.ResponseWriter) error
+}
+
+type CreateBXGYCampaign201JSONResponse BXGYCampaign
+
+func (response CreateBXGYCampaign201JSONResponse) VisitCreateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBXGYCampaign400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response CreateBXGYCampaign400ApplicationProblemPlusJSONResponse) VisitCreateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBXGYCampaign403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateBXGYCampaign403ApplicationProblemPlusJSONResponse) VisitCreateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteBXGYCampaignRequestObject struct {
+	ID openapi_types.UUID `json:"id"`
+}
+
+type DeleteBXGYCampaignResponseObject interface {
+	VisitDeleteBXGYCampaignResponse(w http.ResponseWriter) error
+}
+
+type DeleteBXGYCampaign204Response struct {
+}
+
+func (response DeleteBXGYCampaign204Response) VisitDeleteBXGYCampaignResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteBXGYCampaign403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteBXGYCampaign403ApplicationProblemPlusJSONResponse) VisitDeleteBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteBXGYCampaign404ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteBXGYCampaign404ApplicationProblemPlusJSONResponse) VisitDeleteBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBXGYCampaignRequestObject struct {
+	ID openapi_types.UUID `json:"id"`
+}
+
+type GetBXGYCampaignResponseObject interface {
+	VisitGetBXGYCampaignResponse(w http.ResponseWriter) error
+}
+
+type GetBXGYCampaign200JSONResponse BXGYCampaign
+
+func (response GetBXGYCampaign200JSONResponse) VisitGetBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBXGYCampaign403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetBXGYCampaign403ApplicationProblemPlusJSONResponse) VisitGetBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBXGYCampaign404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetBXGYCampaign404ApplicationProblemPlusJSONResponse) VisitGetBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBXGYCampaignRequestObject struct {
+	ID   openapi_types.UUID `json:"id"`
+	Body *UpdateBXGYCampaignJSONRequestBody
+}
+
+type UpdateBXGYCampaignResponseObject interface {
+	VisitUpdateBXGYCampaignResponse(w http.ResponseWriter) error
+}
+
+type UpdateBXGYCampaign200JSONResponse BXGYCampaign
+
+func (response UpdateBXGYCampaign200JSONResponse) VisitUpdateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBXGYCampaign400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateBXGYCampaign400ApplicationProblemPlusJSONResponse) VisitUpdateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBXGYCampaign403ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateBXGYCampaign403ApplicationProblemPlusJSONResponse) VisitUpdateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateBXGYCampaign404ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateBXGYCampaign404ApplicationProblemPlusJSONResponse) VisitUpdateBXGYCampaignResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListPricesRequestObject struct {
 	Params ListPricesParams
@@ -1378,6 +2060,171 @@ func (response PutPricingConfig403ApplicationProblemPlusJSONResponse) VisitPutPr
 type PutPricingConfig409ApplicationProblemPlusJSONResponse Problem
 
 func (response PutPricingConfig409ApplicationProblemPlusJSONResponse) VisitPutPricingConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveSalePriceRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type RemoveSalePriceResponseObject interface {
+	VisitRemoveSalePriceResponse(w http.ResponseWriter) error
+}
+
+type RemoveSalePrice204Response struct {
+}
+
+func (response RemoveSalePrice204Response) VisitRemoveSalePriceResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveSalePrice403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveSalePrice403ApplicationProblemPlusJSONResponse) VisitRemoveSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveSalePrice404ApplicationProblemPlusJSONResponse Problem
+
+func (response RemoveSalePrice404ApplicationProblemPlusJSONResponse) VisitRemoveSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSalePriceRequestObject struct {
+	ID ID `json:"id"`
+}
+
+type GetSalePriceResponseObject interface {
+	VisitGetSalePriceResponse(w http.ResponseWriter) error
+}
+
+type GetSalePrice200JSONResponse SalePrice
+
+func (response GetSalePrice200JSONResponse) VisitGetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSalePrice403ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetSalePrice403ApplicationProblemPlusJSONResponse) VisitGetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSalePrice404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSalePrice404ApplicationProblemPlusJSONResponse) VisitGetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSalePriceRequestObject struct {
+	ID   ID `json:"id"`
+	Body *SetSalePriceJSONRequestBody
+}
+
+type SetSalePriceResponseObject interface {
+	VisitSetSalePriceResponse(w http.ResponseWriter) error
+}
+
+type SetSalePrice200JSONResponse SalePrice
+
+func (response SetSalePrice200JSONResponse) VisitSetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSalePrice400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetSalePrice400ApplicationProblemPlusJSONResponse) VisitSetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSalePrice403ApplicationProblemPlusJSONResponse Problem
+
+func (response SetSalePrice403ApplicationProblemPlusJSONResponse) VisitSetSalePriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSalePrice409ApplicationProblemPlusJSONResponse Problem
+
+func (response SetSalePrice409ApplicationProblemPlusJSONResponse) VisitSetSalePriceResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1794,6 +2641,21 @@ func (response GetSKUPrice409ApplicationProblemPlusJSONResponse) VisitGetSKUPric
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ListBXGYCampaigns List buy-X-get-Y campaigns
+	// (GET /admin/campaigns/bxgy)
+	ListBXGYCampaigns(ctx context.Context, request ListBXGYCampaignsRequestObject) (ListBXGYCampaignsResponseObject, error)
+	// CreateBXGYCampaign Create a buy-X-get-Y campaign
+	// (POST /admin/campaigns/bxgy)
+	CreateBXGYCampaign(ctx context.Context, request CreateBXGYCampaignRequestObject) (CreateBXGYCampaignResponseObject, error)
+	// DeleteBXGYCampaign Delete a buy-X-get-Y campaign
+	// (DELETE /admin/campaigns/bxgy/{id})
+	DeleteBXGYCampaign(ctx context.Context, request DeleteBXGYCampaignRequestObject) (DeleteBXGYCampaignResponseObject, error)
+	// GetBXGYCampaign A buy-X-get-Y campaign
+	// (GET /admin/campaigns/bxgy/{id})
+	GetBXGYCampaign(ctx context.Context, request GetBXGYCampaignRequestObject) (GetBXGYCampaignResponseObject, error)
+	// UpdateBXGYCampaign Replace a buy-X-get-Y campaign
+	// (PUT /admin/campaigns/bxgy/{id})
+	UpdateBXGYCampaign(ctx context.Context, request UpdateBXGYCampaignRequestObject) (UpdateBXGYCampaignResponseObject, error)
 	// ListPrices List current base prices
 	// (GET /admin/prices)
 	ListPrices(ctx context.Context, request ListPricesRequestObject) (ListPricesResponseObject, error)
@@ -1812,6 +2674,15 @@ type StrictServerInterface interface {
 	// PutPricingConfig Replace the shop's pricing configuration
 	// (PUT /admin/pricing-config)
 	PutPricingConfig(ctx context.Context, request PutPricingConfigRequestObject) (PutPricingConfigResponseObject, error)
+	// RemoveSalePrice Remove a SKU's sale price overlay
+	// (DELETE /admin/sale-prices/sku/{id})
+	RemoveSalePrice(ctx context.Context, request RemoveSalePriceRequestObject) (RemoveSalePriceResponseObject, error)
+	// GetSalePrice A SKU's sale price overlay
+	// (GET /admin/sale-prices/sku/{id})
+	GetSalePrice(ctx context.Context, request GetSalePriceRequestObject) (GetSalePriceResponseObject, error)
+	// SetSalePrice Set a SKU's sale price overlay
+	// (PUT /admin/sale-prices/sku/{id})
+	SetSalePrice(ctx context.Context, request SetSalePriceRequestObject) (SetSalePriceResponseObject, error)
 	// ListTaxClasses List tax classes
 	// (GET /admin/tax-classes)
 	ListTaxClasses(ctx context.Context, request ListTaxClassesRequestObject) (ListTaxClassesResponseObject, error)
@@ -1872,6 +2743,146 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListBXGYCampaigns operation middleware
+func (sh *strictHandler) ListBXGYCampaigns(w http.ResponseWriter, r *http.Request) {
+	var request ListBXGYCampaignsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBXGYCampaigns(ctx, request.(ListBXGYCampaignsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBXGYCampaigns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBXGYCampaignsResponseObject); ok {
+		if err := validResponse.VisitListBXGYCampaignsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBXGYCampaign operation middleware
+func (sh *strictHandler) CreateBXGYCampaign(w http.ResponseWriter, r *http.Request) {
+	var request CreateBXGYCampaignRequestObject
+
+	var body CreateBXGYCampaignJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBXGYCampaign(ctx, request.(CreateBXGYCampaignRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBXGYCampaign")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBXGYCampaignResponseObject); ok {
+		if err := validResponse.VisitCreateBXGYCampaignResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteBXGYCampaign operation middleware
+func (sh *strictHandler) DeleteBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request DeleteBXGYCampaignRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteBXGYCampaign(ctx, request.(DeleteBXGYCampaignRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteBXGYCampaign")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteBXGYCampaignResponseObject); ok {
+		if err := validResponse.VisitDeleteBXGYCampaignResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBXGYCampaign operation middleware
+func (sh *strictHandler) GetBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request GetBXGYCampaignRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBXGYCampaign(ctx, request.(GetBXGYCampaignRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBXGYCampaign")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBXGYCampaignResponseObject); ok {
+		if err := validResponse.VisitGetBXGYCampaignResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateBXGYCampaign operation middleware
+func (sh *strictHandler) UpdateBXGYCampaign(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request UpdateBXGYCampaignRequestObject
+
+	request.ID = id
+
+	var body UpdateBXGYCampaignJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateBXGYCampaign(ctx, request.(UpdateBXGYCampaignRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateBXGYCampaign")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateBXGYCampaignResponseObject); ok {
+		if err := validResponse.VisitUpdateBXGYCampaignResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListPrices operation middleware
@@ -2033,6 +3044,91 @@ func (sh *strictHandler) PutPricingConfig(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PutPricingConfigResponseObject); ok {
 		if err := validResponse.VisitPutPricingConfigResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveSalePrice operation middleware
+func (sh *strictHandler) RemoveSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
+	var request RemoveSalePriceRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveSalePrice(ctx, request.(RemoveSalePriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveSalePrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveSalePriceResponseObject); ok {
+		if err := validResponse.VisitRemoveSalePriceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSalePrice operation middleware
+func (sh *strictHandler) GetSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetSalePriceRequestObject
+
+	request.ID = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSalePrice(ctx, request.(GetSalePriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSalePrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSalePriceResponseObject); ok {
+		if err := validResponse.VisitGetSalePriceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetSalePrice operation middleware
+func (sh *strictHandler) SetSalePrice(w http.ResponseWriter, r *http.Request, id ID) {
+	var request SetSalePriceRequestObject
+
+	request.ID = id
+
+	var body SetSalePriceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetSalePrice(ctx, request.(SetSalePriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetSalePrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetSalePriceResponseObject); ok {
+		if err := validResponse.VisitSetSalePriceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

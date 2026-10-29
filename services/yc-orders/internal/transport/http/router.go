@@ -355,6 +355,15 @@ func (h handlers) CreateOrder(ctx context.Context, req api.CreateOrderRequestObj
 		if it.VariantValuesSnapshot != nil {
 			item.VariantValues = *it.VariantValuesSnapshot
 		}
+		if it.Components != nil {
+			item.Components = make([]domain.ComponentSnapshot, len(*it.Components))
+			for j, c := range *it.Components {
+				item.Components[j] = domain.ComponentSnapshot{
+					SKUID: c.SkuID.String(), Quantity: c.Quantity,
+					ProductName: deref(c.ProductName), SKUCode: deref(c.SkuCode),
+				}
+			}
+		}
 		o.Items[i] = item
 	}
 	created, err := h.svc.Create(ctx, o)
@@ -499,6 +508,21 @@ func order(o domain.Order, history []domain.HistoryEntry) api.Order {
 		if it.VariantValues != nil {
 			v := it.VariantValues
 			item.VariantValuesSnapshot = &v
+		}
+		if len(it.Components) > 0 {
+			comps := make([]api.LineComponent, len(it.Components))
+			for j, c := range it.Components {
+				comps[j] = api.LineComponent{SkuID: mustUUID(c.SKUID), Quantity: c.Quantity}
+				if c.ProductName != "" {
+					n := c.ProductName
+					comps[j].ProductName = &n
+				}
+				if c.SKUCode != "" {
+					code := c.SKUCode
+					comps[j].SkuCode = &code
+				}
+			}
+			item.Components = &comps
 		}
 		out.Items[i] = item
 	}

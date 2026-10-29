@@ -648,6 +648,17 @@ components:
           maxLength: 512
           description: Opaque signed token for `GET /orders/{id}?guest_token=`.
         expires_at: { type: string, format: date-time }
+    LineComponent:
+      type: object
+      description: |
+        One kit component snapshotted for a single bundle unit (composed-offers FR).
+        Stored for future packing lists; quantities are per one bundle SKU.
+      required: [sku_id, quantity]
+      properties:
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer, format: int64, minimum: 1 }
+        product_name: { type: string }
+        sku_code: { type: string }
     OrderItemInput:
       type: object
       required: [sku_id, name_snapshot, quantity, unit_price_minor, line_total_minor]
@@ -662,6 +673,10 @@ components:
         line_total_minor: { type: integer, format: int64, description: 'Gross; tax is rounded per line, so not always unit price times quantity.' }
         tax_minor: { type: integer, format: int64, description: Tax included in the line total. }
         is_digital: { type: boolean }
+        components:
+          type: array
+          description: Kit expansion when the line is a bundle SKU; omitted otherwise.
+          items: { $ref: '#/components/schemas/LineComponent' }
     OrderItem:
       type: object
       required: [sku_id, sku_code, name_snapshot, quantity, unit_price, line_total, tax, is_digital]
@@ -676,6 +691,10 @@ components:
         line_total: { $ref: '#/components/schemas/Money' }
         tax: { $ref: '#/components/schemas/Money' }
         is_digital: { type: boolean }
+        components:
+          type: array
+          description: Kit expansion when the line is a bundle SKU; omitted otherwise.
+          items: { $ref: '#/components/schemas/LineComponent' }
     Payment:
       type: object
       required: [gateway]

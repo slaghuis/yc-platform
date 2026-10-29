@@ -82,11 +82,16 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `pricing.tax_class.created.v1` | yc-pricing | — | New tax class defined |
 | `pricing.tax_class.updated.v1` | yc-pricing | — | Tax class rules changed |
 | `pricing.tax_class.deleted.v1` | yc-pricing | — | Tax class removed |
-| `pricing.promotion.created.v1` | yc-pricing | — | Promotion defined |
-| `pricing.promotion.started.v1` | yc-pricing | yc-cart, yc-product | Promotion becomes active (scheduled or manual) |
-| `pricing.promotion.ended.v1` | yc-pricing | yc-product | Promotion ends |
-| `pricing.promotion.updated.v1` | yc-pricing | — | Promotion changed |
-| `pricing.promotion.deleted.v1` | yc-pricing | — | Promotion removed |
+| `pricing.sale_price.set.v1` | yc-pricing | — | Sale overlay set or replaced (issue #31) |
+| `pricing.sale_price.removed.v1` | yc-pricing | — | Sale overlay removed |
+| `pricing.bxgy_campaign.created.v1` | yc-pricing | — | Buy-X-get-Y campaign created |
+| `pricing.bxgy_campaign.updated.v1` | yc-pricing | — | Buy-X-get-Y campaign updated |
+| `pricing.bxgy_campaign.deleted.v1` | yc-pricing | — | Buy-X-get-Y campaign deleted |
+| `pricing.promotion.created.v1` | yc-pricing | — | (Deferred) Generic promotion defined |
+| `pricing.promotion.started.v1` | yc-pricing | yc-cart, yc-product | (Deferred) Promotion becomes active |
+| `pricing.promotion.ended.v1` | yc-pricing | yc-product | (Deferred) Promotion ends |
+| `pricing.promotion.updated.v1` | yc-pricing | — | (Deferred) Promotion changed |
+| `pricing.promotion.deleted.v1` | yc-pricing | — | (Deferred) Promotion removed |
 | `pricing.config.changed.v1` | yc-pricing | yc-audit, yc-pricing (fetches rates for a new store currency) | Tenant pricing config created or changed |
 | `pricing.exchange_rates_updated.v1` | yc-pricing | — | Rate cache refreshed |
 | `pricing.exchange_rates_stale.v1` | yc-pricing | yc-monitor | Rate fetch has failed for > 24h |

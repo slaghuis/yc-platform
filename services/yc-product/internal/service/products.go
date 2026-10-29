@@ -59,19 +59,14 @@ func (s *Service) UpdateProduct(ctx context.Context, id string, in domain.Produc
 	return p, err
 }
 
-// DeleteProduct soft-deletes a product and its SKUs.
+// DeleteProduct soft-deletes a product and its SKUs, and retires any kits
+// that listed its SKUs as components.
 func (s *Service) DeleteProduct(ctx context.Context, id string) error {
 	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
-		skuIDs, err := s.cat.SoftDeleteProduct(ctx, tx, id)
-		if err != nil {
+		if err := s.softDeleteProduct(ctx, tx, tenantID, id); err != nil {
 			return err
 		}
-		if err := s.cat.RefreshProjection(ctx, tx, id); err != nil {
-			return err
-		}
-		return s.publish(ctx, tx, tenantID, events.TypeProductDeletedV1, events.ProductDeletedV1{
-			ProductID: id, SKUIds: skuIDs, DeletedAt: s.now().UTC(),
-		})
+		return s.retireDependentBundles(ctx, tx, tenantID, id, "")
 	})
 }
 
@@ -85,6 +80,9 @@ func (s *Service) AddVariant(ctx context.Context, productID string, in domain.Va
 		p, err := s.cat.GetProduct(ctx, tx, productID, true)
 		if err != nil {
 			return err
+		}
+		if p.Kind == domain.KindBundle {
+			return ycerrors.Conflict("Bundle products have no variant axes")
 		}
 		n, err := s.cat.CountSKUs(ctx, tx, productID)
 		if err != nil {
@@ -113,6 +111,9 @@ func (s *Service) CreateSKU(ctx context.Context, productID string, in domain.SKU
 		p, err := s.cat.GetProduct(ctx, tx, productID, true)
 		if err != nil {
 			return err
+		}
+		if p.Kind == domain.KindBundle {
+			return ycerrors.Conflict("Bundle products have a single SKU created with the kit")
 		}
 		if err := s.checkVariants(ctx, tx, p.ID, in.VariantValues, ""); err != nil {
 			return err
@@ -143,6 +144,13 @@ func (s *Service) UpdateSKU(ctx context.Context, id string, in domain.SKUInput) 
 		if err != nil {
 			return err
 		}
+		p, err := s.cat.GetProduct(ctx, tx, cur.ProductID, false)
+		if err != nil {
+			return err
+		}
+		if p.Kind == domain.KindBundle {
+			in.InventoryTracked = false
+		}
 		if err := s.checkVariants(ctx, tx, cur.ProductID, in.VariantValues, id); err != nil {
 			return err
 		}
@@ -151,6 +159,11 @@ func (s *Service) UpdateSKU(ctx context.Context, id string, in domain.SKUInput) 
 		}
 		if err := s.cat.RefreshProjection(ctx, tx, sku.ProductID); err != nil {
 			return err
+		}
+		if p.Kind == domain.KindBundle {
+			if err := s.cat.RecomputeBundleInStock(ctx, tx, sku.ID); err != nil {
+				return err
+			}
 		}
 		return s.publish(ctx, tx, tenantID, events.TypeProductSKUUpdatedV1, events.ProductSKUUpdatedV1{
 			SKUID: sku.ID, ProductID: sku.ProductID, SKUCode: sku.Code, VariantValues: anyMap(sku.VariantValues),
@@ -161,7 +174,7 @@ func (s *Service) UpdateSKU(ctx context.Context, id string, in domain.SKUInput) 
 	return sku, err
 }
 
-// DeleteSKU soft-deletes a SKU.
+// DeleteSKU soft-deletes a SKU and retires kits that listed it as a component.
 func (s *Service) DeleteSKU(ctx context.Context, id string) error {
 	return s.inShop(ctx, func(tx pgx.Tx, tenantID string) error {
 		cur, err := s.cat.GetSKU(ctx, tx, id, true)
@@ -174,9 +187,12 @@ func (s *Service) DeleteSKU(ctx context.Context, id string) error {
 		if err := s.cat.RefreshProjection(ctx, tx, cur.ProductID); err != nil {
 			return err
 		}
-		return s.publish(ctx, tx, tenantID, events.TypeProductSKUDeletedV1, events.ProductSKUDeletedV1{
+		if err := s.publish(ctx, tx, tenantID, events.TypeProductSKUDeletedV1, events.ProductSKUDeletedV1{
 			SKUID: id, ProductID: cur.ProductID, DeletedAt: s.now().UTC(),
-		})
+		}); err != nil {
+			return err
+		}
+		return s.retireDependentBundles(ctx, tx, tenantID, "", id)
 	})
 }
 
