@@ -118,12 +118,17 @@ func (s *Service) CompleteOAuth(ctx context.Context, provider, code, state strin
 		return domain.Session{}, ycerrors.UpstreamFailure("oauth " + provider).Wrap(err)
 	}
 
-	var sess domain.Session
+	var (
+		sess    domain.Session
+		outcome oauthOutcome
+		email   string
+	)
 	err = dbkit.WithTenantTx(ctx, s.db, a.TenantID, func(tx pgx.Tx) error {
-		user, outcome, err := s.resolveOAuthUser(ctx, tx, a.TenantID, provider, profile, st.VisitorID)
+		user, out, err := s.resolveOAuthUser(ctx, tx, a.TenantID, provider, profile, st.VisitorID)
 		if err != nil {
 			return err
 		}
+		outcome, email = out, user.Email
 		before := user
 		user.MergeOAuthProfile(profile)
 		if user.PhoneE164 != before.PhoneE164 || user.ProfileImage != before.ProfileImage {
@@ -138,6 +143,9 @@ func (s *Service) CompleteOAuth(ctx context.Context, provider, code, state strin
 	})
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("complete oauth: %w", err)
+	}
+	if outcome == oauthRegistered {
+		s.claimSupport(ctx, a.TenantID, sess.UserID, email)
 	}
 	return sess, nil
 }

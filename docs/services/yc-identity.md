@@ -135,6 +135,10 @@ Added: `/refresh`, `/logout`, `/password/reset-request`, `/password/reset-confir
 - **What changes:** the user's email, phone, display name and password hash are cleared and the status becomes `deleted`; OAuth links, password reset tokens and sessions are removed; `pseudonym_map` records the random UUID pseudonym, who asked and when. `identity.user.deleted.v1` (with the pseudonym, role and `requested_by`) and yc-identity's own `platform.gdpr.cascade_completed.v1` (`anonymized`) are published in the same transaction. Tracking the cascade is yc-audit's (ADR-005), not yc-identity's.
 - **Service clients** now also include `yc-shipping`, which asks yc-orders for a deleted customer's orders.
 
+### Issue #33 — Support claim
+
+- After password or OAuth registration, yc-identity calls yc-support `POST /internal/support/requests/claim` with `{user_id, email}` so visitor threads for that address attach to the new customer. Failures are logged; registration still succeeds. `service_clients` includes `yc-support` (`YC_SUPPORT_SERVICE_SECRET`).
+
 ### Phase 12 Implementation Notes
 
 Admin invitations and platform team (ADR-030), migration `007_invitations`.

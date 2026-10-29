@@ -25,6 +25,12 @@ type Orders interface {
 	AddressInUse(ctx context.Context, addressID string) (bool, error)
 }
 
+// Support claims visitor support threads for a newly registered customer
+// (issue #33). Nil skips the call.
+type Support interface {
+	ClaimSupportRequests(ctx context.Context, userID, email string) error
+}
+
 // Who asked for a deletion (identity.user.deleted.v1 requested_by).
 const (
 	requestedByUser        = "user"

@@ -1,0 +1,380 @@
+openapi: 3.1.0
+info:
+  title: yc-support
+  version: 0.1.0
+  description: |
+    Customer support contact threads (docs/features/Customer support contact
+    threads.md). A customer or visitor opens a request and gets a reference;
+    the shop and the customer exchange messages on the thread until a shop
+    admin closes it or it has been idle for 72 hours. A closed request
+    cannot be reopened.
+
+    Routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
+    X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
+    (api-conventions.md §9). POST /support/requests is open to customers and
+    visitors; the other /support routes need a signed-in customer, so a
+    visitor reads and answers by email until they register with the same
+    address and the request is claimed. /admin/ requires shop_admin and acts
+    on the caller's shop; /internal/ is for service callers (ADR-021).
+    Errors are application/problem+json (error-handling.md); posting to or
+    closing a closed request is 409.
+
+paths:
+  /support/requests:
+    post:
+      summary: Open a support request
+      description: |
+        Creates the request with its first message and returns it with its
+        reference. Customers and visitors may call it; the contact email is
+        required for both and receives the acknowledgement for visitors.
+      operationId: createSupportRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRequestInput' }
+      responses:
+        '201':
+          description: The request was opened with status new.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+    get:
+      summary: List my support requests
+      description: Customers only. Includes requests claimed from earlier visitor submissions. Most recently active first.
+      operationId: listMySupportRequests
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequestList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /support/requests/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get one of my support requests with its messages
+      description: Customers only. Another customer's request is 404.
+      operationId: getMySupportRequest
+      responses:
+        '200':
+          description: The thread.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /support/requests/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Reply on one of my support requests
+      description: |
+        Customers only. Moves an open_customer request to open_shop; 409
+        once the request is closed.
+      operationId: replyToMySupportRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageInput' }
+      responses:
+        '201':
+          description: The message was added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+
+  /admin/support/requests:
+    get:
+      summary: List the shop's support requests
+      description: Most recently active first.
+      operationId: adminListSupportRequests
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/Status' }
+        - name: topic
+          in: query
+          schema: { $ref: '#/components/schemas/Topic' }
+        - name: email
+          in: query
+          description: Matches the contact email exactly, case-insensitively.
+          schema: { type: string, maxLength: 320 }
+        - name: reference
+          in: query
+          description: Matches a reference such as SUP-7K3M9Q.
+          schema: { type: string, maxLength: 16 }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequestList' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+  /admin/support/requests/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      summary: Get a support request with its messages
+      operationId: adminGetSupportRequest
+      responses:
+        '200':
+          description: The thread.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thread' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+
+  /admin/support/requests/{id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Respond to a support request
+      description: |
+        Moves new and open_shop requests to open_customer and notifies the
+        requester. 409 once the request is closed.
+      operationId: adminReplyToSupportRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageInput' }
+      responses:
+        '201':
+          description: The message was added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /admin/support/requests/{id}/close:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      summary: Close a support request
+      description: |
+        Closes it for good (closed_reason staff) and notifies the requester
+        and the shop. A request that is already closed is 409.
+      operationId: adminCloseSupportRequest
+      responses:
+        '200':
+          description: The closed request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportRequest' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /internal/support/requests/claim:
+    post:
+      summary: Claim a visitor's requests for a customer
+      description: |
+        For yc-identity after a customer registers. Attaches the shop's
+        unclaimed requests whose contact email equals the given address to
+        the user, closed ones included. The caller must have verified that
+        the user controls the address.
+      operationId: claimSupportRequests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimInput' }
+      responses:
+        '200':
+          description: How many requests were claimed; zero is not an error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResult' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  schemas:
+    Topic:
+      type: string
+      enum: [allergen, delivery, order, payment, feedback, other]
+    Status:
+      type: string
+      description: |
+        new: the shop has not answered. open_customer: the shop answered and
+        the requester is to reply. open_shop: the requester replied and the
+        shop is to answer. closed: final.
+      enum: [new, open_customer, open_shop, closed]
+    UserType:
+      type: string
+      enum: [customer, visitor]
+    AuthorType:
+      type: string
+      enum: [customer, visitor, shop_admin, system]
+    ClosedReason:
+      type: string
+      description: staff when a shop admin closed it; idle after 72 hours without a message.
+      enum: [staff, idle]
+
+    CreateRequestInput:
+      type: object
+      required: [topic, contact_email, contact_name, body]
+      additionalProperties: false
+      properties:
+        topic: { $ref: '#/components/schemas/Topic' }
+        contact_email: { type: string, maxLength: 320, description: Where the shop's answers are emailed to a visitor. Stored lower case. }
+        contact_name: { type: string, minLength: 1, maxLength: 200 }
+        contact_phone: { type: string, maxLength: 16, description: Optional, E.164, e.g. +27821234567. }
+        order_id: { type: string, format: uuid, description: The order the request is about. }
+        page_url: { type: string, maxLength: 2048, description: The storefront page the request was sent from. }
+        body: { type: string, minLength: 1, maxLength: 5000, description: The first message, plain text. }
+
+    MessageInput:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000, description: Plain text. }
+
+    SupportRequest:
+      type: object
+      required: [id, reference, topic, status, contact_email, contact_name, user_type, last_activity_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string, description: The human-facing reference, e.g. SUP-7K3M9Q. Unique in the shop. }
+        topic: { $ref: '#/components/schemas/Topic' }
+        status: { $ref: '#/components/schemas/Status' }
+        contact_email: { type: string }
+        contact_name: { type: string }
+        contact_phone: { type: string }
+        user_id: { type: string, format: uuid, description: Absent for a visitor's request until it is claimed. }
+        user_type: { $ref: '#/components/schemas/UserType' }
+        order_id: { type: string, format: uuid }
+        page_url: { type: string }
+        last_activity_at: { type: string, format: date-time, description: The latest message; 72 hours after it an open request closes. }
+        closed_at: { type: string, format: date-time }
+        closed_reason: { $ref: '#/components/schemas/ClosedReason' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Message:
+      type: object
+      required: [id, request_id, author_type, body, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        author_type: { $ref: '#/components/schemas/AuthorType' }
+        author_user_id: { type: string, format: uuid }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Thread:
+      type: object
+      required: [request, messages]
+      properties:
+        request: { $ref: '#/components/schemas/SupportRequest' }
+        messages:
+          type: array
+          description: Oldest first.
+          items: { $ref: '#/components/schemas/Message' }
+
+    RequestList:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SupportRequest' }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    ClaimInput:
+      type: object
+      required: [user_id, email]
+      additionalProperties: false
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, maxLength: 320 }
+
+    ClaimResult:
+      type: object
+      required: [claimed]
+      properties:
+        claimed: { type: integer, format: int64 }
+
+    PageInfo:
+      type: object
+      description: Cursor pagination (api-conventions.md §7).
+      x-go-type: httpkit.PageInfo
+      x-go-type-import:
+        path: github.com/slaghuis/yc-platform/libs/yc-httpkit
+        name: httpkit
+      required: [size]
+      properties:
+        size: { type: integer }
+        cursor: { type: string }
+        next_cursor: { type: string }
+        total_available: { type: integer }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem details (docs/standards/error-handling.md).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlation_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string }
+              message: { type: string }
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

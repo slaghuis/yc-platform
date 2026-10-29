@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/support/support.message.posted.v1.json",
+  "title": "support.message.posted.v1",
+  "description": "A message was added to a support request after its first one. The body stays in yc-support (GDPR).",
+  "type": "object",
+  "required": [
+    "request_id",
+    "message_id",
+    "reference",
+    "author_type",
+    "status",
+    "posted_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "author_type": {
+      "type": "string",
+      "enum": ["customer", "visitor", "shop_admin", "system"]
+    },
+    "author_user_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "type": "string",
+      "description": "The request's status after the message.",
+      "enum": ["new", "open_customer", "open_shop", "closed"]
+    },
+    "posted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

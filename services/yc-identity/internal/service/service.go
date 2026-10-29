@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -56,6 +57,9 @@ type Config struct {
 	// Orders refuses deletions while orders are unfinished. Nil skips the
 	// check (development without internal calls).
 	Orders Orders
+	// Support claims visitor support threads after registration (issue #33).
+	// Nil skips the call.
+	Support Support
 	// LogResetLinks logs reset tokens. Development only.
 	LogResetLinks bool
 	// LogInviteLinks logs invite tokens. Development only.
@@ -193,7 +197,22 @@ func (s *Service) Register(ctx context.Context, reg domain.Registration) (domain
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("register: %w", err)
 	}
+	s.claimSupport(ctx, a.TenantID, sess.UserID, reg.Email)
 	return sess, nil
+}
+
+// claimSupport attaches visitor support threads for email to the new
+// customer (issue #33). Failures are logged; registration still succeeds.
+func (s *Service) claimSupport(ctx context.Context, tenantID, userID, email string) {
+	if s.cfg.Support == nil || email == "" || userID == "" {
+		return
+	}
+	inTenant := authctx.WithAuth(ctx, authctx.AuthContext{
+		TenantID: tenantID, ActorID: userID, ActorType: authctx.ActorCustomer,
+	})
+	if err := s.cfg.Support.ClaimSupportRequests(inTenant, userID, email); err != nil {
+		slog.WarnContext(ctx, "support claim failed", "user_id", userID, "err", err)
+	}
 }
 
 func (s *Service) registerUser(ctx context.Context, tx pgx.Tx, a authctx.AuthContext, reg domain.Registration, hash string) (domain.User, error) {

@@ -58,6 +58,7 @@ yc-platform-admin / yc-platform-shop ──http, Host: <browser host>──▶ y
     | `/shipping/tracking/{tracking_number}` | yc-message shipped email |
     | `/account/reset-password?token=…` | yc-identity `password.reset_url` |
     | `/account/accept-invite?token=…` | yc-identity invitations (ADR-030) |
+    | `/account/support/{request_id}` | yc-support / yc-message support emails (issue #33) |
     | `/oauth/{provider}/callback` | OAuth providers (yc-identity `redirect_url`) |
     | `/checkout/{session_id}/return` | Payment gateways (`return_url`, yc-checkout) |
 

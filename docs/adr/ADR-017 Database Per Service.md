@@ -50,6 +50,7 @@ This provides **defense in depth**: even an application bug that forgets to filt
 ## Service-to-Database Map (v1)
 
 *Amended 2026-10-14: yc-gateway owns `yc_gateway` (ADR-020).*
+*Amended 2026-10-28: yc-support owns `yc_support` (issue #33).*
 
 | Service | Database |
 |---|---|
@@ -70,3 +71,4 @@ This provides **defense in depth**: even an application bug that forgets to filt
 | YC-Audit | `yc_audit` |
 | YC-Monitor | `yc_monitor` |
 | YC-Analytics | `yc_analytics` |
+| YC-Support | `yc_support` |

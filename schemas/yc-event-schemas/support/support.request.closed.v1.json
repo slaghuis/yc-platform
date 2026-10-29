@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/support/support.request.closed.v1.json",
+  "title": "support.request.closed.v1",
+  "description": "A support request was closed by shop staff or after 72 hours without a message. It cannot be reopened.",
+  "type": "object",
+  "required": [
+    "request_id",
+    "reference",
+    "closed_reason",
+    "closed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reference": {
+      "type": "string"
+    },
+    "closed_reason": {
+      "type": "string",
+      "enum": ["staff", "idle"]
+    },
+    "closed_by": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The shop admin who closed it; absent for idle closes."
+    },
+    "closed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

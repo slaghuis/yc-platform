@@ -24,6 +24,7 @@ SERVICES=(
 	yc_analytics
 	yc_gateway
 	yc_tenant
+	yc_support
 )
 
 # Escape single quotes for SQL string literals.

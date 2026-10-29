@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yc/schemas/support/support.request.created.v1.json",
+  "title": "support.request.created.v1",
+  "description": "A customer or visitor opened a support request. Contact details stay in yc-support (GDPR).",
+  "type": "object",
+  "required": [
+    "request_id",
+    "reference",
+    "topic",
+    "user_type",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reference": {
+      "type": "string",
+      "description": "The human-facing reference, e.g. SUP-7K3M9Q."
+    },
+    "topic": {
+      "type": "string",
+      "enum": ["allergen", "delivery", "order", "payment", "feedback", "other"]
+    },
+    "user_type": {
+      "type": "string",
+      "enum": ["customer", "visitor"]
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Present when a customer opened the request."
+    },
+    "order_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

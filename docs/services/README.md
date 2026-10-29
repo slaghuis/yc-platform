@@ -22,6 +22,7 @@ One file per service, matching `/services/<name>/`, plus the shared event librar
 | yc-monitor     | yc_monitor     | [yc-monitor.md](yc-monitor.md) |
 | yc-analytics   | yc_analytics   | [yc-analytics.md](yc-analytics.md) |
 | yc-tenant      | yc_tenant      | [yc-tenant.md](yc-tenant.md) |
+| yc-support     | yc_support     | [yc-support.md](yc-support.md) |
 
 Shared components:
 

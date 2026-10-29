@@ -159,6 +159,69 @@ The link works once and expires at {{.expires_at}}. If you did not expect this, 
 `,
 	},
 	{TypeAdminInvite, ChannelSMS}: {Body: `You're invited as {{.role}}: {{.invite_url}} (expires {{.expires_at}})`},
+
+	{TypeSupportAck, ChannelEmail}: {
+		Subject: "We received your request {{.reference}}",
+		Body: `Thanks {{.contact_name}}. We received your support request about {{.topic}}.
+
+Your reference is {{.reference}}.
+
+{{if .support_url}}View the conversation: {{.support_url}}
+
+{{end}}We will reply as soon as we can.
+`,
+	},
+	{TypeSupportAck, ChannelSMS}: {Body: `We received your request {{.reference}} ({{.topic}}).`},
+
+	{TypeSupportShopReply, ChannelEmail}: {
+		Subject: "Update on your request {{.reference}}",
+		Body: `The shop replied to your support request {{.reference}} ({{.topic}}).
+
+{{if .excerpt}}{{.excerpt}}
+
+{{end}}{{if .support_url}}Continue the conversation: {{.support_url}}
+{{else}}Reply is not available in the app for guest requests; register with this email to continue in your account, or wait for a further email.
+{{end}}`,
+	},
+	{TypeSupportShopReply, ChannelSMS}: {Body: `Update on request {{.reference}}: the shop replied.{{if .support_url}} {{.support_url}}{{end}}`},
+
+	{TypeSupportClosed, ChannelEmail}: {
+		Subject: "Request {{.reference}} is closed",
+		Body: `Support request {{.reference}} ({{.topic}}) is now closed{{if eq .closed_reason "idle"}} after 72 hours without a reply{{end}}.
+
+{{if and (eq .audience "customer") .support_url}}View the thread: {{.support_url}}
+{{end}}If you still need help, open a new support request.
+`,
+	},
+	{TypeSupportClosed, ChannelSMS}: {Body: `Request {{.reference}} is closed.{{if eq .closed_reason "idle"}} (no reply for 72h){{end}}`},
+
+	{TypeSupportNewRequest, ChannelEmail}: {
+		Subject: "New support request {{.reference}}",
+		Body: `A new support request was opened.
+
+Reference: {{.reference}}
+Topic:     {{.topic}}
+From:      {{.contact_name}} <{{.contact_email}}>
+
+{{if .excerpt}}{{.excerpt}}
+{{end}}
+Open it in the shop admin console under Support.
+`,
+	},
+	{TypeSupportNewRequest, ChannelSMS}: {Body: `New support request {{.reference}} ({{.topic}}) from {{.contact_email}}.`},
+
+	{TypeSupportCustomerReply, ChannelEmail}: {
+		Subject: "Reply on support request {{.reference}}",
+		Body: `The customer replied on support request {{.reference}} ({{.topic}}).
+
+From: {{.contact_name}} <{{.contact_email}}>
+
+{{if .excerpt}}{{.excerpt}}
+{{end}}
+Open it in the shop admin console under Support.
+`,
+	},
+	{TypeSupportCustomerReply, ChannelSMS}: {Body: `Customer reply on {{.reference}} ({{.topic}}).`},
 }
 
 // Default returns the platform's built-in template for a type and channel.
@@ -221,6 +284,26 @@ var samples = map[Type]map[string]any{
 	TypeAdminInvite: {
 		"role": "shop_admin", "invite_url": "https://shop.example/account/accept-invite?token=example",
 		"expires_at": "2026-01-01 13:00 UTC",
+	},
+	TypeSupportAck: {
+		"reference": "SUP-ABC123", "topic": "delivery", "contact_name": "Thandi",
+		"support_url": "https://shop.example/account/support/example",
+	},
+	TypeSupportShopReply: {
+		"reference": "SUP-ABC123", "topic": "delivery", "excerpt": "Your order is on the way.",
+		"support_url": "https://shop.example/account/support/example",
+	},
+	TypeSupportClosed: {
+		"reference": "SUP-ABC123", "topic": "delivery", "audience": "customer", "closed_reason": "idle",
+		"support_url": "https://shop.example/account/support/example",
+	},
+	TypeSupportNewRequest: {
+		"reference": "SUP-ABC123", "topic": "delivery", "contact_name": "Thandi",
+		"contact_email": "thandi@example.com", "excerpt": "Where is my order?",
+	},
+	TypeSupportCustomerReply: {
+		"reference": "SUP-ABC123", "topic": "delivery", "contact_name": "Thandi",
+		"contact_email": "thandi@example.com", "excerpt": "Thanks, still waiting.",
 	},
 }
 

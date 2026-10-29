@@ -21,6 +21,7 @@ SERVICES=(
     yc_analytics
     yc_gateway
     yc_tenant
+    yc_support
 )
 
 for svc in "${SERVICES[@]}"; do

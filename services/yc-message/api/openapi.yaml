@@ -285,6 +285,11 @@ components:
         - admin_alert
         - milestone
         - admin_invite
+        - support_ack
+        - support_shop_reply
+        - support_closed
+        - support_new_request
+        - support_customer_reply
     Channel:
       type: string
       enum: [email, sms, whatsapp, telegram]

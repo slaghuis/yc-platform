@@ -30,6 +30,12 @@ const (
 	TypeMilestone  Type = "milestone"
 	// Phase 12: invitation link (ADR-030); sent via POST /internal/send.
 	TypeAdminInvite Type = "admin_invite"
+	// Issue #33: customer support threads (yc-support → POST /internal/send).
+	TypeSupportAck           Type = "support_ack"
+	TypeSupportShopReply     Type = "support_shop_reply"
+	TypeSupportClosed        Type = "support_closed"
+	TypeSupportNewRequest    Type = "support_new_request"
+	TypeSupportCustomerReply Type = "support_customer_reply"
 )
 
 // Types lists every message type, in a stable order.
@@ -37,6 +43,7 @@ var Types = []Type{
 	TypeWelcome, TypePasswordReset, TypeChannelVerification,
 	TypeOrderConfirmation, TypeOrderShipped, TypeOrderDelivered, TypeOrderCancelled, TypeRefundIssued,
 	TypeCartAbandoned, TypeReviewPrompt, TypeAdminAlert, TypeMilestone, TypeAdminInvite,
+	TypeSupportAck, TypeSupportShopReply, TypeSupportClosed, TypeSupportNewRequest, TypeSupportCustomerReply,
 }
 
 // Valid reports whether t is a known message type.

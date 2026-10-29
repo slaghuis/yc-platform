@@ -63,6 +63,7 @@ services:
       YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET}
       YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET}
       YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET}
+      YC_SUPPORT_SERVICE_SECRET: ${YC_SUPPORT_SERVICE_SECRET}
       YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET}
 
   yc-gateway:
@@ -228,6 +229,17 @@ services:
       YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
       YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET}
       YC_REVIEW__HTTP__SHUTDOWN_DELAY: "0s"
+
+  yc-support:
+    <<: *service-image
+    build: !reset null
+    image: ${REGISTRY}/yc-support:${VERSION}
+    ports: !reset []
+    environment:
+      YC_SUPPORT_DB_URL: postgres://yc_support_app:${POSTGRES_APP_PASSWORD}@postgres:5432/yc_support?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_SUPPORT_SERVICE_SECRET: ${YC_SUPPORT_SERVICE_SECRET}
+      YC_SUPPORT__HTTP__SHUTDOWN_DELAY: "0s"
 
   yc-audit:
     <<: *service-image

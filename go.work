@@ -29,6 +29,7 @@ use (
 	./services/yc-product
 	./services/yc-review
 	./services/yc-shipping
+	./services/yc-support
 	./services/yc-tenant
 
 	./test/e2e

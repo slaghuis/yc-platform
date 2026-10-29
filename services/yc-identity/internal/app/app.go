@@ -132,11 +132,13 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	var (
 		messages service.Messages
 		orders   service.Orders
+		support  service.Support
 	)
 	if cfg.InternalCalls.GatewayURL != "" {
 		internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
 		messages = integration.NewMessages(internal)
 		orders = integration.NewOrders(internal)
+		support = integration.NewSupport(internal)
 	}
 	a.Service = service.New(db, bus, signer, hasher, service.Config{
 		AccessTokenTTL:  cfg.JWT.AccessTokenTTL,
@@ -153,6 +155,7 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 		ResetURL:        cfg.Password.ResetURL,
 		Messages:        messages,
 		Orders:          orders,
+		Support:         support,
 		LogResetLinks:   cfg.Password.LogResetLinks,
 		LogInviteLinks:  cfg.Invitations.LogInviteLinks,
 

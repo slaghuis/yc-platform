@@ -32,6 +32,7 @@ gdpr:
     - yc-payment
     - yc-shipping
     - yc-analytics
+    - yc-support
   deadline: ${YC_AUDIT_GDPR_DEADLINE:-72h}
   sweep_interval: ${YC_AUDIT_SWEEP_INTERVAL:-1m}
 # GET /sysadmin/audit/export returns at most this many records.

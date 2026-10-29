@@ -152,6 +152,9 @@ const (
 	TypeShippingDeliveryExceptionV1          = "shipping.delivery_exception.v1"
 	TypeShippingInTransitV1                  = "shipping.in_transit.v1"
 	TypeShippingLabelCreatedV1               = "shipping.label_created.v1"
+	TypeSupportMessagePostedV1               = "support.message.posted.v1"
+	TypeSupportRequestClosedV1               = "support.request.closed.v1"
+	TypeSupportRequestCreatedV1              = "support.request.created.v1"
 )
 
 // EventTypes lists every event type with a schema, sorted.
@@ -300,6 +303,9 @@ var EventTypes = []string{
 	TypeShippingDeliveryExceptionV1,
 	TypeShippingInTransitV1,
 	TypeShippingLabelCreatedV1,
+	TypeSupportMessagePostedV1,
+	TypeSupportRequestClosedV1,
+	TypeSupportRequestCreatedV1,
 }
 
 // Enum values.
@@ -519,6 +525,24 @@ const (
 	ReviewSubmittedV1StatusPending                           = "pending"
 	ReviewSubmittedV1StatusApproved                          = "approved"
 	ReviewSubmittedV1StatusRejected                          = "rejected"
+	SupportMessagePostedV1AuthorTypeCustomer                 = "customer"
+	SupportMessagePostedV1AuthorTypeVisitor                  = "visitor"
+	SupportMessagePostedV1AuthorTypeShopAdmin                = "shop_admin"
+	SupportMessagePostedV1AuthorTypeSystem                   = "system"
+	SupportMessagePostedV1StatusNew                          = "new"
+	SupportMessagePostedV1StatusOpenCustomer                 = "open_customer"
+	SupportMessagePostedV1StatusOpenShop                     = "open_shop"
+	SupportMessagePostedV1StatusClosed                       = "closed"
+	SupportRequestClosedV1ClosedReasonStaff                  = "staff"
+	SupportRequestClosedV1ClosedReasonIdle                   = "idle"
+	SupportRequestCreatedV1TopicAllergen                     = "allergen"
+	SupportRequestCreatedV1TopicDelivery                     = "delivery"
+	SupportRequestCreatedV1TopicOrder                        = "order"
+	SupportRequestCreatedV1TopicPayment                      = "payment"
+	SupportRequestCreatedV1TopicFeedback                     = "feedback"
+	SupportRequestCreatedV1TopicOther                        = "other"
+	SupportRequestCreatedV1UserTypeCustomer                  = "customer"
+	SupportRequestCreatedV1UserTypeVisitor                   = "visitor"
 )
 
 // AnalyticsAggregateRebuiltV1 is the payload of analytics.aggregate.rebuilt.v1.
@@ -2902,3 +2926,53 @@ type ShippingLabelCreatedV1 struct {
 
 // EventType returns shipping.label_created.v1.
 func (ShippingLabelCreatedV1) EventType() string { return TypeShippingLabelCreatedV1 }
+
+// SupportMessagePostedV1 is the payload of support.message.posted.v1.
+//
+// A message was added to a support request after its first one. The body stays in yc-support (GDPR).
+type SupportMessagePostedV1 struct {
+	RequestID    string  `json:"request_id"`
+	MessageID    string  `json:"message_id"`
+	Reference    string  `json:"reference"`
+	AuthorType   string  `json:"author_type"`
+	AuthorUserID *string `json:"author_user_id,omitempty"`
+	// The request's status after the message.
+	Status   string    `json:"status"`
+	PostedAt time.Time `json:"posted_at"`
+}
+
+// EventType returns support.message.posted.v1.
+func (SupportMessagePostedV1) EventType() string { return TypeSupportMessagePostedV1 }
+
+// SupportRequestClosedV1 is the payload of support.request.closed.v1.
+//
+// A support request was closed by shop staff or after 72 hours without a message. It cannot be reopened.
+type SupportRequestClosedV1 struct {
+	RequestID    string `json:"request_id"`
+	Reference    string `json:"reference"`
+	ClosedReason string `json:"closed_reason"`
+	// The shop admin who closed it; absent for idle closes.
+	ClosedBy *string   `json:"closed_by,omitempty"`
+	ClosedAt time.Time `json:"closed_at"`
+}
+
+// EventType returns support.request.closed.v1.
+func (SupportRequestClosedV1) EventType() string { return TypeSupportRequestClosedV1 }
+
+// SupportRequestCreatedV1 is the payload of support.request.created.v1.
+//
+// A customer or visitor opened a support request. Contact details stay in yc-support (GDPR).
+type SupportRequestCreatedV1 struct {
+	RequestID string `json:"request_id"`
+	// The human-facing reference, e.g. SUP-7K3M9Q.
+	Reference string `json:"reference"`
+	Topic     string `json:"topic"`
+	UserType  string `json:"user_type"`
+	// Present when a customer opened the request.
+	UserID    *string   `json:"user_id,omitempty"`
+	OrderID   *string   `json:"order_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// EventType returns support.request.created.v1.
+func (SupportRequestCreatedV1) EventType() string { return TypeSupportRequestCreatedV1 }

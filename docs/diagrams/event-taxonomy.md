@@ -42,7 +42,7 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `identity.user.password_changed.v1` | yc-identity | — | Password successfully changed |
 | `identity.user.suspended.v1` | yc-identity | yc-audit, yc-message | Admin-suspended; leaves alert audiences (ADR-030) |
 | `identity.user.reactivated.v1` | yc-identity | yc-audit, yc-message | Suspended user reactivated (ADR-030) |
-| `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping | `DELETE /me` or `DELETE /admin/users/{id}`; carries the pseudonym and kicks off the GDPR cascade (yc-inventory joins with back-in-stock subscriptions) |
+| `identity.user.deleted.v1` | yc-identity | yc-analytics, yc-audit, yc-cart, yc-checkout, yc-message, yc-orders, yc-payment, yc-preference, yc-product, yc-review, yc-shipping, yc-support | `DELETE /me` or `DELETE /admin/users/{id}`; carries the pseudonym and kicks off the GDPR cascade (yc-inventory joins with back-in-stock subscriptions) |
 | `identity.oauth_linked.v1` | yc-identity | — | OAuth provider linked to user |
 | `identity.oauth_unlinked.v1` | yc-identity | — | OAuth provider unlinked |
 
@@ -149,6 +149,16 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `review.like.removed.v1` | yc-review | yc-product | Product unliked |
 | `review.google_reviews.refreshed.v1` | yc-review | — | Google reviews cache updated |
 | `review.prompt_requested.v1` | yc-review | yc-message | Review prompt due for a delivered order (after the configured delay; consumed by yc-message) |
+
+## Support Domain
+
+Payloads carry IDs and the reference only; contact details and message bodies stay in yc-support (GDPR). yc-support notifies through `POST /internal/send` rather than these events until yc-message has support templates.
+
+| Event Type | Producer | Consumers | Trigger |
+|---|---|---|---|
+| `support.request.created.v1` | yc-support | — | Customer or visitor opens a request |
+| `support.message.posted.v1` | yc-support | — | Message added after the first (shop, customer, visitor) or the system's idle-close note |
+| `support.request.closed.v1` | yc-support | — | Shop admin closes, or 72 hours pass without a message |
 
 ## Checkout Domain
 

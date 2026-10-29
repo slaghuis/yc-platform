@@ -1,0 +1,37 @@
+service: yc-support
+environment: ${YC_ENVIRONMENT:-dev}
+http:
+  listen: ":8080"
+log:
+  level: ${LOG_LEVEL:-info}
+database:
+  url: ${YC_SUPPORT_DB_URL}
+  migrate_on_start: true
+nats:
+  url: ${NATS_URL}
+telemetry:
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+# Self-registration with yc-gateway's internal listener (ADR-020 rule 7).
+gateway:
+  internal_url: ${YC_GATEWAY_INTERNAL_URL}
+  advertise_url: ${YC_SUPPORT_ADVERTISE_URL:-http://yc-support:8080}
+  interval: 5s
+# Calls through yc-gateway (ADR-021): yc-message to notify customers and the
+# shop, yc-tenant for the shop's contact email.
+internal_calls:
+  gateway_url: ${YC_GATEWAY_INTERNAL_URL}
+  client_secret: ${YC_SUPPORT_SERVICE_SECRET}
+  timeout: 5s
+support:
+  # An open request with no message for idle_ttl is closed by the sweeper,
+  # which runs every sweep_interval and closes up to sweep_batch at a time.
+  idle_ttl: ${YC_SUPPORT_IDLE_TTL:-72h}
+  sweep_interval: ${YC_SUPPORT_SWEEP_INTERVAL:-1m}
+  sweep_batch: 50
+  # Prefixes the customer's thread link in emails (/account/support/{id}).
+  # Empty gives the relative path; "{tenant_id}" is replaced by the shop's
+  # tenant ID, e.g. https://{tenant_id}.shops.example.com.
+  storefront_base: ${YC_SUPPORT_STOREFRONT_BASE:-}
+# The shop's contact email is read from yc-tenant and kept this long.
+tenant:
+  contact_cache_ttl: 5m

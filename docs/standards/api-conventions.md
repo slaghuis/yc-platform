@@ -318,6 +318,7 @@ Services that put links in emails or redirects link to **frontend pages**, never
 | `/shipping/tracking/{tracking_number}` | yc-message shipped email |
 | `/account/reset-password?token=…` | yc-identity `password.reset_url` |
 | `/account/accept-invite?token=…` | yc-identity invitations (ADR-030) |
+| `/account/support/{request_id}` | yc-support / yc-message support emails (issue #33) |
 | `/oauth/{provider}/callback` | yc-identity `oauth.<provider>.redirect_url` |
 | `/checkout/{session_id}/return` | the storefront itself, as the `return_url` it sends to yc-checkout confirm for hosted payments |
 

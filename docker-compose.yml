@@ -112,6 +112,7 @@ services:
       YC_MESSAGE_SERVICE_SECRET: ${YC_MESSAGE_SERVICE_SECRET:-dev-message-service-secret-32-chars}
       YC_PREFERENCE_SERVICE_SECRET: ${YC_PREFERENCE_SERVICE_SECRET:-dev-preference-service-secret-32ch}
       YC_REVIEW_SERVICE_SECRET: ${YC_REVIEW_SERVICE_SECRET:-dev-review-service-secret-32-chars!}
+      YC_SUPPORT_SERVICE_SECRET: ${YC_SUPPORT_SERVICE_SECRET:-dev-support-service-secret-32-chars!}
       YC_SHIPPING_SERVICE_SECRET: ${YC_SHIPPING_SERVICE_SECRET:-dev-shipping-service-secret-32char}
       # Password reset links go out through yc-message (gateway internal
       # listener). Reset and OAuth pages belong to the frontends behind the
@@ -475,6 +476,29 @@ services:
       OTEL_METRICS_EXPORTER: none
     ports:
       - "8096:8080"
+    depends_on: *infra
+
+  # Customer support contact threads (issue #33).
+  yc-support:
+    profiles: [app]
+    build:
+      <<: *service-build
+      args: { SERVICE: yc-support }
+    image: yc-platform/yc-support:dev
+    container_name: yc-support
+    restart: unless-stopped
+    stop_grace_period: 40s
+    environment:
+      YC_SUPPORT_DB_URL: postgres://yc_support_app:devpass@postgres:5432/yc_support?sslmode=disable
+      YC_GATEWAY_INTERNAL_URL: http://yc-gateway:8091
+      YC_SUPPORT_SERVICE_SECRET: ${YC_SUPPORT_SERVICE_SECRET:-dev-support-service-secret-32-chars!}
+      YC_SUPPORT_IDLE_TTL: ${YC_SUPPORT_IDLE_TTL:-72h}
+      YC_SUPPORT_SWEEP_INTERVAL: ${YC_SUPPORT_SWEEP_INTERVAL:-1m}
+      NATS_URL: nats://nats:4222
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - "8100:8080"
     depends_on: *infra
 
   # Insert-only audit trail of financial, security and GDPR events, and the

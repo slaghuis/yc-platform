@@ -29,6 +29,7 @@ YC_IDENTITY_SERVICE_SECRET=validate-identity-service-secret-32
 YC_MESSAGE_SERVICE_SECRET=validate-message-service-secret-32c
 YC_PREFERENCE_SERVICE_SECRET=validate-preference-service-secret32
 YC_REVIEW_SERVICE_SECRET=validate-review-service-secret-32ch!
+YC_SUPPORT_SERVICE_SECRET=validate-support-service-secret-32ch!
 YC_SHIPPING_SERVICE_SECRET=validate-shipping-service-secret-32
 YC_PAYMENT_CIPHER_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 YC_MESSAGE_CIPHER_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

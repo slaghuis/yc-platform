@@ -48,6 +48,7 @@ SERVICES=(
 	yc-identity yc-gateway yc-image yc-preference yc-product yc-pricing
 	yc-inventory yc-cart yc-review yc-checkout yc-payment yc-shipping
 	yc-orders yc-message yc-audit yc-monitor yc-analytics yc-tenant
+	yc-support
 )
 
 echo "==> pulling platform images @ ${VERSION}"

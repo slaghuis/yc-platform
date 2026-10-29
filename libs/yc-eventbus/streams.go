@@ -189,6 +189,11 @@ func MessageStream() StreamConfig {
 		"message.verification_sent.v1", "message.verification_confirmed.v1")
 }
 
+// SupportStream is the support domain (1-year retention; ADR-004 has no row
+// for it yet). Every support event has four segments, so the wildcard
+// captures them all.
+func SupportStream() StreamConfig { return DomainStream("support", retentionYear) }
+
 // ReviewStream is the review domain (2-year retention, ADR-004). The
 // review.like.* events have four segments; the rest are listed.
 func ReviewStream() StreamConfig {
