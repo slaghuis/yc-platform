@@ -72,9 +72,10 @@ Only `convertible` carts can start a checkout.
 
 ## Abandoned Cart Detection
 
-- A `shopping` cart with items that has been idle for N hours (tenant-configurable, default 24h) emits `cart.abandoned.v1` once
-- Re-emits on further activity + re-abandonment (debounce 24h)
-- yc-message subscribes for recovery emails (if customer has consented)
+- A customer `shopping` cart with lines idle for `abandoned.after` (default **1h**) emits `cart.abandoned.v1` and `cart.recovery.touched.v1` (touch 1)
+- Follow-up touches at `abandoned_at + follow_up` (24h) and `+ final` (72h) when the line fingerprint is unchanged; yc-message sends `cart_abandoned*` (issue #35)
+- `GET /carts/{type}` with lines **touches** activity (view resets idle and cancels recovery), as do mutations
+- Re-abandonment after another idle spell once activity cleared `abandoned_at`
 
 ## API
 
@@ -126,7 +127,7 @@ The contract is `services/yc-cart/api/openapi.yaml`. Implemented: the public end
 
 ### Phase 7 Implementation Notes
 
-- **Abandoned carts.** A cart records whether it belongs to a `visitor` or a `customer` (`user_type`, promoted to customer when a customer uses it) and when it was announced (`abandoned_at`). A sweeper runs every `abandoned.sweep_interval` (1m) and announces each **customer's** cart of an `abandonable` type (`shopping`; not `wishlist`) that has lines and has been idle for `abandoned.after` (24h; `YC_CART_ABANDONED_AFTER`), publishing `cart.abandoned.v1` with the line count, quantity and last activity. Visitors' carts are not announced: there is no one to email. A cart is announced once per idle spell: any change clears `abandoned_at`, and it may be announced again after another idle period. The threshold is platform-wide for now, not per shop. yc-message sends the reminder (ADR-023); consent for marketing comes with notification settings.
+- **Abandoned carts / recovery (issue #35).** A cart records `user_type`, `abandoned_at`, and recovery fields (`recovery_fingerprint`, `recovery_items`, `recovery_touch`, `recovery_next_at`). A sweeper runs every `abandoned.sweep_interval` (1m): it announces each **customer's** `abandonable` cart idle for `abandoned.after` (**1h**; `YC_CART_ABANDONED_AFTER`) with `cart.abandoned.v1` + recovery touch 1, then follow-ups at `follow_up` / `final` (24h / 72h). Visitors are not announced. Any activity (including **GET** with lines) clears abandon/recovery state. Reminders are **transactional** via yc-message.
 - **`GET /admin/abandoned-carts`** (shop admins, cursor-paginated) lists the shop's announced carts that have not been used since, most recently abandoned first.
 
 ## Database Schema

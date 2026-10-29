@@ -281,6 +281,8 @@ components:
         - order_cancelled
         - refund_issued
         - cart_abandoned
+        - cart_abandoned_followup
+        - cart_abandoned_final
         - review_prompt
         - admin_alert
         - milestone

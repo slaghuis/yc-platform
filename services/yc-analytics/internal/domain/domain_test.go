@@ -77,8 +77,15 @@ func TestRates(t *testing.T) {
 }
 
 func TestValidQuery(t *testing.T) {
-	for _, q := range []string{"revenue", "top_products", "funnel", "gateways"} {
+	for _, q := range []string{"revenue", "top_products", "funnel", "gateways", "cart_recovery"} {
 		assert.True(t, domain.ValidQuery(q), q)
 	}
 	assert.False(t, domain.ValidQuery("cohorts"))
+}
+
+func TestCartRecoveryRates(t *testing.T) {
+	assert.InDelta(t, 0.5, domain.AbandonmentRateOf(2, 4), 1e-9)
+	assert.Zero(t, domain.AbandonmentRateOf(1, 0))
+	assert.InDelta(t, 0.25, domain.RecoveryRateOf(1, 4), 1e-9)
+	assert.Zero(t, domain.RecoveryRateOf(1, 0))
 }

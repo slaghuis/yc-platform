@@ -263,12 +263,17 @@ func TestMessaging(t *testing.T) {
 
 	t.Run("abandoned cart and review prompt resolve the customer", func(t *testing.T) {
 		before := len(box.to("thandi@x.test"))
-		publish(events.CartAbandonedV1{
-			CartID: uuid.NewString(), UserID: thandi, CartType: "default", ItemCount: 2, Quantity: 3,
-			LastActivityAt: time.Now().Add(-time.Hour).UTC(), AbandonedAt: time.Now().UTC(),
+		now := time.Now().UTC()
+		publish(events.CartRecoveryTouchedV1{
+			CartID: uuid.NewString(), UserID: thandi, CartType: "default", Touch: 1,
+			ItemCount: 2, Quantity: 3, AbandonedAt: now, TouchedAt: now,
+			Items: []events.CartRecoveryTouchedV1ItemsItem{
+				{SKUID: uuid.NewString(), Quantity: 2, Name: ptr("Blue mug")},
+			},
 		})
 		m := waitMail("thandi@x.test", before+1)[before]
-		assert.Contains(t, m.Body, "https://shop-a.shops.test/cart")
+		assert.Contains(t, m.Body, "https://shop-a.shops.test/cart?recover=1")
+		assert.Contains(t, m.Body, "Blue mug")
 
 		productID := uuid.NewString()
 		publish(events.ReviewPromptRequestedV1{
@@ -420,9 +425,11 @@ func TestMessaging(t *testing.T) {
 				{"channel": "sms", "address": "+27820000003", "verified": true},
 			}
 		})
-		publish(events.CartAbandonedV1{
-			CartID: uuid.NewString(), UserID: sipho, CartType: "default", ItemCount: 1, Quantity: 1,
-			LastActivityAt: time.Now().UTC(), AbandonedAt: time.Now().UTC(),
+		now := time.Now().UTC()
+		publish(events.CartRecoveryTouchedV1{
+			CartID: uuid.NewString(), UserID: sipho, CartType: "default", Touch: 1,
+			ItemCount: 1, Quantity: 1, AbandonedAt: now, TouchedAt: now,
+			Items: []events.CartRecoveryTouchedV1ItemsItem{{SKUID: uuid.NewString(), Quantity: 1}},
 		})
 		waitMail("27820000003@sms.test", 2)
 		assert.Empty(t, box.to("sipho@x.test"))
@@ -475,9 +482,11 @@ func TestMessaging(t *testing.T) {
 	})
 
 	t.Run("customers without an address are skipped", func(t *testing.T) {
-		publish(events.CartAbandonedV1{
-			CartID: uuid.NewString(), UserID: uuid.NewString(), CartType: "default", ItemCount: 1, Quantity: 1,
-			LastActivityAt: time.Now().UTC(), AbandonedAt: time.Now().UTC(),
+		now := time.Now().UTC()
+		publish(events.CartRecoveryTouchedV1{
+			CartID: uuid.NewString(), UserID: uuid.NewString(), CartType: "default", Touch: 1,
+			ItemCount: 1, Quantity: 1, AbandonedAt: now, TouchedAt: now,
+			Items: []events.CartRecoveryTouchedV1ItemsItem{{SKUID: uuid.NewString(), Quantity: 1}},
 		})
 		time.Sleep(300 * time.Millisecond)
 		var list api.MessageList

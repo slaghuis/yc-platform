@@ -89,24 +89,26 @@ func (e MessageStatus) Valid() bool {
 
 // Defines values for MessageType.
 const (
-	AdminAlert           MessageType = "admin_alert"
-	AdminInvite          MessageType = "admin_invite"
-	CartAbandoned        MessageType = "cart_abandoned"
-	ChannelVerification  MessageType = "channel_verification"
-	Milestone            MessageType = "milestone"
-	OrderCancelled       MessageType = "order_cancelled"
-	OrderConfirmation    MessageType = "order_confirmation"
-	OrderDelivered       MessageType = "order_delivered"
-	OrderShipped         MessageType = "order_shipped"
-	PasswordReset        MessageType = "password_reset"
-	RefundIssued         MessageType = "refund_issued"
-	ReviewPrompt         MessageType = "review_prompt"
-	SupportAck           MessageType = "support_ack"
-	SupportClosed        MessageType = "support_closed"
-	SupportCustomerReply MessageType = "support_customer_reply"
-	SupportNewRequest    MessageType = "support_new_request"
-	SupportShopReply     MessageType = "support_shop_reply"
-	Welcome              MessageType = "welcome"
+	AdminAlert            MessageType = "admin_alert"
+	AdminInvite           MessageType = "admin_invite"
+	CartAbandoned         MessageType = "cart_abandoned"
+	CartAbandonedFinal    MessageType = "cart_abandoned_final"
+	CartAbandonedFollowup MessageType = "cart_abandoned_followup"
+	ChannelVerification   MessageType = "channel_verification"
+	Milestone             MessageType = "milestone"
+	OrderCancelled        MessageType = "order_cancelled"
+	OrderConfirmation     MessageType = "order_confirmation"
+	OrderDelivered        MessageType = "order_delivered"
+	OrderShipped          MessageType = "order_shipped"
+	PasswordReset         MessageType = "password_reset"
+	RefundIssued          MessageType = "refund_issued"
+	ReviewPrompt          MessageType = "review_prompt"
+	SupportAck            MessageType = "support_ack"
+	SupportClosed         MessageType = "support_closed"
+	SupportCustomerReply  MessageType = "support_customer_reply"
+	SupportNewRequest     MessageType = "support_new_request"
+	SupportShopReply      MessageType = "support_shop_reply"
+	Welcome               MessageType = "welcome"
 )
 
 // Valid indicates whether the value is a known member of the MessageType enum.
@@ -117,6 +119,10 @@ func (e MessageType) Valid() bool {
 	case AdminInvite:
 		return true
 	case CartAbandoned:
+		return true
+	case CartAbandonedFinal:
+		return true
+	case CartAbandonedFollowup:
 		return true
 	case ChannelVerification:
 		return true

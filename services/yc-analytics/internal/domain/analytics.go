@@ -121,13 +121,14 @@ func (m MilestoneRules) Reached(before, after, beforeRevenue, afterRevenue int64
 
 // Export queries (GET /admin/analytics/export/{query}).
 const (
-	QueryRevenue     = "revenue"
-	QueryTopProducts = "top_products"
-	QueryFunnel      = "funnel"
-	QueryGateways    = "gateways"
+	QueryRevenue      = "revenue"
+	QueryTopProducts  = "top_products"
+	QueryFunnel       = "funnel"
+	QueryGateways     = "gateways"
+	QueryCartRecovery = "cart_recovery"
 )
 
 // ValidQuery reports whether q can be exported.
 func ValidQuery(q string) bool {
-	return slices.Contains([]string{QueryRevenue, QueryTopProducts, QueryFunnel, QueryGateways}, q)
+	return slices.Contains([]string{QueryRevenue, QueryTopProducts, QueryFunnel, QueryGateways, QueryCartRecovery}, q)
 }

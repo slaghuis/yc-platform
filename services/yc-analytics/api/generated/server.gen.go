@@ -19,15 +19,18 @@ import (
 
 // Defines values for ExportReportParamsQuery.
 const (
-	ExportReportParamsQueryFunnel      ExportReportParamsQuery = "funnel"
-	ExportReportParamsQueryGateways    ExportReportParamsQuery = "gateways"
-	ExportReportParamsQueryRevenue     ExportReportParamsQuery = "revenue"
-	ExportReportParamsQueryTopProducts ExportReportParamsQuery = "top_products"
+	ExportReportParamsQueryCartRecovery ExportReportParamsQuery = "cart_recovery"
+	ExportReportParamsQueryFunnel       ExportReportParamsQuery = "funnel"
+	ExportReportParamsQueryGateways     ExportReportParamsQuery = "gateways"
+	ExportReportParamsQueryRevenue      ExportReportParamsQuery = "revenue"
+	ExportReportParamsQueryTopProducts  ExportReportParamsQuery = "top_products"
 )
 
 // Valid indicates whether the value is a known member of the ExportReportParamsQuery enum.
 func (e ExportReportParamsQuery) Valid() bool {
 	switch e {
+	case ExportReportParamsQueryCartRecovery:
+		return true
 	case ExportReportParamsQueryFunnel:
 		return true
 	case ExportReportParamsQueryGateways:
@@ -57,6 +60,31 @@ func (e GetTopProductsParamsBy) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// CartRecoveryReport defines model for CartRecoveryReport.
+type CartRecoveryReport struct {
+	// Abandoned Distinct carts with cart.abandoned in the period.
+	Abandoned int64 `json:"abandoned"`
+
+	// AbandonmentRate abandoned / carts_created (0 when no carts created).
+	AbandonmentRate float64 `json:"abandonment_rate"`
+
+	// CartsCreated Funnel cart.created events in the period.
+	CartsCreated int64 `json:"carts_created"`
+
+	// Messaged Abandoned carts counted as messaged (touch 1 on announce).
+	Messaged int64     `json:"messaged"`
+	Range    DateRange `json:"range"`
+
+	// Recovered Messaged carts with cart.converted within recovery_window of abandon.
+	Recovered int64 `json:"recovered"`
+
+	// RecoveryRate recovered / messaged (0 when none messaged).
+	RecoveryRate float64 `json:"recovery_rate"`
+
+	// RecoveryWindow Duration from abandoned_at used for recovery attribution (e.g. 168h).
+	RecoveryWindow string `json:"recovery_window"`
 }
 
 // Consistency defines model for Consistency.
@@ -233,6 +261,15 @@ type FromParam = openapi_types.Date
 // ToParam defines model for ToParam.
 type ToParam = openapi_types.Date
 
+// GetCartRecoveryParams defines parameters for GetCartRecovery.
+type GetCartRecoveryParams struct {
+	// From The first date; defaults to 29 days before to.
+	From *FromParam `form:"from,omitempty" json:"from,omitempty"`
+
+	// To The last date; defaults to today.
+	To *ToParam `form:"to,omitempty" json:"to,omitempty"`
+}
+
 // GetShopDashboardParams defines parameters for GetShopDashboard.
 type GetShopDashboardParams struct {
 	// From The first date; defaults to 29 days before to.
@@ -328,6 +365,9 @@ type RebuildAggregatesJSONRequestBody = RebuildInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetCartRecovery Cart abandonment and recovery rates
+	// (GET /admin/analytics/cart-recovery)
+	GetCartRecovery(w http.ResponseWriter, r *http.Request, params GetCartRecoveryParams)
 	// GetShopDashboard Shop dashboard
 	// (GET /admin/analytics/dashboard)
 	GetShopDashboard(w http.ResponseWriter, r *http.Request, params GetShopDashboardParams)
@@ -363,6 +403,12 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// GetCartRecovery Cart abandonment and recovery rates
+// (GET /admin/analytics/cart-recovery)
+func (_ Unimplemented) GetCartRecovery(w http.ResponseWriter, r *http.Request, params GetCartRecoveryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // GetShopDashboard Shop dashboard
 // (GET /admin/analytics/dashboard)
@@ -432,6 +478,52 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetCartRecovery operation middleware
+func (siw *ServerInterfaceWrapper) GetCartRecovery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCartRecoveryParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCartRecovery(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetShopDashboard operation middleware
 func (siw *ServerInterfaceWrapper) GetShopDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1035,6 +1127,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/admin/analytics/funnel", wrapper.GetFunnel)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/admin/analytics/cart-recovery", wrapper.GetCartRecovery)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/admin/analytics/gateways", wrapper.GetGateways)
 	})
 	r.Group(func(r chi.Router) {
@@ -1057,6 +1152,58 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type GetCartRecoveryRequestObject struct {
+	Params GetCartRecoveryParams
+}
+
+type GetCartRecoveryResponseObject interface {
+	VisitGetCartRecoveryResponse(w http.ResponseWriter) error
+}
+
+type GetCartRecovery200JSONResponse CartRecoveryReport
+
+func (response GetCartRecovery200JSONResponse) VisitGetCartRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCartRecovery400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetCartRecovery400ApplicationProblemPlusJSONResponse) VisitGetCartRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCartRecovery403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetCartRecovery403ApplicationProblemPlusJSONResponse) VisitGetCartRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetShopDashboardRequestObject struct {
 	Params GetShopDashboardParams
@@ -1609,6 +1756,9 @@ func (response CompareTenants403ApplicationProblemPlusJSONResponse) VisitCompare
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetCartRecovery Cart abandonment and recovery rates
+	// (GET /admin/analytics/cart-recovery)
+	GetCartRecovery(ctx context.Context, request GetCartRecoveryRequestObject) (GetCartRecoveryResponseObject, error)
 	// GetShopDashboard Shop dashboard
 	// (GET /admin/analytics/dashboard)
 	GetShopDashboard(ctx context.Context, request GetShopDashboardRequestObject) (GetShopDashboardResponseObject, error)
@@ -1678,6 +1828,32 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetCartRecovery operation middleware
+func (sh *strictHandler) GetCartRecovery(w http.ResponseWriter, r *http.Request, params GetCartRecoveryParams) {
+	var request GetCartRecoveryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCartRecovery(ctx, request.(GetCartRecoveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCartRecovery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCartRecoveryResponseObject); ok {
+		if err := validResponse.VisitGetCartRecoveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetShopDashboard operation middleware

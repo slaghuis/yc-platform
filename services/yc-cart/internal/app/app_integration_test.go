@@ -207,6 +207,8 @@ func TestCart(t *testing.T) {
 	t.Setenv("YC_GATEWAY_INTERNAL_URL", gw.URL)
 	t.Setenv("YC_CART_SERVICE_SECRET", "cart-secret")
 	t.Setenv("YC_CART_ABANDONED_AFTER", "1h")
+	t.Setenv("YC_CART_ABANDONED_FOLLOW_UP", "24h")
+	t.Setenv("YC_CART_ABANDONED_FINAL", "72h")
 	t.Setenv("YC_CART_ABANDONED_SWEEP_INTERVAL", "1h")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)

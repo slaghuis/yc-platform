@@ -26,6 +26,7 @@ type Analytics interface {
 	Revenue(ctx context.Context, r domain.Range) ([]domain.RevenueRow, error)
 	TopProducts(ctx context.Context, r domain.Range, by string, limit int) ([]domain.ProductRow, error)
 	Funnel(ctx context.Context, r domain.Range) (domain.FunnelRow, []domain.FunnelRow, error)
+	CartRecovery(ctx context.Context, r domain.Range) (domain.CartRecovery, error)
 	Gateways(ctx context.Context, r domain.Range) ([]domain.GatewayRow, error)
 	Export(ctx context.Context, query string, r domain.Range) (string, []byte, error)
 	CompareTenants(ctx context.Context, r domain.Range) ([]service.TenantComparison, error)
@@ -133,6 +134,22 @@ func (h handlers) GetFunnel(ctx context.Context, req api.GetFunnelRequestObject)
 		return nil, err
 	}
 	return api.GetFunnel200JSONResponse{Range: dateRange(r), Total: funnel(total), Days: mapAll(daily, funnel)}, nil
+}
+
+func (h handlers) GetCartRecovery(ctx context.Context, req api.GetCartRecoveryRequestObject) (api.GetCartRecoveryResponseObject, error) {
+	r, err := h.svc.Range(dates(req.Params.From, req.Params.To))
+	if err != nil {
+		return nil, err
+	}
+	v, err := h.svc.CartRecovery(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return api.GetCartRecovery200JSONResponse{
+		Range: dateRange(r), CartsCreated: v.CartsCreated, Abandoned: v.Abandoned, Messaged: v.Messaged,
+		Recovered: v.Recovered, AbandonmentRate: v.AbandonmentRate, RecoveryRate: v.RecoveryRate,
+		RecoveryWindow: v.RecoveryWindow.String(),
+	}, nil
 }
 
 func (h handlers) GetGateways(ctx context.Context, req api.GetGatewaysRequestObject) (api.GetGatewaysResponseObject, error) {

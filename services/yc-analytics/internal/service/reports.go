@@ -134,6 +134,17 @@ func (s *Service) Funnel(ctx context.Context, r domain.Range) (domain.FunnelRow,
 	return total, daily, err
 }
 
+// CartRecovery returns abandonment and recovery rates (issue #35).
+func (s *Service) CartRecovery(ctx context.Context, r domain.Range) (domain.CartRecovery, error) {
+	var out domain.CartRecovery
+	err := s.read(ctx, func(tx pgx.Tx, tenantID string) error {
+		var err error
+		out, err = s.reports.CartRecovery(ctx, tx, tenantID, r, s.cfg.RecoveryWindow)
+		return err
+	})
+	return out, err
+}
+
 // Gateways returns payment gateway performance.
 func (s *Service) Gateways(ctx context.Context, r domain.Range) ([]domain.GatewayRow, error) {
 	var out []domain.GatewayRow
@@ -251,6 +262,21 @@ func (s *Service) exportRecords(ctx context.Context, tx pgx.Tx, tenantID, query 
 			func(v domain.GatewayRow) []string {
 				return append([]string{v.Gateway, v.Currency}, ints(v.Attempts, v.Successes, v.Failures, v.AmountMinor)...)
 			}), err
+	case domain.QueryCartRecovery:
+		v, err := s.reports.CartRecovery(ctx, tx, tenantID, r, s.cfg.RecoveryWindow)
+		if err != nil {
+			return nil, err
+		}
+		return [][]string{
+			{"carts_created", "abandoned", "messaged", "recovered", "abandonment_rate", "recovery_rate", "recovery_window"},
+			{
+				strconv.FormatInt(v.CartsCreated, 10), strconv.FormatInt(v.Abandoned, 10),
+				strconv.FormatInt(v.Messaged, 10), strconv.FormatInt(v.Recovered, 10),
+				strconv.FormatFloat(v.AbandonmentRate, 'f', 6, 64),
+				strconv.FormatFloat(v.RecoveryRate, 'f', 6, 64),
+				v.RecoveryWindow.String(),
+			},
+		}, nil
 	}
 	return nil, ycerrors.NotFound("Export", query)
 }

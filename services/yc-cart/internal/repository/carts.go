@@ -75,10 +75,12 @@ func (Carts) Create(ctx context.Context, tx pgx.Tx, tenantID, userID, cartType s
 	return tag.RowsAffected() == 1, nil
 }
 
-// Touch records activity on a cart, which ends an abandoned spell. A
-// customer's activity makes it a customer's cart.
+// Touch records activity on a cart, which ends an abandoned spell and
+// cancels any recovery cadence. A customer's activity makes it a
+// customer's cart.
 func (Carts) Touch(ctx context.Context, tx pgx.Tx, cartID string, customer bool, now time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE carts SET updated_at = $2, abandoned_at = NULL,
+			recovery_fingerprint = NULL, recovery_items = NULL, recovery_touch = 0, recovery_next_at = NULL,
 			user_type = CASE WHEN $3 THEN 'customer' ELSE user_type END
 		WHERE id = $1`, cartID, now, customer)
 	if err != nil {
@@ -134,10 +136,96 @@ func (Carts) LockIdle(ctx context.Context, tx pgx.Tx, tenantID, cartID string, b
 	return c, true, nil
 }
 
-// MarkAbandoned records that the cart was announced as abandoned.
-func (Carts) MarkAbandoned(ctx context.Context, tx pgx.Tx, cartID string, now time.Time) error {
-	if _, err := tx.Exec(ctx, `UPDATE carts SET abandoned_at = $2 WHERE id = $1`, cartID, now); err != nil {
-		return fmt.Errorf("mark cart abandoned: %w", err)
+// StartRecovery records abandon + recovery cadence state (issue #35).
+// touch is the touch just sent (usually 1); nextAt is when the next touch
+// is due, or nil when the campaign is finished.
+func (Carts) StartRecovery(ctx context.Context, tx pgx.Tx, cartID string, now time.Time, fingerprint string, items []byte, touch int, nextAt *time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE carts SET abandoned_at = $2, recovery_fingerprint = $3,
+			recovery_items = $4, recovery_touch = $5, recovery_next_at = $6 WHERE id = $1`,
+		cartID, now, fingerprint, items, touch, nextAt)
+	if err != nil {
+		return fmt.Errorf("start cart recovery: %w", err)
+	}
+	return nil
+}
+
+// RecoveryDue is an abandoned cart whose next recovery touch is due.
+type RecoveryDue struct {
+	TenantID    string
+	CartID      string
+	UserID      string
+	CartType    string
+	Fingerprint string
+	ItemsJSON   []byte
+	Touch       int
+	AbandonedAt time.Time
+}
+
+// DueRecoveries returns up to limit abandoned carts with recovery_next_at
+// <= now, across shops. Call in a platform transaction.
+func (Carts) DueRecoveries(ctx context.Context, tx pgx.Tx, now time.Time, limit int) ([]RecoveryDue, error) {
+	rows, err := tx.Query(ctx, `SELECT tenant_id, id, user_id, cart_type,
+			COALESCE(recovery_fingerprint, ''), COALESCE(recovery_items, '[]'::jsonb),
+			recovery_touch, abandoned_at
+		FROM carts
+		WHERE abandoned_at IS NOT NULL AND recovery_next_at IS NOT NULL AND recovery_next_at <= $1
+		ORDER BY recovery_next_at LIMIT $2`, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("due recoveries: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (RecoveryDue, error) {
+		var d RecoveryDue
+		err := r.Scan(&d.TenantID, &d.CartID, &d.UserID, &d.CartType, &d.Fingerprint, &d.ItemsJSON, &d.Touch, &d.AbandonedAt)
+		return d, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("due recoveries: %w", err)
+	}
+	return out, nil
+}
+
+// LockRecovery locks a cart that is still abandoned with the given last
+// touch and a due next touch.
+func (Carts) LockRecovery(ctx context.Context, tx pgx.Tx, tenantID, cartID string, lastTouch int, now time.Time) (domain.Cart, string, []byte, time.Time, bool, error) {
+	var c domain.Cart
+	var fingerprint string
+	var snap []byte
+	var abandonedAt time.Time
+	err := tx.QueryRow(ctx, `SELECT id, user_id, cart_type, created_at, updated_at,
+			COALESCE(recovery_fingerprint, ''), COALESCE(recovery_items, '[]'::jsonb), abandoned_at
+		FROM carts
+		WHERE tenant_id = $1 AND id = $2 AND abandoned_at IS NOT NULL
+			AND recovery_touch = $3 AND recovery_next_at IS NOT NULL AND recovery_next_at <= $4
+		FOR UPDATE SKIP LOCKED`, tenantID, cartID, lastTouch, now).
+		Scan(&c.ID, &c.UserID, &c.Type, &c.CreatedAt, &c.UpdatedAt, &fingerprint, &snap, &abandonedAt)
+	if dbkit.IsNoRows(err) {
+		return c, "", nil, time.Time{}, false, nil
+	}
+	if err != nil {
+		return c, "", nil, time.Time{}, false, fmt.Errorf("lock recovery cart: %w", err)
+	}
+	if c.Items, err = items(ctx, tx, c.ID); err != nil {
+		return c, "", nil, time.Time{}, false, err
+	}
+	return c, fingerprint, snap, abandonedAt, true, nil
+}
+
+// AdvanceRecovery records a sent touch and the next due time (nil = done).
+func (Carts) AdvanceRecovery(ctx context.Context, tx pgx.Tx, cartID string, touch int, nextAt *time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE carts SET recovery_touch = $2, recovery_next_at = $3 WHERE id = $1`,
+		cartID, touch, nextAt)
+	if err != nil {
+		return fmt.Errorf("advance cart recovery: %w", err)
+	}
+	return nil
+}
+
+// CancelRecovery clears recovery scheduling while leaving abandoned_at
+// (used when the fingerprint no longer matches).
+func (Carts) CancelRecovery(ctx context.Context, tx pgx.Tx, cartID string) error {
+	_, err := tx.Exec(ctx, `UPDATE carts SET recovery_next_at = NULL WHERE id = $1`, cartID)
+	if err != nil {
+		return fmt.Errorf("cancel cart recovery: %w", err)
 	}
 	return nil
 }

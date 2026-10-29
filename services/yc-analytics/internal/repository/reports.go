@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -162,6 +163,43 @@ func (Reports) TenantNames(ctx context.Context, tx pgx.Tx) (map[string]string, e
 	if err != nil {
 		return nil, fmt.Errorf("tenant names: %w", err)
 	}
+	return out, nil
+}
+
+// CartRecovery returns abandonment/recovery counts for the period (issue #35).
+// recoveryWindow is how long after abandoned_at a convert still counts.
+func (Reports) CartRecovery(ctx context.Context, tx pgx.Tx, tenantID string, r domain.Range, recoveryWindow time.Duration) (domain.CartRecovery, error) {
+	var out domain.CartRecovery
+	out.RecoveryWindow = recoveryWindow
+	err := tx.QueryRow(ctx, `
+		WITH created AS (
+			SELECT COUNT(*)::bigint AS n FROM fact_cart_event
+			WHERE tenant_id = $1 AND event = 'created' AND in_funnel
+				AND date_key BETWEEN $2 AND $3
+		),
+		abandoned AS (
+			SELECT cart_id, occurred_at FROM fact_cart_event
+			WHERE tenant_id = $1 AND event = 'abandoned'
+				AND date_key BETWEEN $2 AND $3
+		),
+		recovered AS (
+			SELECT COUNT(*)::bigint AS n FROM abandoned a
+			JOIN fact_cart_event c ON c.cart_id = a.cart_id AND c.event = 'converted'
+				AND c.occurred_at >= a.occurred_at
+				AND c.occurred_at < a.occurred_at + ($4 * interval '1 second')
+		)
+		SELECT created.n,
+			(SELECT COUNT(*)::bigint FROM abandoned),
+			recovered.n
+		FROM created, recovered`,
+		tenantID, r.From, r.To, recoveryWindow.Seconds(),
+	).Scan(&out.CartsCreated, &out.Abandoned, &out.Recovered)
+	if err != nil {
+		return out, fmt.Errorf("cart recovery: %w", err)
+	}
+	out.Messaged = out.Abandoned
+	out.AbandonmentRate = domain.AbandonmentRateOf(out.Abandoned, out.CartsCreated)
+	out.RecoveryRate = domain.RecoveryRateOf(out.Recovered, out.Messaged)
 	return out, nil
 }
 

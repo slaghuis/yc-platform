@@ -107,10 +107,36 @@ Refunded on this order so far: {{.total_refunded}}. It can take a few days to sh
 		Subject: "You left something in your cart",
 		Body: `You still have {{.quantity}} {{if eq .quantity 1}}item{{else}}items{{end}} in your cart.
 
+{{range .items}}• {{.name}} (×{{.quantity}})
+{{if .image_url}}  {{.image_url}}
+{{end}}{{end}}
 Pick up where you left off: {{.cart_url}}
 `,
 	},
 	{TypeCartAbandoned, ChannelSMS}: {Body: `You left {{.quantity}} {{if eq .quantity 1}}item{{else}}items{{end}} in your cart: {{.cart_url}}`},
+
+	{TypeCartAbandonedFollowup, ChannelEmail}: {
+		Subject: "Your cart is still waiting",
+		Body: `Just a reminder — the items in your cart are still waiting for you.
+
+{{range .items}}• {{.name}} (×{{.quantity}})
+{{end}}
+Continue checkout: {{.cart_url}}
+`,
+	},
+	{TypeCartAbandonedFollowup, ChannelSMS}: {Body: `Your cart is still waiting ({{.quantity}} {{if eq .quantity 1}}item{{else}}items{{end}}): {{.cart_url}}`},
+
+	{TypeCartAbandonedFinal, ChannelEmail}: {
+		Subject: "Last reminder: items in your cart",
+		Body: `This is a final reminder that you still have items in your cart.
+
+{{range .items}}• {{.name}} (×{{.quantity}})
+{{if .image_url}}  {{.image_url}}
+{{end}}{{end}}
+Complete your order: {{.cart_url}}
+`,
+	},
+	{TypeCartAbandonedFinal, ChannelSMS}: {Body: `Last reminder: {{.quantity}} {{if eq .quantity 1}}item{{else}}items{{end}} still in your cart: {{.cart_url}}`},
 
 	{TypeReviewPrompt, ChannelEmail}: {
 		Subject: "How was your order {{.order_number}}?",
@@ -270,7 +296,26 @@ var samples = map[Type]map[string]any{
 		"order_number": "YC-000123", "order_url": "https://shop.example/orders/example",
 		"amount": "ZAR 299.00", "total_refunded": "ZAR 299.00", "reason": "Return accepted",
 	},
-	TypeCartAbandoned: {"item_count": 2, "quantity": 3, "cart_url": "https://shop.example/cart"},
+	TypeCartAbandoned: {
+		"item_count": 2, "quantity": 3, "cart_url": "https://shop.example/cart?recover=1",
+		"items": []map[string]any{
+			{"name": "Kettle", "quantity": 1, "image_url": "https://images.example/kettle.jpg"},
+			{"name": "Mug", "quantity": 2, "image_url": ""},
+		},
+	},
+	TypeCartAbandonedFollowup: {
+		"item_count": 2, "quantity": 3, "cart_url": "https://shop.example/cart?recover=2",
+		"items": []map[string]any{
+			{"name": "Kettle", "quantity": 1},
+			{"name": "Mug", "quantity": 2},
+		},
+	},
+	TypeCartAbandonedFinal: {
+		"item_count": 2, "quantity": 3, "cart_url": "https://shop.example/cart?recover=3",
+		"items": []map[string]any{
+			{"name": "Kettle", "quantity": 1, "image_url": "https://images.example/kettle.jpg"},
+		},
+	},
 	TypeReviewPrompt: {
 		"order_number": "YC-000123",
 		"products":     []map[string]any{{"name": "Kettle", "review_url": "https://shop.example/products/example#review"}},

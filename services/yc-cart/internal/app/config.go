@@ -28,9 +28,11 @@ type Config struct {
 	Abandoned     AbandonedConfig           `koanf:"abandoned"`
 }
 
-// AbandonedConfig is the `abandoned:` block.
+// AbandonedConfig is the `abandoned:` block (issue #35 recovery cadence).
 type AbandonedConfig struct {
 	After         time.Duration `koanf:"after"`
+	FollowUp      time.Duration `koanf:"follow_up"`
+	Final         time.Duration `koanf:"final"`
 	SweepInterval time.Duration `koanf:"sweep_interval"`
 }
 
@@ -104,6 +106,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Abandoned.After <= 0 || c.Abandoned.SweepInterval <= 0 {
 		errs = append(errs, errors.New("abandoned.after and abandoned.sweep_interval must be positive"))
+	}
+	if c.Abandoned.FollowUp <= 0 || c.Abandoned.Final <= 0 {
+		errs = append(errs, errors.New("abandoned.follow_up and abandoned.final must be positive"))
+	}
+	if c.Abandoned.Final <= c.Abandoned.FollowUp {
+		errs = append(errs, errors.New("abandoned.final must be greater than abandoned.follow_up"))
 	}
 	return errors.Join(errs...)
 }

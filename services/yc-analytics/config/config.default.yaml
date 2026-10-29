@@ -27,6 +27,9 @@ aggregates:
 # Carts of these types count in the funnel (yc-cart's convertible types).
 funnel:
   cart_types: [shopping]
+# How long after abandoned_at a convert still counts as recovery (issue #35).
+cart_recovery:
+  window: ${YC_ANALYTICS_CART_RECOVERY_WINDOW:-168h}
 # Milestones announced to shop admins (analytics.milestone.reached.v1).
 # Revenue tiers are minor units of the store currency, net of refunds.
 # Orders placed more than max_age ago announce nothing, so replaying old

@@ -105,8 +105,12 @@ func New(ctx context.Context, cfg Config, build httpkit.BuildInfo) (_ *App, err 
 	}
 	a.closers = append(a.closers, bus.Close)
 
-	pricing := integration.NewPricing(httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls))
-	svc := service.New(db, bus, pricing, cfg.types(), service.Abandonment{After: cfg.Abandoned.After})
+	internal := httpkit.NewInternalClient(cfg.Service, cfg.InternalCalls)
+	pricing := integration.NewPricing(internal)
+	catalogue := integration.NewCatalogue(internal)
+	svc := service.New(db, bus, pricing, cfg.types(), service.Abandonment{
+		After: cfg.Abandoned.After, FollowUp: cfg.Abandoned.FollowUp, Final: cfg.Abandoned.Final,
+	}, catalogue)
 	a.Service = svc
 	for _, sub := range subscribers.Subscriptions(svc) {
 		if err := bus.Subscribe(ctx, sub.Opts, sub.Handler); err != nil {

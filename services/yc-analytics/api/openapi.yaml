@@ -99,6 +99,28 @@ paths:
         '400': { $ref: '#/components/responses/Problem' }
         '403': { $ref: '#/components/responses/Problem' }
 
+  /admin/analytics/cart-recovery:
+    get:
+      summary: Cart abandonment and recovery rates
+      description: |
+        Issue #35. Abandonment rate = abandoned carts / funnel carts created
+        in the period (distinct cart_id). Recovery rate = carts that converted
+        within recovery_window (default 7 days) of abandoned_at / abandoned
+        carts in the period (messaged ≈ abandoned, since touch 1 fires on
+        announce). Rates are 0 when the denominator is 0.
+      operationId: getCartRecovery
+      parameters:
+        - $ref: '#/components/parameters/FromParam'
+        - $ref: '#/components/parameters/ToParam'
+      responses:
+        '200':
+          description: The rates and counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CartRecoveryReport' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+
   /admin/analytics/gateways:
     get:
       summary: Payment gateway performance
@@ -123,13 +145,14 @@ paths:
       summary: Export a report as CSV
       description: |
         revenue and funnel are daily rows; top_products is the top 100 by
-        revenue; gateways is one row per gateway and currency.
+        revenue; gateways is one row per gateway and currency; cart_recovery
+        is a single summary row (issue #35).
       operationId: exportReport
       parameters:
         - name: query
           in: path
           required: true
-          schema: { type: string, enum: [revenue, top_products, funnel, gateways] }
+          schema: { type: string, enum: [revenue, top_products, funnel, gateways, cart_recovery] }
         - $ref: '#/components/parameters/FromParam'
         - $ref: '#/components/parameters/ToParam'
       responses:
@@ -293,6 +316,47 @@ components:
         days:
           type: array
           items: { $ref: '#/components/schemas/Funnel' }
+
+    CartRecoveryReport:
+      type: object
+      required:
+        - range
+        - carts_created
+        - abandoned
+        - messaged
+        - recovered
+        - abandonment_rate
+        - recovery_rate
+        - recovery_window
+      properties:
+        range: { $ref: '#/components/schemas/DateRange' }
+        carts_created:
+          type: integer
+          format: int64
+          description: Funnel cart.created events in the period.
+        abandoned:
+          type: integer
+          format: int64
+          description: Distinct carts with cart.abandoned in the period.
+        messaged:
+          type: integer
+          format: int64
+          description: Abandoned carts counted as messaged (touch 1 on announce).
+        recovered:
+          type: integer
+          format: int64
+          description: Messaged carts with cart.converted within recovery_window of abandon.
+        abandonment_rate:
+          type: number
+          format: double
+          description: abandoned / carts_created (0 when no carts created).
+        recovery_rate:
+          type: number
+          format: double
+          description: recovered / messaged (0 when none messaged).
+        recovery_window:
+          type: string
+          description: Duration from abandoned_at used for recovery attribution (e.g. 168h).
 
     Product:
       type: object

@@ -37,7 +37,11 @@ cart_types:
     max_items: 500
     max_quantity: 99
 # A customer's abandonable cart with lines that is idle for `after` is
-# announced once (cart.abandoned.v1) until it is used again.
+# announced (cart.abandoned.v1 + recovery touch 1). Follow-up and final
+# touches fire at abandoned_at + follow_up / final when the fingerprint
+# is unchanged (issue #35).
 abandoned:
-  after: ${YC_CART_ABANDONED_AFTER:-24h}
+  after: ${YC_CART_ABANDONED_AFTER:-1h}
+  follow_up: ${YC_CART_ABANDONED_FOLLOW_UP:-24h}
+  final: ${YC_CART_ABANDONED_FINAL:-72h}
   sweep_interval: ${YC_CART_ABANDONED_SWEEP_INTERVAL:-1m}

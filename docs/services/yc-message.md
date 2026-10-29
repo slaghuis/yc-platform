@@ -83,7 +83,7 @@ Resolve channel for user:
 | `order_delivered` | `order.delivered.v1` |
 | `order_cancelled` | `order.cancelled.v1` |
 | `refund_issued` | `order.refunded.v1` |
-| `cart_abandoned` | `cart.abandoned.v1` |
+| `cart_abandoned` / `cart_abandoned_followup` / `cart_abandoned_final` | `cart.recovery.touched.v1` (touches 1–3; issue #35) |
 | `review_prompt` | `review.prompt_requested.v1` |
 | `back_in_stock` | `inventory.back_in_stock.notified.v1` |
 | `low_stock_admin` | `inventory.stock.low_threshold_reached.v1` |
@@ -120,7 +120,7 @@ queued → sent → delivered → opened (email only, best-effort)
 
 ## Marketing vs Transactional
 
-- **Transactional** messages (welcome, password reset, channel verification, order lifecycle, cart_abandoned, review_prompt, admin alerts/invite, milestone): sent regardless of marketing consent.
+- **Transactional** messages (welcome, password reset, channel verification, order lifecycle, cart_abandoned / followup / final, review_prompt, admin alerts/invite, milestone, support_*): sent regardless of marketing consent.
 - **Marketing** messages: require the matching yc-preference flag (`newsletter` / `marketing` / `new_products`). `Type.MarketingTopic()` returns the flag name; empty means transactional. No marketing templates ship yet; the enqueue gate is ready.
 - Opt-out skips enqueue without failing the publisher.
 
@@ -157,7 +157,7 @@ queued → sent → delivered → opened (email only, best-effort)
 
 The contract is `services/yc-message/api/openapi.yaml`; the design is ADR-023. Implemented: event-driven messages, recipients from yc-preference or the order's guest contact, templates with embedded platform defaults and shop overrides, the dispatcher with retries, SMTP email, the fake SMS driver, `POST /internal/send`, channel verification, message history and template administration. Per-shop provider credentials (`/admin/providers`), real SMS, WhatsApp and Telegram providers, provider webhooks, `GET /internal/messages/{id}`, admin alerts, marketing messages and the GDPR cascade come later.
 
-- **Message types:** `welcome`, `password_reset`, `channel_verification`, `order_confirmation`, `order_shipped`, `order_delivered`, `order_cancelled`, `order_refunded`, `cart_abandoned`, `review_prompt`, and support types `support_ack`, `support_shop_reply`, `support_closed`, `support_new_request`, `support_customer_reply` (issue #33), each with an email and an SMS default in `en`. Defaults are embedded in the binary (`internal/domain/defaults.go`), not seeded into the database.
+- **Message types:** `welcome`, `password_reset`, `channel_verification`, `order_confirmation`, `order_shipped`, `order_delivered`, `order_cancelled`, `order_refunded`, `cart_abandoned`, `cart_abandoned_followup`, `cart_abandoned_final` (issue #35; rich item context + `/cart?recover=`), `review_prompt`, and support types `support_ack`, `support_shop_reply`, `support_closed`, `support_new_request`, `support_customer_reply` (issue #33), each with an email and an SMS default in `en`. Defaults are embedded in the binary (`internal/domain/defaults.go`), not seeded into the database.
 - **Templates:** `GET /admin/templates` lists the shop's templates and the defaults; `GET`, `PUT` and `DELETE /admin/templates/{type}/{channel}/{locale}` read, override and remove one (removing restores the default); `POST .../test` sends it with sample values to an address the admin gives. A template must render against the type's sample context. Lookup order: the shop's template for the locale, its language, the shop's `en`, the default.
 - **Links** in messages use the shop's primary hostname from the `shop_tenants` projection (fed by `platform.tenant.provisioned.v1` / `updated.v1`, ADR-029 / ADR-027 rule 14), keeping the scheme and port from `messages.shop_url`. Until the projection has seen the shop, `{tenant}` in `messages.shop_url` is replaced (`http://{tenant}.localhost:8070` in the dev stack). The paths are the storefront URL contract (api-conventions §21), built in `internal/domain/links.go`. Guest order emails call yc-orders `GET /internal/orders/{id}/guest-access` and append `?guest_token=` so the receipt opens on another device (issue #22).
 - **Delivery:** the dispatcher runs every `messages.dispatch_interval` (2 s) and when a message is queued; `messages.max_attempts` (5) with `messages.retry_backoff` (30 s, doubling, capped at an hour). Statuses: `queued`, `sent`, `delivered`, `failed`, `bounced`. Sent and failed password reset and verification messages have their body replaced with `[redacted]`.
@@ -284,7 +284,7 @@ Driven by nearly every service. Each subscription maps event → message type.
 | `order.delivered.v1` | `order_delivered` |
 | `order.cancelled.v1` | `order_cancelled` |
 | `order.refunded.v1` | `refund_issued` |
-| `cart.abandoned.v1` | `cart_abandoned` |
+| `cart.recovery.touched.v1` | `cart_abandoned` / `_followup` / `_final` by touch |
 | `review.prompt_requested.v1` | `review_prompt` |
 | `inventory.back_in_stock.notified.v1` | `back_in_stock` |
 | `inventory.stock.low_threshold_reached.v1` | `low_stock_admin` (routed to shop admin) |

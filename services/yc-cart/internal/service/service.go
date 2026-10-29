@@ -37,21 +37,29 @@ type Prices interface {
 
 // Service implements the cart use cases.
 type Service struct {
-	db      *pgxpool.Pool
-	bus     Publisher
-	prices  Prices
-	repo    repository.Carts
-	types   domain.Types
-	abandon Abandonment
-	now     func() time.Time
+	db        *pgxpool.Pool
+	bus       Publisher
+	prices    Prices
+	catalogue Catalogue
+	repo      repository.Carts
+	types     domain.Types
+	abandon   Abandonment
+	now       func() time.Time
 }
 
-// New returns a Service for the configured cart types.
-func New(db *pgxpool.Pool, bus Publisher, prices Prices, types domain.Types, abandon Abandonment) *Service {
+// New returns a Service for the configured cart types. catalogue may be nil
+// (recovery emails then omit product names and images).
+func New(db *pgxpool.Pool, bus Publisher, prices Prices, types domain.Types, abandon Abandonment, catalogue Catalogue) *Service {
 	if abandon.BatchSize <= 0 {
 		abandon.BatchSize = 100
 	}
-	return &Service{db: db, bus: bus, prices: prices, types: types, abandon: abandon, now: time.Now}
+	if abandon.FollowUp <= 0 {
+		abandon.FollowUp = 24 * time.Hour
+	}
+	if abandon.Final <= 0 {
+		abandon.Final = 72 * time.Hour
+	}
+	return &Service{db: db, bus: bus, prices: prices, catalogue: catalogue, types: types, abandon: abandon, now: time.Now}
 }
 
 // caller is the cart owner behind a request.
@@ -95,7 +103,9 @@ func (s *Service) List(ctx context.Context) ([]Summary, error) {
 }
 
 // Get returns the caller's cart of cartType priced now. displayCurrency
-// overrides the customer's preferred one.
+// overrides the customer's preferred one. A cart with lines counts as a
+// view for idle/abandonment (issue #35): it touches activity and cancels
+// an in-flight recovery campaign.
 func (s *Service) Get(ctx context.Context, cartType, displayCurrency string) (domain.View, error) {
 	c, err := s.caller(ctx)
 	if err != nil {
@@ -108,8 +118,16 @@ func (s *Service) Get(ctx context.Context, cartType, displayCurrency string) (do
 	var cart domain.Cart
 	err = dbkit.WithTenantTx(ctx, s.db, c.tenantID, func(tx pgx.Tx) error {
 		cart, _, err = s.repo.Get(ctx, tx, c.tenantID, c.userID, cartType, false)
-		if err != nil || displayCurrency != "" || c.actorType != authctx.ActorCustomer {
+		if err != nil {
 			return err
+		}
+		if len(cart.Items) > 0 {
+			if err := s.touch(ctx, tx, cart.ID, s.now()); err != nil {
+				return err
+			}
+		}
+		if displayCurrency != "" || c.actorType != authctx.ActorCustomer {
+			return nil
 		}
 		displayCurrency, err = s.repo.DisplayCurrency(ctx, tx, c.tenantID, c.userID)
 		return err

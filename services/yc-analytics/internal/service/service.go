@@ -32,6 +32,9 @@ type Config struct {
 	Milestones domain.MilestoneRules
 	// FunnelCartTypes are the cart types counted as carts in the funnel.
 	FunnelCartTypes []string
+	// RecoveryWindow is how long after abandon a convert counts as recovery
+	// (issue #35; default 7d).
+	RecoveryWindow time.Duration
 	// RefreshBatch caps the dirty days rebuilt per refresh.
 	RefreshBatch int
 	// NightlyDays is how many days, ending yesterday, the nightly
@@ -57,6 +60,9 @@ func New(db *pgxpool.Pool, bus Publisher, cfg Config) *Service {
 	}
 	if cfg.NightlyDays <= 0 {
 		cfg.NightlyDays = 2
+	}
+	if cfg.RecoveryWindow <= 0 {
+		cfg.RecoveryWindow = 7 * 24 * time.Hour
 	}
 	return &Service{db: db, bus: bus, cfg: cfg, now: time.Now}
 }

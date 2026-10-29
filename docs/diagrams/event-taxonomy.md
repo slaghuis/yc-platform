@@ -120,7 +120,8 @@ Consumers listed here subscribe to the exact event type. Pattern subscriptions a
 | `cart.item.expired.v1` | yc-cart | — | Item removed by expiry sweep |
 | `cart.cleared.v1` | yc-cart | yc-analytics | Cart cleared (manually or post-checkout) |
 | `cart.merged.v1` | yc-cart | — | Visitor cart merged into customer cart |
-| `cart.abandoned.v1` | yc-cart | yc-analytics, yc-message | Idle beyond threshold |
+| `cart.abandoned.v1` | yc-cart | yc-analytics | Idle beyond threshold (default 1h); starts recovery |
+| `cart.recovery.touched.v1` | yc-cart | yc-message | Recovery touch 1–3 (issue #35); follow-ups only if fingerprint unchanged |
 | `cart.converted.v1` | yc-cart | yc-analytics | Cart handed off to checkout successfully |
 
 ## Preference Domain

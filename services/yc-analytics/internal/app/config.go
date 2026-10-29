@@ -17,17 +17,23 @@ import (
 
 // Config is the service configuration (config/config.default.yaml).
 type Config struct {
-	Service     string                `koanf:"service"`
-	Environment string                `koanf:"environment"`
-	HTTP        httpkit.ServerConfig  `koanf:"http"`
-	Log         LogConfig             `koanf:"log"`
-	Database    dbkit.Config          `koanf:"database"`
-	NATS        NATSConfig            `koanf:"nats"`
-	Telemetry   TelemetryConfig       `koanf:"telemetry"`
-	Gateway     httpkit.GatewayConfig `koanf:"gateway"`
-	Aggregates  AggregatesConfig      `koanf:"aggregates"`
-	Funnel      FunnelConfig          `koanf:"funnel"`
-	Milestones  MilestonesConfig      `koanf:"milestones"`
+	Service      string                `koanf:"service"`
+	Environment  string                `koanf:"environment"`
+	HTTP         httpkit.ServerConfig  `koanf:"http"`
+	Log          LogConfig             `koanf:"log"`
+	Database     dbkit.Config          `koanf:"database"`
+	NATS         NATSConfig            `koanf:"nats"`
+	Telemetry    TelemetryConfig       `koanf:"telemetry"`
+	Gateway      httpkit.GatewayConfig `koanf:"gateway"`
+	Aggregates   AggregatesConfig      `koanf:"aggregates"`
+	Funnel       FunnelConfig          `koanf:"funnel"`
+	CartRecovery CartRecoveryConfig    `koanf:"cart_recovery"`
+	Milestones   MilestonesConfig      `koanf:"milestones"`
+}
+
+// CartRecoveryConfig is the `cart_recovery:` block (issue #35).
+type CartRecoveryConfig struct {
+	Window time.Duration `koanf:"window"`
 }
 
 // LogConfig is the `log:` block.
@@ -111,6 +117,9 @@ func (c *Config) Validate() error {
 	if m.MaxAge < 0 {
 		errs = append(errs, errors.New("milestones.max_age must not be negative"))
 	}
+	if c.CartRecovery.Window <= 0 {
+		errs = append(errs, errors.New("cart_recovery.window must be positive"))
+	}
 	return errors.Join(errs...)
 }
 
@@ -130,6 +139,7 @@ func (c *Config) settings() service.Config {
 			FirstOrder: m.FirstOrder, OrderCounts: m.OrderCounts, RevenueTiers: m.RevenueTiers, MaxAge: m.MaxAge,
 		},
 		FunnelCartTypes: c.Funnel.CartTypes,
+		RecoveryWindow:  c.CartRecovery.Window,
 		RefreshBatch:    c.Aggregates.RefreshBatch,
 		NightlyDays:     c.Aggregates.NightlyDays,
 	}

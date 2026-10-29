@@ -21,7 +21,7 @@ type Handlers interface {
 	OrderDelivered(ctx context.Context, tenantID, eventID string, p ycevents.OrderDeliveredV1) error
 	OrderCancelled(ctx context.Context, tenantID, eventID string, p ycevents.OrderCancelledV1) error
 	OrderRefunded(ctx context.Context, tenantID, eventID string, p ycevents.OrderRefundedV1) error
-	CartAbandoned(ctx context.Context, tenantID, eventID string, p ycevents.CartAbandonedV1) error
+	CartRecoveryTouched(ctx context.Context, tenantID, eventID string, p ycevents.CartRecoveryTouchedV1) error
 	ReviewPrompt(ctx context.Context, tenantID, eventID string, p ycevents.ReviewPromptRequestedV1) error
 	ChannelAdded(ctx context.Context, tenantID, eventID string, p ycevents.PreferenceChannelAddedV1) error
 	ShopAdminPromoted(ctx context.Context, tenantID, eventID string, p ycevents.IdentityUserPromotedV1) error
@@ -66,7 +66,8 @@ func Subscriptions(h Handlers) []Subscription {
 		subscribe(ycevents.TypeOrderDeliveredV1, "order-delivered", h.OrderDelivered),
 		subscribe(ycevents.TypeOrderCancelledV1, "order-cancelled", h.OrderCancelled),
 		subscribe(ycevents.TypeOrderRefundedV1, "order-refunded", h.OrderRefunded),
-		subscribe(ycevents.TypeCartAbandonedV1, "cart-abandoned", h.CartAbandoned),
+		// cart.abandoned.v1 remains for analytics; messaging uses recovery touches (issue #35).
+		subscribe(ycevents.TypeCartRecoveryTouchedV1, "cart-recovery-touched", h.CartRecoveryTouched),
 		subscribe(ycevents.TypeReviewPromptRequestedV1, "review-prompt-requested", h.ReviewPrompt),
 		subscribe(ycevents.TypePreferenceChannelAddedV1, "preference-channel-added", h.ChannelAdded),
 	}

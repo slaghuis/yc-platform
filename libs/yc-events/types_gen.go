@@ -21,6 +21,7 @@ const (
 	TypeCartItemQuantityChangedV1            = "cart.item.quantity_changed.v1"
 	TypeCartItemRemovedV1                    = "cart.item.removed.v1"
 	TypeCartMergedV1                         = "cart.merged.v1"
+	TypeCartRecoveryTouchedV1                = "cart.recovery.touched.v1"
 	TypeCheckoutCompensatingV1               = "checkout.compensating.v1"
 	TypeCheckoutCompletedV1                  = "checkout.completed.v1"
 	TypeCheckoutConfirmedV1                  = "checkout.confirmed.v1"
@@ -172,6 +173,7 @@ var EventTypes = []string{
 	TypeCartItemQuantityChangedV1,
 	TypeCartItemRemovedV1,
 	TypeCartMergedV1,
+	TypeCartRecoveryTouchedV1,
 	TypeCheckoutCompensatingV1,
 	TypeCheckoutCompletedV1,
 	TypeCheckoutConfirmedV1,
@@ -766,6 +768,40 @@ type CartMergedV1 struct {
 
 // EventType returns cart.merged.v1.
 func (CartMergedV1) EventType() string { return TypeCartMergedV1 }
+
+// CartRecoveryTouchedV1ItemsItem is a nested object.
+type CartRecoveryTouchedV1ItemsItem struct {
+	SKUID     string  `json:"sku_id"`
+	Quantity  int64   `json:"quantity"`
+	ProductID *string `json:"product_id,omitempty"`
+	// Product name when known at publish time.
+	Name *string `json:"name,omitempty"`
+	// Primary product image URL when known at publish time.
+	ImageURL *string `json:"image_url,omitempty"`
+}
+
+// CartRecoveryTouchedV1 is the payload of cart.recovery.touched.v1.
+//
+// A recovery reminder touch for an abandoned customer cart (issue #35). Touch 1 is published with cart.abandoned.v1; touches 2 and 3 only if the cart fingerprint is unchanged.
+type CartRecoveryTouchedV1 struct {
+	CartID string `json:"cart_id"`
+	UserID string `json:"user_id"`
+	// The cart type, e.g. shopping.
+	CartType string `json:"cart_type"`
+	// 1 = first reminder, 2 = follow-up, 3 = final.
+	Touch int64 `json:"touch"`
+	// Lines in the cart at abandon (or last fingerprint).
+	ItemCount int64 `json:"item_count"`
+	// Units across all lines.
+	Quantity int64 `json:"quantity"`
+	// Cart lines for the reminder template.
+	Items       []CartRecoveryTouchedV1ItemsItem `json:"items"`
+	AbandonedAt time.Time                        `json:"abandoned_at"`
+	TouchedAt   time.Time                        `json:"touched_at"`
+}
+
+// EventType returns cart.recovery.touched.v1.
+func (CartRecoveryTouchedV1) EventType() string { return TypeCartRecoveryTouchedV1 }
 
 // CheckoutCompensatingV1 is the payload of checkout.compensating.v1.
 //

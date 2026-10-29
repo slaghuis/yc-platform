@@ -37,6 +37,33 @@ type FunnelRow struct {
 	OrdersPlaced       int64
 }
 
+// CartRecovery is abandonment and recovery rates for a period (issue #35).
+type CartRecovery struct {
+	CartsCreated    int64
+	Abandoned       int64
+	Messaged        int64
+	Recovered       int64
+	AbandonmentRate float64
+	RecoveryRate    float64
+	RecoveryWindow  time.Duration
+}
+
+// AbandonmentRateOf is abandoned / created (0 when created is 0).
+func AbandonmentRateOf(abandoned, created int64) float64 {
+	if created <= 0 {
+		return 0
+	}
+	return float64(abandoned) / float64(created)
+}
+
+// RecoveryRateOf is recovered / messaged (0 when messaged is 0).
+func RecoveryRateOf(recovered, messaged int64) float64 {
+	if messaged <= 0 {
+		return 0
+	}
+	return float64(recovered) / float64(messaged)
+}
+
 // Conversion is orders per visitor, or orders per started checkout when
 // no visitors were recorded.
 func (f FunnelRow) Conversion() float64 {

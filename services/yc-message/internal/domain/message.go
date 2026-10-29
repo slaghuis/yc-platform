@@ -15,16 +15,18 @@ type Type string
 
 // The v1 message types (docs/services/yc-message.md, Example Message Types).
 const (
-	TypeWelcome             Type = "welcome"
-	TypePasswordReset       Type = "password_reset"
-	TypeChannelVerification Type = "channel_verification"
-	TypeOrderConfirmation   Type = "order_confirmation"
-	TypeOrderShipped        Type = "order_shipped"
-	TypeOrderDelivered      Type = "order_delivered"
-	TypeOrderCancelled      Type = "order_cancelled"
-	TypeRefundIssued        Type = "refund_issued"
-	TypeCartAbandoned       Type = "cart_abandoned"
-	TypeReviewPrompt        Type = "review_prompt"
+	TypeWelcome               Type = "welcome"
+	TypePasswordReset         Type = "password_reset"
+	TypeChannelVerification   Type = "channel_verification"
+	TypeOrderConfirmation     Type = "order_confirmation"
+	TypeOrderShipped          Type = "order_shipped"
+	TypeOrderDelivered        Type = "order_delivered"
+	TypeOrderCancelled        Type = "order_cancelled"
+	TypeRefundIssued          Type = "refund_issued"
+	TypeCartAbandoned         Type = "cart_abandoned"
+	TypeCartAbandonedFollowup Type = "cart_abandoned_followup"
+	TypeCartAbandonedFinal    Type = "cart_abandoned_final"
+	TypeReviewPrompt          Type = "review_prompt"
 	// Phase 8: to admins rather than customers.
 	TypeAdminAlert Type = "admin_alert"
 	TypeMilestone  Type = "milestone"
@@ -42,7 +44,8 @@ const (
 var Types = []Type{
 	TypeWelcome, TypePasswordReset, TypeChannelVerification,
 	TypeOrderConfirmation, TypeOrderShipped, TypeOrderDelivered, TypeOrderCancelled, TypeRefundIssued,
-	TypeCartAbandoned, TypeReviewPrompt, TypeAdminAlert, TypeMilestone, TypeAdminInvite,
+	TypeCartAbandoned, TypeCartAbandonedFollowup, TypeCartAbandonedFinal,
+	TypeReviewPrompt, TypeAdminAlert, TypeMilestone, TypeAdminInvite,
 	TypeSupportAck, TypeSupportShopReply, TypeSupportClosed, TypeSupportNewRequest, TypeSupportCustomerReply,
 }
 

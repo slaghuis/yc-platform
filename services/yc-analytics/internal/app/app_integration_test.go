@@ -124,6 +124,7 @@ func TestAnalytics(t *testing.T) {
 	t.Setenv("NATS_URL", natsURL)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("YC_ANALYTICS_REFRESH_INTERVAL", "100ms")
+	t.Setenv("YC_ANALYTICS_CART_RECOVERY_WINDOW", "168h")
 	cfg, err := app.LoadConfig()
 	require.NoError(t, err)
 	cfg.Milestones.OrderCounts = []int64{3}

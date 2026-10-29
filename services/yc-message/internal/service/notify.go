@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -93,7 +94,7 @@ func (s *Service) OrderRefunded(ctx context.Context, tenantID, eventID string, p
 	})
 }
 
-// CartAbandoned reminds a customer of the items in their cart.
+// CartAbandoned is kept for older events; new recovery uses CartRecoveryTouched.
 func (s *Service) CartAbandoned(ctx context.Context, tenantID, eventID string, p events.CartAbandonedV1) error {
 	ctx = serviceContext(ctx, tenantID)
 	to, ok, err := s.customer(ctx, p.UserID)
@@ -101,7 +102,47 @@ func (s *Service) CartAbandoned(ctx context.Context, tenantID, eventID string, p
 		return s.skipped(ctx, err, domain.TypeCartAbandoned, p.CartID)
 	}
 	return s.notify(ctx, tenantID, eventID, domain.TypeCartAbandoned, to, map[string]any{
-		"item_count": p.ItemCount, "quantity": p.Quantity, "cart_url": s.links(ctx, tenantID).Cart(),
+		"item_count": p.ItemCount, "quantity": p.Quantity,
+		"cart_url": s.links(ctx, tenantID).Cart() + "?recover=1",
+		"items":    []map[string]any{{"name": "Item", "quantity": p.Quantity, "image_url": ""}},
+	})
+}
+
+// CartRecoveryTouched sends a multi-touch abandoned-cart reminder (issue #35).
+func (s *Service) CartRecoveryTouched(ctx context.Context, tenantID, eventID string, p events.CartRecoveryTouchedV1) error {
+	ctx = serviceContext(ctx, tenantID)
+	msgType := domain.TypeCartAbandoned
+	switch p.Touch {
+	case 2:
+		msgType = domain.TypeCartAbandonedFollowup
+	case 3:
+		msgType = domain.TypeCartAbandonedFinal
+	}
+	to, ok, err := s.customer(ctx, p.UserID)
+	if err != nil || !ok {
+		return s.skipped(ctx, err, msgType, p.CartID)
+	}
+	items := make([]map[string]any, 0, len(p.Items))
+	for _, it := range p.Items {
+		name, imageURL := "", ""
+		if it.Name != nil {
+			name = *it.Name
+		}
+		if name == "" {
+			name = "Item"
+		}
+		if it.ImageURL != nil {
+			imageURL = *it.ImageURL
+		}
+		row := map[string]any{"quantity": it.Quantity, "sku_id": it.SKUID, "name": name, "image_url": imageURL}
+		if it.ProductID != nil {
+			row["product_id"] = *it.ProductID
+		}
+		items = append(items, row)
+	}
+	return s.notify(ctx, tenantID, eventID, msgType, to, map[string]any{
+		"item_count": p.ItemCount, "quantity": p.Quantity, "touch": p.Touch, "items": items,
+		"cart_url": s.links(ctx, tenantID).Cart() + "?recover=" + strconv.FormatInt(p.Touch, 10),
 	})
 }
 
