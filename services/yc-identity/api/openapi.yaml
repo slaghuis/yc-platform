@@ -994,7 +994,7 @@ components:
           type: object
           additionalProperties: true
           description: Free-form delivery document (ADR-015).
-        is_default: { type: boolean, description: When true, becomes the customer's default. }
+        is_default: { type: boolean, description: "When true, becomes the customer's default." }
     DeliveryAddress:
       type: object
       required: [id, address, is_default, created_at, updated_at]

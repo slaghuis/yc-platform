@@ -260,10 +260,10 @@ components:
         topic: { $ref: '#/components/schemas/Topic' }
         contact_email: { type: string, maxLength: 320, description: Where the shop's answers are emailed to a visitor. Stored lower case. }
         contact_name: { type: string, minLength: 1, maxLength: 200 }
-        contact_phone: { type: string, maxLength: 16, description: Optional, E.164, e.g. +27821234567. }
+        contact_phone: { type: string, maxLength: 16, description: "Optional, E.164, e.g. +27821234567." }
         order_id: { type: string, format: uuid, description: The order the request is about. }
         page_url: { type: string, maxLength: 2048, description: The storefront page the request was sent from. }
-        body: { type: string, minLength: 1, maxLength: 5000, description: The first message, plain text. }
+        body: { type: string, minLength: 1, maxLength: 5000, description: "The first message, plain text." }
 
     MessageInput:
       type: object
@@ -277,7 +277,7 @@ components:
       required: [id, reference, topic, status, contact_email, contact_name, user_type, last_activity_at, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
-        reference: { type: string, description: The human-facing reference, e.g. SUP-7K3M9Q. Unique in the shop. }
+        reference: { type: string, description: "The human-facing reference, e.g. SUP-7K3M9Q. Unique in the shop." }
         topic: { $ref: '#/components/schemas/Topic' }
         status: { $ref: '#/components/schemas/Status' }
         contact_email: { type: string }

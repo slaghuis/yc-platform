@@ -87,6 +87,12 @@ type fakeOrder struct {
 
 // fakeGateway stands in for yc-gateway's internal listener in front of
 // yc-cart, yc-product, yc-pricing, yc-inventory, yc-payment and yc-orders.
+type fakeAddress struct {
+	ID      string
+	UserID  string
+	Address map[string]any
+}
+
 type fakeGateway struct {
 	mu           sync.Mutex
 	carts        map[string][]fakeLine
@@ -96,6 +102,7 @@ type fakeGateway struct {
 	txs          map[string]*fakeTx
 	authKeys     map[string]string
 	orders       map[string]*fakeOrder
+	addresses    map[string]*fakeAddress // keyed by address id
 	orderSeq     int
 	routes       []fakeRoute
 	refunds      map[string]string
@@ -115,7 +122,8 @@ func newFakeGateway() *fakeGateway {
 	return &fakeGateway{
 		carts: map[string][]fakeLine{}, skus: map[string]*fakeSKU{}, reservations: map[string]*fakeReservation{},
 		reserveKeys: map[string]string{}, txs: map[string]*fakeTx{}, authKeys: map[string]string{},
-		orders: map[string]*fakeOrder{}, fail: map[string]int{}, actions: map[string]bool{},
+		orders: map[string]*fakeOrder{}, addresses: map[string]*fakeAddress{},
+		fail: map[string]int{}, actions: map[string]bool{},
 		routes: []fakeRoute{stripeRoute}, refunds: map[string]string{},
 	}
 }
@@ -322,6 +330,25 @@ func (f *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.createOrder(w, body)
 	case step == "orders.confirm", step == "orders.abandon":
 		f.settleOrder(w, parts[1], strings.TrimPrefix(step, "orders."))
+	case step == "users.addresses" && r.Method == http.MethodPost:
+		// POST /internal/users/{id}/addresses — checkout auto-saves the book (issue #32).
+		addr, _ := body["address"].(map[string]any)
+		id := uuid.NewString()
+		f.addresses[id] = &fakeAddress{ID: id, UserID: parts[1], Address: addr}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"id": id, "address": addr, "is_default": false,
+			"created_at": time.Now(), "updated_at": time.Now(),
+		})
+	case step == "users" && len(parts) == 4 && parts[2] == "addresses" && r.Method == http.MethodGet:
+		a, ok := f.addresses[parts[3]]
+		if !ok || a.UserID != parts[1] {
+			problem(w, http.StatusNotFound, "not_found", "no address", nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id": a.ID, "address": a.Address, "is_default": false,
+			"created_at": time.Now(), "updated_at": time.Now(),
+		})
 	default:
 		problem(w, http.StatusNotFound, "not_found", r.URL.Path, nil)
 	}
