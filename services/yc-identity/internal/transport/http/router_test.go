@@ -119,6 +119,12 @@ func (f *fakeIdentity) ValidateToken(_ context.Context, raw string) (domain.Sess
 	return domain.Session{TokenID: jti, UserID: userID, TenantID: "shop-a", Role: domain.RoleVisitor}, nil
 }
 
+func (f *fakeIdentity) PatchMe(_ context.Context, patch domain.ProfilePatch) (domain.User, error) {
+	u := domain.User{ID: "u1", TenantID: "shop-a", Role: domain.RoleCustomer, Status: domain.StatusActive}
+	patch.Apply(&u)
+	return u, nil
+}
+
 func (f *fakeIdentity) Me(ctx context.Context) (domain.User, error) {
 	a, _ := authctx.FromContext(ctx)
 	if !a.Authenticated() {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/nullable"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	httpkit "github.com/slaghuis/yc-platform/libs/yc-httpkit"
@@ -401,6 +402,21 @@ type Problem struct {
 	Type   string `json:"type"`
 }
 
+// ProfilePatch Partial profile update. Omit unchanged fields. null clears the field.
+// Empty string clears display_name; for phone_e164 and profile_image_url
+// empty string is a validation error (use null).
+type ProfilePatch struct {
+	// DisplayName Trimmed display name (max 100). null or "" clears.
+	DisplayName nullable.Nullable[string] `json:"display_name,omitempty"`
+
+	// PhoneE164 E.164 (+ and 7–15 digits). null clears. Empty string is 400.
+	PhoneE164 nullable.Nullable[string] `json:"phone_e164,omitempty"`
+
+	// ProfileImageURL https URL only (no http, javascript:, data:). null clears.
+	// Empty string is 400. Not a yc-image id.
+	ProfileImageURL nullable.Nullable[string] `json:"profile_image_url,omitempty"`
+}
+
 // PromoteRequest defines model for PromoteRequest.
 type PromoteRequest struct {
 	Role PromoteRequestRole `json:"role"`
@@ -470,19 +486,20 @@ type TokenIdentity struct {
 
 // User defines model for User.
 type User struct {
-	CreatedAt   time.Time `json:"created_at"`
-	DisplayName *string   `json:"display_name,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DisplayName Optional. Set at register, OAuth, invitation accept, or PATCH /me.
+	// Absent when unset.
+	DisplayName *string `json:"display_name,omitempty"`
 
 	// Email Absent for visitors.
 	Email *string `json:"email,omitempty"`
 
-	// PhoneE164 Optional E.164 phone from OAuth when the provider supplied one.
-	// Absent when unset. Password registration does not set it; there
-	// is no customer PATCH /me in this release.
+	// PhoneE164 Optional E.164. Set via OAuth when empty, or PATCH /me. Absent when unset.
 	PhoneE164 *string `json:"phone_e164,omitempty"`
 
-	// ProfileImageURL Optional https avatar URL from OAuth. Absent when unset. Not a
-	// yc-image id. Re-login refreshes the URL when the provider sends one.
+	// ProfileImageURL Optional https avatar URL. Set via OAuth when empty, or PATCH /me.
+	// Absent when unset. Not a yc-image id.
 	ProfileImageURL *string            `json:"profile_image_url,omitempty"`
 	Role            Role               `json:"role"`
 	Status          UserStatus         `json:"status"`
@@ -595,6 +612,9 @@ type LoginJSONRequestBody = LoginRequest
 // LogoutJSONRequestBody defines body for Logout for application/json ContentType.
 type LogoutJSONRequestBody = LogoutRequest
 
+// PatchMeJSONRequestBody defines body for PatchMe for application/json ContentType.
+type PatchMeJSONRequestBody = ProfilePatch
+
 // CreateMyAddressJSONRequestBody defines body for CreateMyAddress for application/json ContentType.
 type CreateMyAddressJSONRequestBody = DeliveryAddressInput
 
@@ -684,6 +704,9 @@ type ServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// PatchMe Update the caller's profile fields
+	// (PATCH /me)
+	PatchMe(w http.ResponseWriter, r *http.Request)
 	// ListMyAddresses The caller's delivery address book
 	// (GET /me/addresses)
 	ListMyAddresses(w http.ResponseWriter, r *http.Request, params ListMyAddressesParams)
@@ -858,6 +881,12 @@ func (_ Unimplemented) DeleteMe(w http.ResponseWriter, r *http.Request) {
 // GetMe The caller's own user
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PatchMe Update the caller's profile fields
+// (PATCH /me)
+func (_ Unimplemented) PatchMe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1487,6 +1516,20 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// PatchMe operation middleware
+func (siw *ServerInterfaceWrapper) PatchMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListMyAddresses operation middleware
 func (siw *ServerInterfaceWrapper) ListMyAddresses(w http.ResponseWriter, r *http.Request) {
 
@@ -2090,6 +2133,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/me", wrapper.GetMe)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/me", wrapper.PatchMe)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/me/billing", wrapper.DeleteMyBilling)
@@ -3225,6 +3271,86 @@ func (response GetMe401ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w 
 type GetMe404ApplicationProblemPlusJSONResponse Problem
 
 func (response GetMe404ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchMeRequestObject struct {
+	Body *PatchMeJSONRequestBody
+}
+
+type PatchMeResponseObject interface {
+	VisitPatchMeResponse(w http.ResponseWriter) error
+}
+
+type PatchMe200JSONResponse User
+
+func (response PatchMe200JSONResponse) VisitPatchMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchMe400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response PatchMe400ApplicationProblemPlusJSONResponse) VisitPatchMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchMe401ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchMe401ApplicationProblemPlusJSONResponse) VisitPatchMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchMe403ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchMe403ApplicationProblemPlusJSONResponse) VisitPatchMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchMe404ApplicationProblemPlusJSONResponse Problem
+
+func (response PatchMe404ApplicationProblemPlusJSONResponse) VisitPatchMeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -4394,6 +4520,9 @@ type StrictServerInterface interface {
 	// GetMe The caller's own user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// PatchMe Update the caller's profile fields
+	// (PATCH /me)
+	PatchMe(ctx context.Context, request PatchMeRequestObject) (PatchMeResponseObject, error)
 	// ListMyAddresses The caller's delivery address book
 	// (GET /me/addresses)
 	ListMyAddresses(ctx context.Context, request ListMyAddressesRequestObject) (ListMyAddressesResponseObject, error)
@@ -5030,6 +5159,37 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PatchMe operation middleware
+func (sh *strictHandler) PatchMe(w http.ResponseWriter, r *http.Request) {
+	var request PatchMeRequestObject
+
+	var body PatchMeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PatchMe(ctx, request.(PatchMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PatchMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PatchMeResponseObject); ok {
+		if err := validResponse.VisitPatchMeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

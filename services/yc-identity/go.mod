@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/oapi-codegen/nullable v1.1.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/slaghuis/yc-platform/libs/yc-authctx v0.0.0
 	github.com/slaghuis/yc-platform/libs/yc-config v0.0.0
@@ -16,12 +17,10 @@ require (
 	github.com/slaghuis/yc-platform/libs/yc-telemetry v0.0.0
 	github.com/slaghuis/yc-platform/libs/yc-testkit v0.0.0
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/oauth2 v0.37.0
 )
 
-require (
-	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	golang.org/x/oauth2 v0.37.0 // indirect
-)
+require github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

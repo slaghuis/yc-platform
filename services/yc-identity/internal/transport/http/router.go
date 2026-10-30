@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/oapi-codegen/nullable"
 
 	authctx "github.com/slaghuis/yc-platform/libs/yc-authctx"
 	ycerrors "github.com/slaghuis/yc-platform/libs/yc-errors"
@@ -30,6 +31,7 @@ type Identity interface {
 	ValidateToken(ctx context.Context, raw string) (domain.Session, error)
 	IssueServiceToken(ctx context.Context, clientID, secret string) (domain.Session, error)
 	Me(ctx context.Context) (domain.User, error)
+	PatchMe(ctx context.Context, patch domain.ProfilePatch) (domain.User, error)
 	ListUsers(ctx context.Context, f repository.Filter, after *repository.Cursor, limit int) ([]domain.User, *repository.Cursor, error)
 	GetUser(ctx context.Context, id string) (domain.User, error)
 	Promote(ctx context.Context, id string, role domain.Role) (domain.User, error)
@@ -218,6 +220,18 @@ func (h handlers) GetMe(ctx context.Context, _ api.GetMeRequestObject) (api.GetM
 		return nil, err
 	}
 	return api.GetMe200JSONResponse(user(u)), nil
+}
+
+func (h handlers) PatchMe(ctx context.Context, req api.PatchMeRequestObject) (api.PatchMeResponseObject, error) {
+	patch, err := profilePatch(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	u, err := h.svc.PatchMe(ctx, patch)
+	if err != nil {
+		return nil, err
+	}
+	return api.PatchMe200JSONResponse(user(u)), nil
 }
 
 func (h handlers) ListUsers(ctx context.Context, req api.ListUsersRequestObject) (api.ListUsersResponseObject, error) {
@@ -650,6 +664,30 @@ func user(u domain.User) api.User {
 		out.ProfileImageURL = &u.ProfileImage
 	}
 	return out
+}
+
+func profilePatch(body *api.ProfilePatch) (domain.ProfilePatch, error) {
+	if body == nil {
+		return domain.ProfilePatch{}, ycerrors.Validation().Message("Request body is required").Build()
+	}
+	displayPresent, displayClear, displayValue := nullableString(body.DisplayName)
+	phonePresent, phoneClear, phoneValue := nullableString(body.PhoneE164)
+	imagePresent, imageClear, imageValue := nullableString(body.ProfileImageURL)
+	return domain.NewProfilePatch(
+		displayPresent, displayClear, displayValue,
+		phonePresent, phoneClear, phoneValue,
+		imagePresent, imageClear, imageValue,
+	)
+}
+
+func nullableString(n nullable.Nullable[string]) (present, clear bool, value string) {
+	if !n.IsSpecified() {
+		return false, false, ""
+	}
+	if n.IsNull() {
+		return true, true, ""
+	}
+	return true, false, n.MustGet()
 }
 
 func invitation(inv domain.Invitation) api.Invitation {

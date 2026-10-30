@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: yc-identity
-  version: 0.4.0
+  version: 0.5.0
   description: |
     Authentication and user identity (docs/services/yc-identity.md).
     Visitor tokens, email + password registration and login, Google and
     Facebook sign-in, refresh tokens, logout, password reset, invitations
-    (ADR-030), suspend/reactivate/demote, the caller's own user, user
-    administration, token validation and service tokens.
+    (ADR-030), suspend/reactivate/demote, the caller's own user (GET/PATCH/DELETE /me),
+    user administration, token validation and service tokens.
 
     Public routes are reached through yc-gateway, which sets X-YC-Tenant-ID,
     X-YC-Actor-ID, X-YC-Actor-Type and X-YC-Correlation-ID
@@ -224,6 +224,31 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      summary: Update the caller's profile fields
+      description: |
+        Partial update of display_name, phone_e164 and profile_image_url
+        (issue #37). Omit a field to leave it unchanged; send null to clear
+        phone or avatar (or display_name). Does not change email or password.
+        OAuth re-login fills phone and image only when the stored value is
+        empty, so customer edits are preserved. Customers, shop admins and
+        system admins may edit their own profile; visitors are forbidden.
+      operationId: patchMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfilePatch' }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
     delete:
       summary: Delete the caller's account (GDPR)
@@ -939,6 +964,28 @@ components:
         actor_type: { $ref: '#/components/schemas/ActorType' }
         jti: { type: string, format: uuid }
         expires_at: { type: string, format: date-time }
+    ProfilePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial profile update. Omit unchanged fields. null clears the field.
+        Empty string clears display_name; for phone_e164 and profile_image_url
+        empty string is a validation error (use null).
+      properties:
+        display_name:
+          type: [string, 'null']
+          maxLength: 100
+          description: Trimmed display name (max 100). null or "" clears.
+        phone_e164:
+          type: [string, 'null']
+          description: E.164 (+ and 7–15 digits). null clears. Empty string is 400.
+        profile_image_url:
+          type: [string, 'null']
+          maxLength: 2048
+          description: |
+            https URL only (no http, javascript:, data:). null clears.
+            Empty string is 400. Not a yc-image id.
     User:
       type: object
       required: [user_id, tenant_id, role, status, created_at]
@@ -946,18 +993,20 @@ components:
         user_id: { type: string, format: uuid }
         tenant_id: { type: string }
         email: { type: string, description: Absent for visitors. }
-        display_name: { type: string }
+        display_name:
+          type: string
+          description: |
+            Optional. Set at register, OAuth, invitation accept, or PATCH /me.
+            Absent when unset.
         phone_e164:
           type: string
           description: |
-            Optional E.164 phone from OAuth when the provider supplied one.
-            Absent when unset. Password registration does not set it; there
-            is no customer PATCH /me in this release.
+            Optional E.164. Set via OAuth when empty, or PATCH /me. Absent when unset.
         profile_image_url:
           type: string
           description: |
-            Optional https avatar URL from OAuth. Absent when unset. Not a
-            yc-image id. Re-login refreshes the URL when the provider sends one.
+            Optional https avatar URL. Set via OAuth when empty, or PATCH /me.
+            Absent when unset. Not a yc-image id.
         role: { $ref: '#/components/schemas/Role' }
         status: { type: string, enum: [active, suspended, deleted] }
         created_at: { type: string, format: date-time }

@@ -137,16 +137,122 @@ func NormaliseProfileImageURL(raw string) (string, bool) {
 	return raw, true
 }
 
-// MergeOAuthProfile applies provider phone/image per WP3 rules: set phone
-// only when the user has none; always refresh image when the provider sends
-// one. Omitted claims do not clear existing values. Invalid claims are ignored.
+// MergeOAuthProfile applies provider phone/image: set each only when the
+// stored value is empty (issue #37; amends #27 image refresh). Omitted
+// claims do not clear existing values. Invalid claims are ignored.
 func (u *User) MergeOAuthProfile(p OAuthProfile) {
 	if phone, ok := NormalisePhoneE164(p.PhoneE164); ok && phone != "" && u.PhoneE164 == "" {
 		u.PhoneE164 = phone
 	}
-	if img, ok := NormaliseProfileImageURL(p.ProfileImage); ok && img != "" {
+	if img, ok := NormaliseProfileImageURL(p.ProfileImage); ok && img != "" && u.ProfileImage == "" {
 		u.ProfileImage = img
 	}
+}
+
+// FieldPatch is one optional string field in a PATCH body.
+// Set=false → leave unchanged; Set && Clear → clear; Set && !Clear → Value.
+type FieldPatch struct {
+	Set   bool
+	Clear bool
+	Value string
+}
+
+// ProfilePatch is a validated partial update of the caller's profile (#37).
+type ProfilePatch struct {
+	DisplayName  FieldPatch
+	PhoneE164    FieldPatch
+	ProfileImage FieldPatch
+}
+
+// Apply writes set fields onto u.
+func (p ProfilePatch) Apply(u *User) {
+	if p.DisplayName.Set {
+		if p.DisplayName.Clear {
+			u.DisplayName = ""
+		} else {
+			u.DisplayName = p.DisplayName.Value
+		}
+	}
+	if p.PhoneE164.Set {
+		if p.PhoneE164.Clear {
+			u.PhoneE164 = ""
+		} else {
+			u.PhoneE164 = p.PhoneE164.Value
+		}
+	}
+	if p.ProfileImage.Set {
+		if p.ProfileImage.Clear {
+			u.ProfileImage = ""
+		} else {
+			u.ProfileImage = p.ProfileImage.Value
+		}
+	}
+}
+
+// NewProfilePatch validates a PATCH body. clearX is true when the JSON
+// value was null. presentX is true when the property was sent. Empty string
+// clears display_name; for phone and image it is a validation error.
+func NewProfilePatch(
+	displayPresent bool, displayClear bool, displayValue string,
+	phonePresent bool, phoneClear bool, phoneValue string,
+	imagePresent bool, imageClear bool, imageValue string,
+) (ProfilePatch, error) {
+	if !displayPresent && !phonePresent && !imagePresent {
+		return ProfilePatch{}, ycerrors.Validation().Message("At least one profile field is required").Build()
+	}
+	v := ycerrors.Validation()
+	var out ProfilePatch
+
+	if displayPresent {
+		out.DisplayName.Set = true
+		if displayClear || strings.TrimSpace(displayValue) == "" {
+			out.DisplayName.Clear = true
+		} else {
+			name, ok := NormaliseDisplayName(displayValue)
+			if !ok {
+				v.Field("display_name", "too_long", "Display name must be at most 100 characters")
+			} else {
+				out.DisplayName.Value = name
+			}
+		}
+	}
+
+	if phonePresent {
+		out.PhoneE164.Set = true
+		if phoneClear {
+			out.PhoneE164.Clear = true
+		} else if strings.TrimSpace(phoneValue) == "" {
+			v.Field("phone_e164", "invalid", "Use null to clear phone; empty string is not allowed")
+		} else {
+			phone, ok := NormalisePhoneE164(phoneValue)
+			if !ok || phone == "" {
+				v.Field("phone_e164", "invalid", "Phone must be E.164")
+			} else {
+				out.PhoneE164.Value = phone
+			}
+		}
+	}
+
+	if imagePresent {
+		out.ProfileImage.Set = true
+		if imageClear {
+			out.ProfileImage.Clear = true
+		} else if strings.TrimSpace(imageValue) == "" {
+			v.Field("profile_image_url", "invalid", "Use null to clear avatar; empty string is not allowed")
+		} else {
+			img, ok := NormaliseProfileImageURL(imageValue)
+			if !ok || img == "" {
+				v.Field("profile_image_url", "invalid", "Profile image must be an https URL")
+			} else {
+				out.ProfileImage.Value = img
+			}
+		}
+	}
+
+	if v.HasErrors() {
+		return ProfilePatch{}, v.Build()
+	}
+	return out, nil
 }
 
 // Password length limits. The upper bound keeps hashing cost bounded.

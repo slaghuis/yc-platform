@@ -312,3 +312,23 @@ func (Users) ApplyOAuthProfile(ctx context.Context, tx pgx.Tx, u domain.User) er
 	}
 	return nil
 }
+
+// UpdateProfile persists display name, phone and profile image for user id
+// (issue #37). Empty strings are stored as NULL.
+func (Users) UpdateProfile(ctx context.Context, tx pgx.Tx, u domain.User) (domain.User, error) {
+	out, err := scanUser(tx.QueryRow(ctx, `
+		UPDATE users
+		   SET display_name = NULLIF($2, ''),
+		       phone_e164 = NULLIF($3, ''),
+		       profile_image_url = NULLIF($4, ''),
+		       updated_at = NOW()
+		 WHERE id = $1
+		RETURNING `+userColumns, u.ID, u.DisplayName, u.PhoneE164, u.ProfileImage))
+	if dbkit.IsNoRows(err) {
+		return domain.User{}, ycerrors.NotFound("User", u.ID)
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("update profile: %w", err)
+	}
+	return out, nil
+}

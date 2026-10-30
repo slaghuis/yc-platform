@@ -324,6 +324,54 @@ func TestIdentity(t *testing.T) {
 			call(t, srv, http.MethodPost, "/register", body, as("shop-a", visitorID, "customer"), nil), "already registered")
 	})
 
+	t.Run("PATCH /me updates and clears profile fields", func(t *testing.T) {
+		self := as("shop-a", visitorID, "customer")
+		assert.Equal(t, http.StatusForbidden, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"display_name": "Nope"}, as("shop-a", visitorID, "visitor"), nil), "visitors refused")
+
+		var me api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPatch, "/me", map[string]any{
+			"display_name":      "Ann Updated",
+			"phone_e164":        "+27831234567",
+			"profile_image_url": "https://cdn.example/ann.png",
+		}, self, &me))
+		require.NotNil(t, me.DisplayName)
+		assert.Equal(t, "Ann Updated", *me.DisplayName)
+		require.NotNil(t, me.PhoneE164)
+		assert.Equal(t, "+27831234567", *me.PhoneE164)
+		require.NotNil(t, me.ProfileImageURL)
+		assert.Equal(t, "https://cdn.example/ann.png", *me.ProfileImageURL)
+
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"display_name": "Only Name"}, self, &me))
+		assert.Equal(t, "Only Name", *me.DisplayName)
+		assert.Equal(t, "+27831234567", *me.PhoneE164, "omitted phone unchanged")
+		assert.Equal(t, "https://cdn.example/ann.png", *me.ProfileImageURL)
+
+		var cleared api.User
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPatch, "/me", map[string]any{
+			"phone_e164": nil, "profile_image_url": nil, "display_name": nil,
+		}, self, &cleared))
+		assert.Nil(t, cleared.DisplayName)
+		assert.Nil(t, cleared.PhoneE164)
+		assert.Nil(t, cleared.ProfileImageURL)
+
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{}, self, nil), "empty body")
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"phone_e164": ""}, self, nil), "empty phone")
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"phone_e164": "not-e164"}, self, nil))
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"profile_image_url": "http://insecure.example/x"}, self, nil))
+		assert.Equal(t, http.StatusBadRequest, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"email": "evil@example.com"}, self, nil), "unknown field")
+
+		// Restore a display name for later tests that may assert on Ann.
+		require.Equal(t, http.StatusOK, call(t, srv, http.MethodPatch, "/me",
+			map[string]any{"display_name": "Ann"}, self, &me))
+	})
+
 	t.Run("login checks the password and reports the previous visitor", func(t *testing.T) {
 		var fresh api.Session
 		require.Equal(t, http.StatusCreated, call(t, srv, http.MethodPost, "/visitor", nil, as("shop-a", "", ""), &fresh))

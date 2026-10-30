@@ -155,7 +155,8 @@ Marketing flags delete with preferences on `identity.user.deleted.v1` (existing 
 - yc-platform-shop: social sign-in display of phone/image; consent checkboxes → PATCH (CUST-004, CUST-007, OQ-008, OQ-009).
 - yc-platform-admin: optional defaults editor for marketing flags.
 - yc-platform-mcp: one OpenAPI sync covering identity + preference (+ message docs if exposed).
-- Later: `PATCH /me`; optional copy of phone into preference channels; per-channel marketing flags; first real marketing templates.
+- Later: optional copy of phone into preference channels; per-channel marketing flags; first real marketing templates.
+- Customer `PATCH /me` (API-Q004 / #37): see [Customer editable profile PATCH me](Customer%20editable%20profile%20PATCH%20me.md).
 
 ## Test plan
 

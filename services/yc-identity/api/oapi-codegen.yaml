@@ -6,3 +6,5 @@ generate:
   models: true
 output-options:
   name-normalizer: ToCamelCaseWithInitialisms
+  # ProfilePatch uses type: [string, 'null'] so omit vs clear is distinguishable.
+  nullable-type: true
