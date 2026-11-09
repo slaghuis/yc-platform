@@ -26,8 +26,9 @@ upstreams:
 # here. Services add their own routes by registering; a registered route may
 # not reuse a static prefix.
 routes:
+  # GET/DELETE /me; PATCH /me (#37); /me/addresses soft-CRUD (#32); /me/billing.
   - prefix: /me
-    methods: [GET, PUT, DELETE]
+    methods: [GET, POST, PUT, PATCH, DELETE]
     upstream: identity
   - prefix: /register
     methods: [POST]
